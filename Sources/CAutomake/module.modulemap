@@ -1,0 +1,3 @@
+module CAutomake {
+    export *
+}

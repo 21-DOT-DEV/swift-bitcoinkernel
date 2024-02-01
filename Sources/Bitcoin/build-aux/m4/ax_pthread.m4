@@ -1,0 +1,1 @@
+../../../../Submodules/bitcoin/build-aux/m4/ax_pthread.m4
