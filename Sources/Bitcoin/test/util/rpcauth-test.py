@@ -1,1 +1,0 @@
-../../../../Submodules/bitcoin/test/util/rpcauth-test.py

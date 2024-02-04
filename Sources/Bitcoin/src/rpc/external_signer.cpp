@@ -1,0 +1,1 @@
+../../../../Submodules/bitcoin/src/rpc/external_signer.cpp

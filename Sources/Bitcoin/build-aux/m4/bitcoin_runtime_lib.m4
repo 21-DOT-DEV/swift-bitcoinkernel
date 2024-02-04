@@ -1,1 +1,0 @@
-../../../../Submodules/bitcoin/build-aux/m4/bitcoin_runtime_lib.m4

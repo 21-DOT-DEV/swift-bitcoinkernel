@@ -1,1 +1,0 @@
-../../Submodules/Bitcoin/configure.ac

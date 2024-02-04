@@ -1,1 +1,0 @@
-../../../../Submodules/bitcoin/build-aux/m4/bitcoin_subdir_to_include.m4

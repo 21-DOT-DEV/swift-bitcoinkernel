@@ -1,1 +1,0 @@
-../../../../Submodules/bitcoin/build-aux/m4/l_atomic.m4

@@ -7,12 +7,12 @@ let package = Package(
     name: "Bitcoin",
     products: [
         // Products define the executables and libraries a package produces, making them visible to other packages.
-//        .library(name: "Bitcoin", targets: ["Bitcoin"]),
+        .library(name: "Bitcoin", targets: ["Bitcoin"]),
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
         // Targets can depend on other targets in this package and products from dependencies.
-//        .target(name: "Bitcoin"),
+        .target(name: "Bitcoin", dependencies: ["Configure"]),
 //        .testTarget(name: "BitcoinTests", dependencies: ["Bitcoin"]),
         // Plugins
         .plugin(
@@ -21,25 +21,15 @@ let package = Package(
                 intent: .custom(
                     verb: "configure",
                     description: "Configures the Bitcoin node."
-                )
-            ),
-            dependencies: ["CAutomake", "CLibtool"]
+                ),
+                permissions: [
+                    .writeToPackageDirectory(reason: "")
+                ]
+            )
         ),
-        // Define the system library target for `automake`
-        .systemLibrary(
-            name: "CAutomake",
-            providers: [
-                .brew(["automake"]),
-                .apt(["automake"])
-            ]
-        ),
-        // Define the system library target for `libtool`
-        .systemLibrary(
-            name: "CLibtool",
-            providers: [
-                .brew(["libtool"]),
-                .apt(["libtool"])
-            ]
-        )
+//        .plugin(
+//            name: "ConfigurePlugin",
+//            capability: .buildTool()
+//        )
     ]
 )

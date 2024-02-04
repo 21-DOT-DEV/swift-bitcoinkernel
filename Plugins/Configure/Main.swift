@@ -25,6 +25,9 @@ struct Plugin: CommandPlugin {
         let autogenCommand = "(cd Submodules/bitcoin && ./autogen.sh)"
         let configureCommand = "(cd Submodules/bitcoin && ./configure --with-gui=no)"
 
+        // Invoke `docc` with arguments and the optional catalog.
+        let doccExec = URL(fileURLWithPath: try context.tool(named: "zsh").path.string)
+
         autogenProcess.executableURL = URL(fileURLWithPath: "/bin/sh")
         autogenProcess.arguments = ["-c", autogenCommand]
 
