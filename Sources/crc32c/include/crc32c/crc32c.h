@@ -1,0 +1,1 @@
+../../../../Submodules/bitcoin/src/crc32c/include/crc32c/crc32c.h

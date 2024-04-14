@@ -100,3 +100,6 @@ iOSInjectionProject/
 
 # VSCode
 .vscode
+
+# Tuist
+Tuist/Derived
