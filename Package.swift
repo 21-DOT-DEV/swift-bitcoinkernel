@@ -16,8 +16,9 @@ let package = Package(
         .macOS(.v10_15),
         .iOS(.v13)
     ],
+
     products: [
-        .library(name: "Bitcoin", targets: ["BitcoinWrapper"])
+        .library(name: "Bitcoin", targets: ["Bitcoin"]),
     ],
     dependencies: [
         .package(url: "https://github.com/21-DOT-DEV/libevent.swift.git", branch: "main"),
@@ -25,7 +26,7 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "Bitcoin",
+            name: "bitcoind",
             dependencies: [
                 .product(name: "assert", package: "Boost.swift"),
                 .product(name: "bind", package: "Boost.swift"),
@@ -78,8 +79,13 @@ let package = Package(
                 .define("BOOST_NO_CXX98_FUNCTION_BASE")
             ]
         ),
-        .target(name: "BitcoinShim", dependencies: ["Bitcoin"]),
-        .target(name: "BitcoinWrapper", dependencies: ["BitcoinShim"]),
+        .target(
+            name: "Bitcoin",
+            dependencies: ["bitcoind"],
+            swiftSettings: [
+                .interoperabilityMode(.Cxx)
+            ]
+        ),
         .target(name: "crc32c"),
         .target(
             name: "leveldb",

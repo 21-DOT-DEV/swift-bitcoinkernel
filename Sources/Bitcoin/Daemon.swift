@@ -2,13 +2,13 @@
 //  Daemon.swift
 //  21-DOT-DEV/Bitcoin
 //
-//  Copyright (c) 2022 21 Development Innovations LLC
+//  Copyright (c) 2022 Twenty Development Innovations LLC
 //  Distributed under the MIT software license
 //
 //  See the accompanying file LICENSE for information
 //
 
-import BitcoinShim
+import bitcoind
 
 public enum Daemon {
     public static func start(_ arguments: [String]) {
@@ -29,7 +29,7 @@ public enum Daemon {
 
             // `argv` is now ready to use within this scope, and no need to use `free()`
             // For example, you could pass `argv` to a C function here
-            print(BitcoinShim.daemon_init(Int32(arguments.count), argv))
+            print(main(Int32(arguments.count), argv))
         }
     }
 }
