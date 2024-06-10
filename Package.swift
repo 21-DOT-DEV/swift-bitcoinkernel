@@ -16,13 +16,14 @@ let package = Package(
         .macOS(.v10_15),
         .iOS(.v13)
     ],
-
     products: [
         .library(name: "Bitcoin", targets: ["Bitcoin"]),
     ],
     dependencies: [
+        .package(url: "https://github.com/csjones/lefthook-plugin.git", exact: "1.6.15"),
         .package(url: "https://github.com/21-DOT-DEV/libevent.swift.git", branch: "main"),
         .package(url: "https://github.com/21-DOT-DEV/Boost.swift.git", exact: "1.80.0"),
+        .package(url: "https://github.com/21-DOT-DEV/swift-plugin-tuist.git", exact: "4.16.1")
     ],
     targets: [
         .target(

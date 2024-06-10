@@ -1,5 +1,5 @@
 //
-//  BitcoinNodeApp.swift
+//  NodeApp.swift
 //  21-DOT-DEV/Bitcoin
 //
 //  Copyright (c) 2022 21 Development Innovations LLC
@@ -11,7 +11,7 @@
 import SwiftUI
 
 @main
-struct BitcoinNodeApp: App {
+struct NodeApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()

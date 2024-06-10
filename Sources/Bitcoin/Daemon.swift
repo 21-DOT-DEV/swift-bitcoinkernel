@@ -29,7 +29,7 @@ public enum Daemon {
 
             // `argv` is now ready to use within this scope, and no need to use `free()`
             // For example, you could pass `argv` to a C function here
-            print(main(Int32(arguments.count), argv))
+            print(entry(Int32(arguments.count), argv))
         }
     }
 }

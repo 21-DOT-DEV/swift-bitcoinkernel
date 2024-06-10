@@ -8,7 +8,7 @@
 //  See the accompanying file LICENSE for information
 //
 
-import BitcoinWrapper
+import Bitcoin
 import SwiftUI
 
 //{"balance":0.000000000000000,"blocks":59952,"connections":48,"proxy":"","generate":false,

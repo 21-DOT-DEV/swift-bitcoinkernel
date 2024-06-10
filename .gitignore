@@ -1,3 +1,4 @@
+### Xcode ###
 # Xcode
 #
 # gitignore contributors: remember to update Global/Xcode.gitignore, Objective-C.gitignore & Swift.gitignore
@@ -22,6 +23,21 @@ DerivedData/
 *.perspectivev3
 !default.perspectivev3
 
+### Xcode Patch ###
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata/
+!*.xcworkspace/contents.xcworkspacedata
+/*.gcno
+
+### Projects ###
+*.xcodeproj
+*.xcworkspace
+
+### Tuist derived files ###
+graph.dot
+Derived/
+
 ## Obj-C/Swift specific
 *.hmap
 
@@ -34,8 +50,34 @@ DerivedData/
 timeline.xctimeline
 playground.xcworkspace
 
-## macOS
+### macOS ###
+# General
 .DS_Store
+.AppleDouble
+.LSOverride
+
+# Icon must end with two
+Icon
+
+# Thumbnails
+._*
+
+# Files that might appear in the root of a volume
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Directories potentially created on remote AFP share
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
 
 # Swift Package Manager
 #
@@ -101,5 +143,8 @@ iOSInjectionProject/
 # VSCode
 .vscode
 
-# Tuist
-Tuist/Derived
+### Tuist managed dependencies ###
+Tuist/.build
+
+# Ignore the specific bitcoind.cpp used for the swift-bitcoin package
+Sources/bitcoind/src/bitcoind.cpp

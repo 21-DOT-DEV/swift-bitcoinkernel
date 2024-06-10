@@ -8,6 +8,7 @@
 #ifndef bitcoind_h
 #define bitcoind_h
 
-int main(int argc, char* argv[]);
+// Declare the entry function that exists in the C++ code
+int entry(int argc, char* argv[]);
 
 #endif /* bitcoind_h */
