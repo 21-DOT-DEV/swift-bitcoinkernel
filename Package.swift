@@ -23,7 +23,7 @@ let package = Package(
         .package(url: "https://github.com/csjones/lefthook-plugin.git", exact: "1.6.15"),
         .package(url: "https://github.com/21-DOT-DEV/swift-boost", revision: "51f9f78"),
         .package(url: "https://github.com/21-DOT-DEV/swift-libevent", branch: "main"),
-        .package(url: "https://github.com/21-DOT-DEV/swift-plugin-tuist.git", exact: "4.16.1")
+        .package(url: "https://github.com/21-DOT-DEV/swift-plugin-tuist.git", exact: "4.20.0")
     ],
     targets: [
         .target(
