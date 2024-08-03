@@ -1,0 +1,1 @@
+../../../Submodules/bitcoin/src/core_write.cpp
