@@ -164,6 +164,6 @@ func haveGmtimeR() -> Int {
     // Define HAVE_GMTIME_R in Swift context
     0
     #else
-    1
+    0
     #endif
 }
