@@ -13,16 +13,29 @@ import Foundation
 public class JSONRPCService {
     private let url: URL
     private let session: URLSession
+    private let authenticationString: String?
 
-    public init(url: URL, session: URLSession = .shared) {
+    public init(url: URL, username: String? = nil, password: String? = nil, session: URLSession = .shared) {
         self.url = url
         self.session = session
+        
+        if let username = username, let password = password {
+            let loginString = String(format: "%@:%@", username, password)
+            let loginData = loginString.data(using: String.Encoding.utf8)!
+            self.authenticationString = loginData.base64EncodedString()
+        } else {
+            self.authenticationString = nil
+        }
     }
 
     func send<T: Codable>(request: JSONRPCRequest) async throws -> T {
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = "POST"
-        urlRequest.addValue("text/plain", forHTTPHeaderField: "Content-Type")
+        urlRequest.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        if let authString = authenticationString {
+            urlRequest.addValue("Basic \(authString)", forHTTPHeaderField: "Authorization")
+        }
 
         do {
             let requestData = try JSONEncoder().encode(request)

@@ -13,5 +13,6 @@ final class BitcoinTests: XCTestCase {
 
 
         // Beyond this point, `cStringPointers` and `argv` are not valid, and Swift's ARC will clean up the memory.
+        APIClient(config: <#T##BitcoinNodeConfig#>)
     }
 }

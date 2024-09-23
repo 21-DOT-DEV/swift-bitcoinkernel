@@ -8,7 +8,11 @@
 //  See the accompanying file LICENSE for information
 //
 
-public struct JSONRPCError: Codable {
+public struct JSONRPCError: Error, Codable {
     let code: Int
     let message: String
+    
+    public var localizedDescription: String {
+        return "JSON-RPC Error \(code): \(message)"
+    }
 }

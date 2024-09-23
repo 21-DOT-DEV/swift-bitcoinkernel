@@ -11,6 +11,6 @@
 public struct JSONRPCRequest: Codable {
     let jsonrpc: String
     let method: String
-    let params: [String]
+    let params: [AnyCodable]
     let id: Int
 }
