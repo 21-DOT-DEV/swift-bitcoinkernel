@@ -1,5 +1,8 @@
 import ProjectDescription
 
+/// List app targets
+let targets: [Target]
+
 let project = Project(
     name: "NodeApp",
     packages: [

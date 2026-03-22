@@ -1,0 +1,1 @@
+../../../../Submodules/bitcoin/src/common/settings.h

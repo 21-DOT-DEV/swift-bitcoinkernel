@@ -1,0 +1,5 @@
+module bitcoind {
+    header "bitcoind.h"
+    requires cplusplus
+    export *
+}

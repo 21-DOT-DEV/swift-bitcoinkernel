@@ -1,0 +1,1 @@
+../../../../Submodules/bitcoin/src/compat/stdin.cpp

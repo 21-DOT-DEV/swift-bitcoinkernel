@@ -1,0 +1,1 @@
+../../../Submodules/bitcoin/src/external_signer.h
