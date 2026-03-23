@@ -6,3 +6,13 @@ subtrees:
   commit: 44d8b13c81e5276eb610c99f227a4d090cc532f6
   tag: v26.0
   squash: true
+  extractions:
+  - from: 'src/crc32c/{include,src}/**/*.{cc,h}'
+    to: Sources/crc32c/
+    base: match
+    exclude:
+    - '**/*_unittest*'
+    - '**/*_test_main*'
+    - '**/*_benchmark*'
+    - '**/*_capi_*'
+    - '**/*_extend_*'
