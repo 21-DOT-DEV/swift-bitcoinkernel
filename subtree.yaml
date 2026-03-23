@@ -34,3 +34,14 @@ subtrees:
     - '**/bench*'
     - '**/test*'
     - '**/clmul_*'
+  - from: 'src/secp256k1/{include,src}/**/*.{c,h}'
+    to: Sources/secp256k1/
+    base: match
+    exclude:
+    - '**/bench*'
+    - '**/test*'
+    - '**/ctime_tests*'
+    - '**/precompute_ecmult*'
+    - '**/scalar_low*'
+    - '**/field_5x52_asm_impl*'
+    - '**/wycheproof/**'
