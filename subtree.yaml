@@ -27,3 +27,10 @@ subtrees:
     - '**/leveldbutil*'
     - '**/port_example*'
     - '**/windows_logger*'
+  - from: 'src/minisketch/{include,src}/**/*.{cpp,h}'
+    to: Sources/minisketch/
+    base: match
+    exclude:
+    - '**/bench*'
+    - '**/test*'
+    - '**/clmul_*'

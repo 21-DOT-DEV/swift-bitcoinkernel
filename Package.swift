@@ -68,6 +68,7 @@ let package = Package(
             cxxSettings: [
                 .define("LEVELDB_PLATFORM_POSIX", to: "1"),
                 .define("LEVELDB_IS_BIG_ENDIAN", to: "0"),
+                .headerSearchPath("."),
             ]
         ),
         .target(name: "minisketch"),
