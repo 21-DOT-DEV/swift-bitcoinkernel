@@ -1,1 +1,0 @@
-../../../../Vendor/bitcoin/src/leveldb/table/iterator.cc

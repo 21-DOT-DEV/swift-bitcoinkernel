@@ -1,1 +1,0 @@
-../../../../Vendor/bitcoin/src/leveldb/db/log_reader.cc

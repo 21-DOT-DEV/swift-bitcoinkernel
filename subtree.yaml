@@ -16,3 +16,14 @@ subtrees:
     - '**/*_benchmark*'
     - '**/*_capi_*'
     - '**/*_extend_*'
+  - from: 'src/leveldb/{include,db,helpers,port,table,util}/**/*.{cc,h}'
+    to: Sources/leveldb/
+    base: match
+    exclude:
+    - '**/*_test.cc'
+    - '**/testharness*'
+    - '**/testutil*'
+    - '**/env_windows*'
+    - '**/leveldbutil*'
+    - '**/port_example*'
+    - '**/windows_logger*'
