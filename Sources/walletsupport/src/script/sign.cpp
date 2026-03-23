@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/script/sign.cpp
+../../../../Vendor/bitcoin/src/script/sign.cpp

@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/checkqueue.h
+../../../Vendor/bitcoin/src/checkqueue.h

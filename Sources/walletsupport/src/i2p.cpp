@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/i2p.cpp
+../../../Vendor/bitcoin/src/i2p.cpp

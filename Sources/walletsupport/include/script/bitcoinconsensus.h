@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/script/bitcoinconsensus.h
+../../../../Vendor/bitcoin/src/script/bitcoinconsensus.h

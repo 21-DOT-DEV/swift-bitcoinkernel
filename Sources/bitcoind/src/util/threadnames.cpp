@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/threadnames.cpp
+../../../../Vendor/bitcoin/src/util/threadnames.cpp

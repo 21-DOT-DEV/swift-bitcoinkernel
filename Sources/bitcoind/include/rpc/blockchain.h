@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/rpc/blockchain.h
+../../../../Vendor/bitcoin/src/rpc/blockchain.h

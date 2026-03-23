@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/secp256k1/src/util.h
+../../../Vendor/bitcoin/src/secp256k1/src/util.h

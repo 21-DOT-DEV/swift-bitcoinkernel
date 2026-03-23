@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/serfloat.cpp
+../../../../Vendor/bitcoin/src/util/serfloat.cpp

@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/crypto/sha256.cpp
+../../../../Vendor/bitcoin/src/crypto/sha256.cpp

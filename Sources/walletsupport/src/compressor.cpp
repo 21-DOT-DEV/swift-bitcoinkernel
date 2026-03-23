@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/compressor.cpp
+../../../Vendor/bitcoin/src/compressor.cpp

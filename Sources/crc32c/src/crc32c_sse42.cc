@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/crc32c/src/crc32c_sse42.cc
+../../../Vendor/bitcoin/src/crc32c/src/crc32c_sse42.cc

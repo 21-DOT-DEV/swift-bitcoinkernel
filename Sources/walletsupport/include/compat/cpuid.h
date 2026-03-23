@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/compat/cpuid.h
+../../../../Vendor/bitcoin/src/compat/cpuid.h

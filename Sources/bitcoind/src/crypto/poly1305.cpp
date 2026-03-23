@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/crypto/poly1305.cpp
+../../../../Vendor/bitcoin/src/crypto/poly1305.cpp

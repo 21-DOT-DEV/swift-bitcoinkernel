@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/wallet/db.h
+../../../../Vendor/bitcoin/src/wallet/db.h

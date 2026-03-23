@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/reverse_iterator.h
+../../../Vendor/bitcoin/src/reverse_iterator.h

@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/node/abort.cpp
+../../../../Vendor/bitcoin/src/node/abort.cpp

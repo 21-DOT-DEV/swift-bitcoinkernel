@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/consensus/merkle.h
+../../../../Vendor/bitcoin/src/consensus/merkle.h

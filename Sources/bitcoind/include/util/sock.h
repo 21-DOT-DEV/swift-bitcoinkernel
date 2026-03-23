@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/sock.h
+../../../../Vendor/bitcoin/src/util/sock.h

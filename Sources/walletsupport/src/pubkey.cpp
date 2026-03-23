@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/pubkey.cpp
+../../../Vendor/bitcoin/src/pubkey.cpp

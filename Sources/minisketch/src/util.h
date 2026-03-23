@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/minisketch/src/util.h
+../../../Vendor/bitcoin/src/minisketch/src/util.h

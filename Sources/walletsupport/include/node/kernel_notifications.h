@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/node/kernel_notifications.h
+../../../../Vendor/bitcoin/src/node/kernel_notifications.h

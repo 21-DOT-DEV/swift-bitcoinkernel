@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/common/bloom.h
+../../../../Vendor/bitcoin/src/common/bloom.h

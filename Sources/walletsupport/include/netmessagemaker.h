@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/netmessagemaker.h
+../../../Vendor/bitcoin/src/netmessagemaker.h

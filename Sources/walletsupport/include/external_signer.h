@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/external_signer.h
+../../../Vendor/bitcoin/src/external_signer.h

@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/prevector.h
+../../../Vendor/bitcoin/src/prevector.h

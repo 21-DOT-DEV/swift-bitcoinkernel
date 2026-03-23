@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/rpc/mining.h
+../../../../Vendor/bitcoin/src/rpc/mining.h

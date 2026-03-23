@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/warnings.cpp
+../../../Vendor/bitcoin/src/warnings.cpp

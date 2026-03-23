@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/kernel/chainstatemanager_opts.h
+../../../../Vendor/bitcoin/src/kernel/chainstatemanager_opts.h

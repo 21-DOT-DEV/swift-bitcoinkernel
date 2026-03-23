@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/script/signingprovider.cpp
+../../../../Vendor/bitcoin/src/script/signingprovider.cpp

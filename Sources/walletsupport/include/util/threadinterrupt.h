@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/threadinterrupt.h
+../../../../Vendor/bitcoin/src/util/threadinterrupt.h

@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/compat/endian.h
+../../../../Vendor/bitcoin/src/compat/endian.h

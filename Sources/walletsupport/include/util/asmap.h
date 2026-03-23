@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/asmap.h
+../../../../Vendor/bitcoin/src/util/asmap.h

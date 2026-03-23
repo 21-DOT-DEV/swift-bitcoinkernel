@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/node/connection_types.cpp
+../../../../Vendor/bitcoin/src/node/connection_types.cpp

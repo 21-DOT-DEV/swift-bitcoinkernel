@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/minisketch/src/fielddefines.h
+../../../Vendor/bitcoin/src/minisketch/src/fielddefines.h

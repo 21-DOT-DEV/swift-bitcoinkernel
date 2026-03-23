@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/golombrice.h
+../../../../Vendor/bitcoin/src/util/golombrice.h

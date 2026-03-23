@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/wallet/transaction.cpp
+../../../../Vendor/bitcoin/src/wallet/transaction.cpp

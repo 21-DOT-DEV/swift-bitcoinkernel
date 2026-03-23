@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/primitives/block.cpp
+../../../../Vendor/bitcoin/src/primitives/block.cpp

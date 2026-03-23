@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/hasher.h
+../../../../Vendor/bitcoin/src/util/hasher.h

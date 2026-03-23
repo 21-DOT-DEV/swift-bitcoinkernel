@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/leveldb/table/iterator_wrapper.h
+../../../../Vendor/bitcoin/src/leveldb/table/iterator_wrapper.h

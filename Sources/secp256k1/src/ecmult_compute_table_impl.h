@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/secp256k1/src/ecmult_compute_table_impl.h
+../../../Vendor/bitcoin/src/secp256k1/src/ecmult_compute_table_impl.h

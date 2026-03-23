@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/undo.h
+../../../Vendor/bitcoin/src/undo.h

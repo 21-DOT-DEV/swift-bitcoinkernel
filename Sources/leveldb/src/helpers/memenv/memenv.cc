@@ -1,1 +1,1 @@
-../../../../../Submodules/bitcoin/src/leveldb/helpers/memenv/memenv.cc
+../../../../../Vendor/bitcoin/src/leveldb/helpers/memenv/memenv.cc

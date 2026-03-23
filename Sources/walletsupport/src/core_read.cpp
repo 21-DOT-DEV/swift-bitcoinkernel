@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/core_read.cpp
+../../../Vendor/bitcoin/src/core_read.cpp

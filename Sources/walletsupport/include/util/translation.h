@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/translation.h
+../../../../Vendor/bitcoin/src/util/translation.h

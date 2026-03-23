@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/headerssync.h
+../../../Vendor/bitcoin/src/headerssync.h

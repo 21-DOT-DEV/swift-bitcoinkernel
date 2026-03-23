@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/hash.cpp
+../../../Vendor/bitcoin/src/hash.cpp

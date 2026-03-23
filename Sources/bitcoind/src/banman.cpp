@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/banman.cpp
+../../../Vendor/bitcoin/src/banman.cpp

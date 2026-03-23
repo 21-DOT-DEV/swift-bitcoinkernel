@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/consensus/params.h
+../../../../Vendor/bitcoin/src/consensus/params.h

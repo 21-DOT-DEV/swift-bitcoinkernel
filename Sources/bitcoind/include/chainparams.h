@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/chainparams.h
+../../../Vendor/bitcoin/src/chainparams.h

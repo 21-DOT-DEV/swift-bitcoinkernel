@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/script/miniscript.h
+../../../../Vendor/bitcoin/src/script/miniscript.h

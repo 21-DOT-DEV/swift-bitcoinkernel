@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/sync.cpp
+../../../Vendor/bitcoin/src/sync.cpp

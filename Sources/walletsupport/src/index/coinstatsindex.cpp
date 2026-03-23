@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/index/coinstatsindex.cpp
+../../../../Vendor/bitcoin/src/index/coinstatsindex.cpp

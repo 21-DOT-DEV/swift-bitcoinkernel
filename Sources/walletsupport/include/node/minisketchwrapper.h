@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/node/minisketchwrapper.h
+../../../../Vendor/bitcoin/src/node/minisketchwrapper.h

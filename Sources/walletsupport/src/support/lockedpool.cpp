@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/support/lockedpool.cpp
+../../../../Vendor/bitcoin/src/support/lockedpool.cpp

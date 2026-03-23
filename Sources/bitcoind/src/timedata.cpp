@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/timedata.cpp
+../../../Vendor/bitcoin/src/timedata.cpp

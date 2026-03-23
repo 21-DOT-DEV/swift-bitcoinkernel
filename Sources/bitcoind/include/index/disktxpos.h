@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/index/disktxpos.h
+../../../../Vendor/bitcoin/src/index/disktxpos.h

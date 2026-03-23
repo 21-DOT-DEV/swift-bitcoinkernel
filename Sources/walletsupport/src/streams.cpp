@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/streams.cpp
+../../../Vendor/bitcoin/src/streams.cpp

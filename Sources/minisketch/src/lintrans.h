@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/minisketch/src/lintrans.h
+../../../Vendor/bitcoin/src/minisketch/src/lintrans.h

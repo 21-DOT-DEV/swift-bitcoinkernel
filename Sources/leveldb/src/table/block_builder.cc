@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/leveldb/table/block_builder.cc
+../../../../Vendor/bitcoin/src/leveldb/table/block_builder.cc

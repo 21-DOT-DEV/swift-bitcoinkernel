@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/serialize.h
+../../../Vendor/bitcoin/src/serialize.h

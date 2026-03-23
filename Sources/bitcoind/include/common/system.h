@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/common/system.h
+../../../../Vendor/bitcoin/src/common/system.h

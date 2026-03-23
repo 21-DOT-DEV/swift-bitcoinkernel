@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/tokenpipe.h
+../../../../Vendor/bitcoin/src/util/tokenpipe.h

@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/indirectmap.h
+../../../Vendor/bitcoin/src/indirectmap.h

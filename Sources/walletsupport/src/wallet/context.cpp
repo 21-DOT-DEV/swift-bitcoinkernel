@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/wallet/context.cpp
+../../../../Vendor/bitcoin/src/wallet/context.cpp

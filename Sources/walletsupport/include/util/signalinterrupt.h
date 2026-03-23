@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/signalinterrupt.h
+../../../../Vendor/bitcoin/src/util/signalinterrupt.h

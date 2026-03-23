@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/message.cpp
+../../../../Vendor/bitcoin/src/util/message.cpp

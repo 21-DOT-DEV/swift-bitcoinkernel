@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/crypto/hmac_sha512.h
+../../../../Vendor/bitcoin/src/crypto/hmac_sha512.h

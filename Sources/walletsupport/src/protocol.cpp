@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/protocol.cpp
+../../../Vendor/bitcoin/src/protocol.cpp

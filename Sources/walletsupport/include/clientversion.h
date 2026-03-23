@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/clientversion.h
+../../../Vendor/bitcoin/src/clientversion.h

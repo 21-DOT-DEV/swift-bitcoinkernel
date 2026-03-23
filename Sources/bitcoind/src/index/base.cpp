@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/index/base.cpp
+../../../../Vendor/bitcoin/src/index/base.cpp

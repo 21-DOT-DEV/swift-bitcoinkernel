@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/streams.h
+../../../Vendor/bitcoin/src/streams.h

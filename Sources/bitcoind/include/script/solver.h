@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/script/solver.h
+../../../../Vendor/bitcoin/src/script/solver.h

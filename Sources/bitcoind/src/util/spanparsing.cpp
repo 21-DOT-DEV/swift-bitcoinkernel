@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/spanparsing.cpp
+../../../../Vendor/bitcoin/src/util/spanparsing.cpp

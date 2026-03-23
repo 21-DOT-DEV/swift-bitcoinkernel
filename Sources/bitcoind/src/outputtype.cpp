@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/outputtype.cpp
+../../../Vendor/bitcoin/src/outputtype.cpp

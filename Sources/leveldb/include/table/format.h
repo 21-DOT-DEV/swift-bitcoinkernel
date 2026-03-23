@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/leveldb/table/format.h
+../../../../Vendor/bitcoin/src/leveldb/table/format.h

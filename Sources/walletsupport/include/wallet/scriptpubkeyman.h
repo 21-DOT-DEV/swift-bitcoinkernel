@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/wallet/scriptpubkeyman.h
+../../../../Vendor/bitcoin/src/wallet/scriptpubkeyman.h

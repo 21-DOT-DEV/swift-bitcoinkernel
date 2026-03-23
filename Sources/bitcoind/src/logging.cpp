@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/logging.cpp
+../../../Vendor/bitcoin/src/logging.cpp

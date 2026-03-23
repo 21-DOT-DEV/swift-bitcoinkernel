@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/policy/settings.h
+../../../../Vendor/bitcoin/src/policy/settings.h

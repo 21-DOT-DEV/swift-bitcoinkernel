@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/node/utxo_snapshot.cpp
+../../../../Vendor/bitcoin/src/node/utxo_snapshot.cpp

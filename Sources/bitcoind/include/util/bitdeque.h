@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/bitdeque.h
+../../../../Vendor/bitcoin/src/util/bitdeque.h

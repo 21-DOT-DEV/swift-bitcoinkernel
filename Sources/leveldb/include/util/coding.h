@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/leveldb/util/coding.h
+../../../../Vendor/bitcoin/src/leveldb/util/coding.h

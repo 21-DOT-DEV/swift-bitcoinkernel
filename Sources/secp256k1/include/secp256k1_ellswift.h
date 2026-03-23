@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/secp256k1/include/secp256k1_ellswift.h
+../../../Vendor/bitcoin/src/secp256k1/include/secp256k1_ellswift.h

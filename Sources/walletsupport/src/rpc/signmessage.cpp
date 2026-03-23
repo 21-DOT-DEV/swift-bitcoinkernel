@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/rpc/signmessage.cpp
+../../../../Vendor/bitcoin/src/rpc/signmessage.cpp

@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/psbt.cpp
+../../../Vendor/bitcoin/src/psbt.cpp

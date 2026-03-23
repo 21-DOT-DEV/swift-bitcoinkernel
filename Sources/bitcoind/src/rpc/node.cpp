@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/rpc/node.cpp
+../../../../Vendor/bitcoin/src/rpc/node.cpp

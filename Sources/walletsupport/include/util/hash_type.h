@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/hash_type.h
+../../../../Vendor/bitcoin/src/util/hash_type.h

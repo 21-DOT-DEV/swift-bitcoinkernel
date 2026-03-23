@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/crc32c/src/crc32c_read_le.h
+../../../Vendor/bitcoin/src/crc32c/src/crc32c_read_le.h

@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/kernel/disconnected_transactions.h
+../../../../Vendor/bitcoin/src/kernel/disconnected_transactions.h

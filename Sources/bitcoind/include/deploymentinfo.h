@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/deploymentinfo.h
+../../../Vendor/bitcoin/src/deploymentinfo.h

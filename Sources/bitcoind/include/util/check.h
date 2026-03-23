@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/check.h
+../../../../Vendor/bitcoin/src/util/check.h

@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/crypto/muhash.h
+../../../../Vendor/bitcoin/src/crypto/muhash.h

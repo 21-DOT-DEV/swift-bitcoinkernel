@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/merkleblock.h
+../../../Vendor/bitcoin/src/merkleblock.h

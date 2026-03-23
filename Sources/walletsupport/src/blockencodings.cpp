@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/blockencodings.cpp
+../../../Vendor/bitcoin/src/blockencodings.cpp

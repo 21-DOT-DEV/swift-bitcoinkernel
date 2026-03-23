@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/leveldb/include/leveldb/comparator.h
+../../../../Vendor/bitcoin/src/leveldb/include/leveldb/comparator.h

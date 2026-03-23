@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/fastrange.h
+../../../../Vendor/bitcoin/src/util/fastrange.h

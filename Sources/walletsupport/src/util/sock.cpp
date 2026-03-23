@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/sock.cpp
+../../../../Vendor/bitcoin/src/util/sock.cpp

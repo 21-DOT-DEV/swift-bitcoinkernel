@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/index/txindex.h
+../../../../Vendor/bitcoin/src/index/txindex.h

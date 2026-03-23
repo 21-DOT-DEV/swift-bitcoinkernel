@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/mapport.cpp
+../../../Vendor/bitcoin/src/mapport.cpp

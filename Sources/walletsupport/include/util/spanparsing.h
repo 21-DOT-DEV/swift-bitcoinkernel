@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/spanparsing.h
+../../../../Vendor/bitcoin/src/util/spanparsing.h

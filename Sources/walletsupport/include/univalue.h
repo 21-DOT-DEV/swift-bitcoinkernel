@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/univalue/include/univalue.h
+../../../Vendor/bitcoin/src/univalue/include/univalue.h

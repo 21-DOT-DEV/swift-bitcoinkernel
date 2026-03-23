@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/crc32c/src/crc32c_round_up.h
+../../../Vendor/bitcoin/src/crc32c/src/crc32c_round_up.h

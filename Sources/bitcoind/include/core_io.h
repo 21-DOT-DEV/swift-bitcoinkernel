@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/core_io.h
+../../../Vendor/bitcoin/src/core_io.h

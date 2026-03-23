@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/core_memusage.h
+../../../Vendor/bitcoin/src/core_memusage.h

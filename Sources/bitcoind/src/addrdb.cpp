@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/addrdb.cpp
+../../../Vendor/bitcoin/src/addrdb.cpp

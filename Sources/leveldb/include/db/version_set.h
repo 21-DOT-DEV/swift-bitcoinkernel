@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/leveldb/db/version_set.h
+../../../../Vendor/bitcoin/src/leveldb/db/version_set.h

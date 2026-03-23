@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/leveldb/db/log_reader.cc
+../../../../Vendor/bitcoin/src/leveldb/db/log_reader.cc

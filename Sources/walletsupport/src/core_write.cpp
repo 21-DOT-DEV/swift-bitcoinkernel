@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/core_write.cpp
+../../../Vendor/bitcoin/src/core_write.cpp

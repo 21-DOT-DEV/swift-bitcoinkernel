@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/net_types.h
+../../../Vendor/bitcoin/src/net_types.h

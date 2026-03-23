@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/threadsafety.h
+../../../Vendor/bitcoin/src/threadsafety.h

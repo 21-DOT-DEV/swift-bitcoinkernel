@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/crypto/siphash.cpp
+../../../../Vendor/bitcoin/src/crypto/siphash.cpp

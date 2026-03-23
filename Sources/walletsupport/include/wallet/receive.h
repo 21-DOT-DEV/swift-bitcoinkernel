@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/wallet/receive.h
+../../../../Vendor/bitcoin/src/wallet/receive.h

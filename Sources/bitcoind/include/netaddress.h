@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/netaddress.h
+../../../Vendor/bitcoin/src/netaddress.h

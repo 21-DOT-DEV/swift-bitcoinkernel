@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/leveldb/include/leveldb/write_batch.h
+../../../../Vendor/bitcoin/src/leveldb/include/leveldb/write_batch.h

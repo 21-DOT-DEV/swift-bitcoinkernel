@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/leveldb/util/arena.cc
+../../../../Vendor/bitcoin/src/leveldb/util/arena.cc

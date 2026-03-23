@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/pow.h
+../../../Vendor/bitcoin/src/pow.h

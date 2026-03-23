@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/secp256k1/src/scalar_4x64.h
+../../../Vendor/bitcoin/src/secp256k1/src/scalar_4x64.h

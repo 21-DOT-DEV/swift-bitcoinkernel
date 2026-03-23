@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/insert.h
+../../../../Vendor/bitcoin/src/util/insert.h

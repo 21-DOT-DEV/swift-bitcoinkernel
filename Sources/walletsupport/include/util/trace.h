@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/trace.h
+../../../../Vendor/bitcoin/src/util/trace.h

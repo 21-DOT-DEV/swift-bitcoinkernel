@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/common/run_command.h
+../../../../Vendor/bitcoin/src/common/run_command.h

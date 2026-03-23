@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/secp256k1/src/field.h
+../../../Vendor/bitcoin/src/secp256k1/src/field.h

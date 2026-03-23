@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/uint256.h
+../../../Vendor/bitcoin/src/uint256.h

@@ -1,1 +1,1 @@
-../../../../../Submodules/bitcoin/src/secp256k1/src/modules/extrakeys/main_impl.h
+../../../../../Vendor/bitcoin/src/secp256k1/src/modules/extrakeys/main_impl.h

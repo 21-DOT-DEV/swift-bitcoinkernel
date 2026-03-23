@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/node/txreconciliation.h
+../../../../Vendor/bitcoin/src/node/txreconciliation.h

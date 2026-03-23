@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/leveldb/port/thread_annotations.h
+../../../../Vendor/bitcoin/src/leveldb/port/thread_annotations.h

@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/node/chainstate.cpp
+../../../../Vendor/bitcoin/src/node/chainstate.cpp

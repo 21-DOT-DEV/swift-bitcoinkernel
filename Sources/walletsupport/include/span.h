@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/span.h
+../../../Vendor/bitcoin/src/span.h

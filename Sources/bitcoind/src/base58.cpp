@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/base58.cpp
+../../../Vendor/bitcoin/src/base58.cpp

@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/univalue/lib/univalue.cpp
+../../../Vendor/bitcoin/src/univalue/lib/univalue.cpp

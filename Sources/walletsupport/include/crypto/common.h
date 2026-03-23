@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/crypto/common.h
+../../../../Vendor/bitcoin/src/crypto/common.h

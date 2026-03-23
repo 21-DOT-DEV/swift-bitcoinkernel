@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/error.cpp
+../../../../Vendor/bitcoin/src/util/error.cpp

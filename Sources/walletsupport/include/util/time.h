@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/time.h
+../../../../Vendor/bitcoin/src/util/time.h

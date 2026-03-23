@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/secp256k1/src/precomputed_ecmult.c
+../../../Vendor/bitcoin/src/secp256k1/src/precomputed_ecmult.c

@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/compat/byteswap.h
+../../../../Vendor/bitcoin/src/compat/byteswap.h

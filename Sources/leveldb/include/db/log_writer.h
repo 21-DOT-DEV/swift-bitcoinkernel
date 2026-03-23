@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/leveldb/db/log_writer.h
+../../../../Vendor/bitcoin/src/leveldb/db/log_writer.h

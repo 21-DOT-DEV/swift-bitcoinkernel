@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/leveldb/db/snapshot.h
+../../../../Vendor/bitcoin/src/leveldb/db/snapshot.h

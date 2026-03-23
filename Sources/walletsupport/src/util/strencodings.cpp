@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/strencodings.cpp
+../../../../Vendor/bitcoin/src/util/strencodings.cpp

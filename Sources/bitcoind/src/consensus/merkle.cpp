@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/consensus/merkle.cpp
+../../../../Vendor/bitcoin/src/consensus/merkle.cpp

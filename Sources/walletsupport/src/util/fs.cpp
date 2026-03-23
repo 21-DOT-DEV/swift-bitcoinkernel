@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/fs.cpp
+../../../../Vendor/bitcoin/src/util/fs.cpp

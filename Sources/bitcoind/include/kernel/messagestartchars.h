@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/kernel/messagestartchars.h
+../../../../Vendor/bitcoin/src/kernel/messagestartchars.h

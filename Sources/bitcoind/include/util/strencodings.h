@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/strencodings.h
+../../../../Vendor/bitcoin/src/util/strencodings.h

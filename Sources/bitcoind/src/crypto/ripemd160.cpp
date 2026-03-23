@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/crypto/ripemd160.cpp
+../../../../Vendor/bitcoin/src/crypto/ripemd160.cpp

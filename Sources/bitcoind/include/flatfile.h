@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/flatfile.h
+../../../Vendor/bitcoin/src/flatfile.h

@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/shutdown.h
+../../../Vendor/bitcoin/src/shutdown.h

@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/crypto/sha256_arm_shani.cpp
+../../../../Vendor/bitcoin/src/crypto/sha256_arm_shani.cpp

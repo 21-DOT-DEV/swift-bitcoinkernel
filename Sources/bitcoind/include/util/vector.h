@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/vector.h
+../../../../Vendor/bitcoin/src/util/vector.h

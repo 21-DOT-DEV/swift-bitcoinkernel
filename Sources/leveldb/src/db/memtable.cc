@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/leveldb/db/memtable.cc
+../../../../Vendor/bitcoin/src/leveldb/db/memtable.cc

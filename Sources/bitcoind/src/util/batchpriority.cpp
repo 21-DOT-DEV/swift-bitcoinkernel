@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/batchpriority.cpp
+../../../../Vendor/bitcoin/src/util/batchpriority.cpp

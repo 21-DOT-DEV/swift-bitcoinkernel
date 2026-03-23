@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/leveldb/util/coding.cc
+../../../../Vendor/bitcoin/src/leveldb/util/coding.cc

@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/net_permissions.h
+../../../Vendor/bitcoin/src/net_permissions.h

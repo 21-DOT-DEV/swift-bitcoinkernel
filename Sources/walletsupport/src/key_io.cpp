@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/key_io.cpp
+../../../Vendor/bitcoin/src/key_io.cpp

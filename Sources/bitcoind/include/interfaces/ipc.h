@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/interfaces/ipc.h
+../../../../Vendor/bitcoin/src/interfaces/ipc.h

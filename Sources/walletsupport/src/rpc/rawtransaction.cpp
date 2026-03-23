@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/rpc/rawtransaction.cpp
+../../../../Vendor/bitcoin/src/rpc/rawtransaction.cpp

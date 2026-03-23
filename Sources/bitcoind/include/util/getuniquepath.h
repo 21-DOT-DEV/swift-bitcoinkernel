@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/getuniquepath.h
+../../../../Vendor/bitcoin/src/util/getuniquepath.h

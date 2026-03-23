@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/fs.h
+../../../../Vendor/bitcoin/src/util/fs.h

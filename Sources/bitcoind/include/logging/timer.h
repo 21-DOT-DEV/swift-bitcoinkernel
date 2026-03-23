@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/logging/timer.h
+../../../../Vendor/bitcoin/src/logging/timer.h

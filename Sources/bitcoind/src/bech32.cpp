@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/bech32.cpp
+../../../Vendor/bitcoin/src/bech32.cpp

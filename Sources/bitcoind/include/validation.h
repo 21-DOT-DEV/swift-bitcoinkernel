@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/validation.h
+../../../Vendor/bitcoin/src/validation.h

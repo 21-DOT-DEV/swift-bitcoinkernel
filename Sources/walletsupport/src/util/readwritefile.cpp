@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/readwritefile.cpp
+../../../../Vendor/bitcoin/src/util/readwritefile.cpp

@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/secp256k1/src/modinv32.h
+../../../Vendor/bitcoin/src/secp256k1/src/modinv32.h

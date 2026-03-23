@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/txdb.h
+../../../Vendor/bitcoin/src/txdb.h

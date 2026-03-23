@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/crc32c/src/crc32c_arm64.h
+../../../Vendor/bitcoin/src/crc32c/src/crc32c_arm64.h

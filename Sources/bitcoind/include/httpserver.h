@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/httpserver.h
+../../../Vendor/bitcoin/src/httpserver.h

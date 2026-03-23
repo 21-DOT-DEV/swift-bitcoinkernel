@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/wallet/external_signer_scriptpubkeyman.cpp
+../../../../Vendor/bitcoin/src/wallet/external_signer_scriptpubkeyman.cpp

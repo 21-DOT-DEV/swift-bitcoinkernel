@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/crypto/hkdf_sha256_32.cpp
+../../../../Vendor/bitcoin/src/crypto/hkdf_sha256_32.cpp

@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/noui.h
+../../../Vendor/bitcoin/src/noui.h

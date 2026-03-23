@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/script/interpreter.cpp
+../../../../Vendor/bitcoin/src/script/interpreter.cpp

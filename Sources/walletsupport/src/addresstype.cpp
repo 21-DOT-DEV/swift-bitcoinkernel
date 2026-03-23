@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/addresstype.cpp
+../../../Vendor/bitcoin/src/addresstype.cpp

@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/bytevectorhash.h
+../../../../Vendor/bitcoin/src/util/bytevectorhash.h

@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/attributes.h
+../../../Vendor/bitcoin/src/attributes.h

@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/torcontrol.cpp
+../../../Vendor/bitcoin/src/torcontrol.cpp

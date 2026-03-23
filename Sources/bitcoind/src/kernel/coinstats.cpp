@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/kernel/coinstats.cpp
+../../../../Vendor/bitcoin/src/kernel/coinstats.cpp

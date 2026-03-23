@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/txorphanage.h
+../../../Vendor/bitcoin/src/txorphanage.h

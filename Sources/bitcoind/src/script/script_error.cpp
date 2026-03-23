@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/script/script_error.cpp
+../../../../Vendor/bitcoin/src/script/script_error.cpp

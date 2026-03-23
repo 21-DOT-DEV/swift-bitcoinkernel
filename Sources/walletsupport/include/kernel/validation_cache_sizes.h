@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/kernel/validation_cache_sizes.h
+../../../../Vendor/bitcoin/src/kernel/validation_cache_sizes.h

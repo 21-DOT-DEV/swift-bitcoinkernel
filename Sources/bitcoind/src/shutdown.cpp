@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/shutdown.cpp
+../../../Vendor/bitcoin/src/shutdown.cpp

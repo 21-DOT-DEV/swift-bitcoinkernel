@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/primitives/transaction.cpp
+../../../../Vendor/bitcoin/src/primitives/transaction.cpp

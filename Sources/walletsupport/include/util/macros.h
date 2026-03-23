@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/macros.h
+../../../../Vendor/bitcoin/src/util/macros.h

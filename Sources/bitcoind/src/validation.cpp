@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/validation.cpp
+../../../Vendor/bitcoin/src/validation.cpp

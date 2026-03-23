@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/node/mini_miner.cpp
+../../../../Vendor/bitcoin/src/node/mini_miner.cpp

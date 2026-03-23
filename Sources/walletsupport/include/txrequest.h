@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/txrequest.h
+../../../Vendor/bitcoin/src/txrequest.h

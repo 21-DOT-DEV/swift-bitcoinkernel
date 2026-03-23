@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/wallet/coincontrol.h
+../../../../Vendor/bitcoin/src/wallet/coincontrol.h

@@ -1,1 +1,1 @@
-../../../../../Submodules/bitcoin/src/support/allocators/secure.h
+../../../../../Vendor/bitcoin/src/support/allocators/secure.h

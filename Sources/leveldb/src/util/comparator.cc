@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/leveldb/util/comparator.cc
+../../../../Vendor/bitcoin/src/leveldb/util/comparator.cc

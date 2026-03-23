@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/leveldb/util/hash.cc
+../../../../Vendor/bitcoin/src/leveldb/util/hash.cc

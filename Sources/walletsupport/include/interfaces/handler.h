@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/interfaces/handler.h
+../../../../Vendor/bitcoin/src/interfaces/handler.h

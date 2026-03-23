@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/randomenv.cpp
+../../../Vendor/bitcoin/src/randomenv.cpp

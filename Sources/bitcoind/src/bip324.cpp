@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/bip324.cpp
+../../../Vendor/bitcoin/src/bip324.cpp

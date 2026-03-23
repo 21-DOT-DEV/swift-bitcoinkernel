@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/script/descriptor.cpp
+../../../../Vendor/bitcoin/src/script/descriptor.cpp

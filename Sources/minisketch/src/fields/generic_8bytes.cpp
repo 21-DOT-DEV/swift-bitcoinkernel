@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/minisketch/src/fields/generic_8bytes.cpp
+../../../../Vendor/bitcoin/src/minisketch/src/fields/generic_8bytes.cpp

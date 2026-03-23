@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/compat/assumptions.h
+../../../../Vendor/bitcoin/src/compat/assumptions.h

@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/rpc/txoutproof.cpp
+../../../../Vendor/bitcoin/src/rpc/txoutproof.cpp

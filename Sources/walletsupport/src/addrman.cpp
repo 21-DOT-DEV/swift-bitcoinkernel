@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/addrman.cpp
+../../../Vendor/bitcoin/src/addrman.cpp

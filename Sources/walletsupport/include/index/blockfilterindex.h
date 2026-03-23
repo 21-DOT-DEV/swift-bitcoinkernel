@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/index/blockfilterindex.h
+../../../../Vendor/bitcoin/src/index/blockfilterindex.h

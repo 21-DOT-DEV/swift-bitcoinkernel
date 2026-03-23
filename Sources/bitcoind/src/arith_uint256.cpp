@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/arith_uint256.cpp
+../../../Vendor/bitcoin/src/arith_uint256.cpp

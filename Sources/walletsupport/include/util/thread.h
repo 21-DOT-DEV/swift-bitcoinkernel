@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/thread.h
+../../../../Vendor/bitcoin/src/util/thread.h

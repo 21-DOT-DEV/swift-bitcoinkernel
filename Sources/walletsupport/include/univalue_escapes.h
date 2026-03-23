@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/univalue/include/univalue_escapes.h
+../../../Vendor/bitcoin/src/univalue/include/univalue_escapes.h

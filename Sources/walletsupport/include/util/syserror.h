@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/syserror.h
+../../../../Vendor/bitcoin/src/util/syserror.h

@@ -1,1 +1,1 @@
-../../../Submodules/bitcoin/src/tinyformat.h
+../../../Vendor/bitcoin/src/tinyformat.h

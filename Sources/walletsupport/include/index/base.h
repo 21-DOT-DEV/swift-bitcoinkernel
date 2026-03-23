@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/index/base.h
+../../../../Vendor/bitcoin/src/index/base.h

@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/consensus/tx_check.h
+../../../../Vendor/bitcoin/src/consensus/tx_check.h

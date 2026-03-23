@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/interfaces/echo.h
+../../../../Vendor/bitcoin/src/interfaces/echo.h

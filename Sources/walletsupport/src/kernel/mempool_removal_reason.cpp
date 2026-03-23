@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/kernel/mempool_removal_reason.cpp
+../../../../Vendor/bitcoin/src/kernel/mempool_removal_reason.cpp

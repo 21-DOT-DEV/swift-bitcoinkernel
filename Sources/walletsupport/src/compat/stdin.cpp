@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/compat/stdin.cpp
+../../../../Vendor/bitcoin/src/compat/stdin.cpp

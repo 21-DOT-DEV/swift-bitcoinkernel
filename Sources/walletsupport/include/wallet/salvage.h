@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/wallet/salvage.h
+../../../../Vendor/bitcoin/src/wallet/salvage.h

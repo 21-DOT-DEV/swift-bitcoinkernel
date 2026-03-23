@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/policy/settings.cpp
+../../../../Vendor/bitcoin/src/policy/settings.cpp

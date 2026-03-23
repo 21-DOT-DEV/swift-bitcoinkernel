@@ -1,1 +1,1 @@
-../../../../Submodules/bitcoin/src/util/bip32.h
+../../../../Vendor/bitcoin/src/util/bip32.h
