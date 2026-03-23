@@ -25,7 +25,7 @@ let package = Package(
         .target(
             name: "bitcoind",
             dependencies: bitcoinDependencies(),
-            exclude: ["include/crypto/ctaes/ctaes.c"],
+            exclude: ["src/crypto/ctaes/ctaes.c"],
             publicHeadersPath: "include",
             cxxSettings: cxxSettings()
         ),
@@ -145,6 +145,7 @@ func cxxSettings() -> [CXXSetting] {
     [
         //  .unsafeFlags(["-D","BOOST_NO_CXX98_FUNCTION_BASE"]),
         .headerSearchPath("src"),
+        .headerSearchPath("src/univalue/include"),
         .define("HAVE_GMTIME_R", to: "\(haveGmtimeR())"),
         .define("CLIENT_VERSION_IS_RELEASE", to: "true"),
         .define("CLIENT_VERSION_MAJOR", to: "26"),

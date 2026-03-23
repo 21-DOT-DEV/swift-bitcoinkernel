@@ -1,1 +1,0 @@
-../../../../Vendor/bitcoin/src/index/coinstatsindex.h

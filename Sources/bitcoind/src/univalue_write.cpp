@@ -1,1 +1,0 @@
-../../../Vendor/bitcoin/src/univalue/lib/univalue_write.cpp
