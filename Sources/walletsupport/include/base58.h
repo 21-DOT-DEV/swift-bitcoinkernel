@@ -1,1 +1,0 @@
-../../../Vendor/bitcoin/src/base58.h

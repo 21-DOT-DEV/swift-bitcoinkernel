@@ -1,1 +1,0 @@
-../../../../Vendor/bitcoin/src/wallet/salvage.h

@@ -1,1 +1,0 @@
-../../../../Vendor/bitcoin/src/compat/stdin.h

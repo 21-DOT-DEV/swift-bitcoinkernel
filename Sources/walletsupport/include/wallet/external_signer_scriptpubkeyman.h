@@ -1,1 +1,0 @@
-../../../../Vendor/bitcoin/src/wallet/external_signer_scriptpubkeyman.h

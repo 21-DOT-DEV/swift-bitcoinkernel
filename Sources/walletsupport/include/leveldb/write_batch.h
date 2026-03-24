@@ -1,1 +1,0 @@
-../../../../Vendor/bitcoin/src/leveldb/include/leveldb/write_batch.h

@@ -1,1 +1,0 @@
-../../../Vendor/bitcoin/src/net_permissions.h

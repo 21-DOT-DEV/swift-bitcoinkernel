@@ -44,7 +44,7 @@ let package = Package(
                 .product(name: "range", package: "swift-boost"),
                 .product(name: "tokenizer", package: "swift-boost")
             ],
-            exclude: ["include/crypto/ctaes/ctaes.c"],
+            exclude: ["src/crypto/ctaes/ctaes.c"],
             publicHeadersPath: "include",
             cxxSettings: cxxSettings()
         ),

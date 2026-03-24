@@ -1,1 +1,0 @@
-../../../Vendor/bitcoin/src/external_signer.h
