@@ -62,7 +62,6 @@ subtrees:
     - '**/test/**'
     - '**/bench/**'
     - '**/ipc/**'
-    - '**/bitcoind.cpp'
     - '**/bitcoin-cli.cpp'
     - '**/bitcoin-tx.cpp'
     - '**/bitcoin-wallet.cpp'
@@ -74,9 +73,7 @@ subtrees:
     - '**/bitcoinkernel.cpp'
     - '**/crypto/ctaes/bench.c'
     - '**/crypto/ctaes/test.c'
-  - from: 'src/init/bitcoind.cpp'
-    to: Sources/bitcoind/src/init/
-    base: match
+    - '**/compat/compat.h'
   - from: 'src/**/*.{h,cpp,c}'
     to: Sources/walletsupport/src/
     base: match
@@ -90,7 +87,6 @@ subtrees:
     - '**/test/**'
     - '**/bench/**'
     - '**/ipc/**'
-    - '**/bitcoind.cpp'
     - '**/bitcoin-cli.cpp'
     - '**/bitcoin-tx.cpp'
     - '**/bitcoin-wallet.cpp'
@@ -103,6 +99,4 @@ subtrees:
     - '**/crypto/ctaes/bench.c'
     - '**/crypto/ctaes/test.c'
     - '**/dummywallet.cpp'
-  - from: 'src/init/bitcoind.cpp'
-    to: Sources/walletsupport/src/init/
-    base: match
+    - '**/compat/compat.h'

@@ -158,7 +158,8 @@ func cxxSettings() -> [CXXSetting] {
         .define("PACKAGE_BUGREPORT", to: "\"https://github.com/bitcoin/bitcoin/issues\""),
         .define("PACKAGE_URL", to: "\"https://bitcoincore.org/\""),
         .define("PACKAGE_VERSION", to: "\"26.0.0\""),
-        .define("BOOST_NO_CXX98_FUNCTION_BASE")
+        .define("BOOST_NO_CXX98_FUNCTION_BASE"),
+        .define("MAIN_FUNCTION", to: "int entry(int argc, char* argv[])")
     ]
 }
 

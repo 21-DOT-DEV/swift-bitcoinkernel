@@ -3,18 +3,3 @@
 #   Refer for explanation to following link:
 #   https://github.com/evilmartians/lefthook/blob/master/docs/configuration.md
 
-post-checkout:
-  commands:
-    generate_bitcoind:
-      run: |
-        # Define the source and destination paths
-        SRC="Submodules/bitcoin/src/bitcoind.cpp"
-        DEST="Sources/bitcoind/src/bitcoind.cpp"
-        
-        # Copy the file from source to destination
-        cp "$SRC" "$DEST"
-        
-        # Replace all instances of "MAIN_FUNCTION" with "int entry(int argc, char* argv[])"
-        sed -i '' 's/MAIN_FUNCTION/int entry(int argc, char* argv[])/g' "$DEST"
-        
-        echo "File copied and modified successfully."

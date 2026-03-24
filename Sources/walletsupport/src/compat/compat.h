@@ -81,6 +81,7 @@ typedef void* sockopt_arg_type;
 typedef char* sockopt_arg_type;
 #endif
 
+#ifndef MAIN_FUNCTION
 #ifdef WIN32
 // Export main() and ensure working ASLR when using mingw-w64.
 // Exporting a symbol will prevent the linker from stripping
@@ -90,6 +91,7 @@ typedef char* sockopt_arg_type;
 #define MAIN_FUNCTION __declspec(dllexport) int main(int argc, char* argv[])
 #else
 #define MAIN_FUNCTION int main(int argc, char* argv[])
+#endif
 #endif
 
 // Note these both should work with the current usage of poll, but best to be safe
