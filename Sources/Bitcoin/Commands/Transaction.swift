@@ -11,7 +11,7 @@
 import Foundation
 
 /// Represents a Bitcoin transaction.
-public struct Transaction: Codable {
+public struct Transaction: Codable, Sendable {
     public let txid: String
     public let hash: String
     public let version: Int

@@ -103,6 +103,14 @@ public class JSONRPCService {
             if T.self == BlockchainInfo.self {
                 return blockchainInfo as! T
             }
+        case .blockWithTransactions(let blockWithTransactions):
+            if T.self == BlockWithTransactions.self {
+                return blockWithTransactions as! T
+            }
+        case .block(let block):
+            if T.self == Block.self {
+                return block as! T
+            }
         case .null:
             if T.self == Void.self {
                 return () as! T

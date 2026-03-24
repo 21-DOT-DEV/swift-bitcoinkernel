@@ -57,6 +57,12 @@ public enum CommandResult: Codable, Sendable {
     /// Represents a `BlockchainInfo` result.
     case blockchainInfo(BlockchainInfo)
     
+    /// Represents a `BlockWithTransactions` result.
+    case blockWithTransactions(BlockWithTransactions)
+    
+    /// Represents a `Block` result.
+    case block(Block)
+    
     /// Represents a string result.
     case string(String)
     
@@ -75,6 +81,10 @@ public enum CommandResult: Codable, Sendable {
             self = .string(x)
         } else if let x = try? container.decode(BlockchainInfo.self) {
             self = .blockchainInfo(x)
+        } else if let x = try? container.decode(BlockWithTransactions.self) {
+            self = .blockWithTransactions(x)
+        } else if let x = try? container.decode(Block.self) {
+            self = .block(x)
         } else if container.decodeNil() {
             self = .null
         } else {
@@ -95,6 +105,10 @@ public enum CommandResult: Codable, Sendable {
         case .integer(let x):
             try container.encode(x)
         case .blockchainInfo(let x):
+            try container.encode(x)
+        case .blockWithTransactions(let x):
+            try container.encode(x)
+        case .block(let x):
             try container.encode(x)
         case .string(let x):
             try container.encode(x)

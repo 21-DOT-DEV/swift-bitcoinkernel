@@ -8,25 +8,33 @@ final class BitcoinTests: XCTestCase {
     override class func setUp() {
         super.setUp()
 
-        // Code you want to run once before all tests
-        Task{
-            print("Starting Bitcoin...")
+        print("Starting Bitcoin...")
+        Daemon.start(
+            [
+                "-server=1",
+                "-rpcbind=0.0.0.0",
+                "-rpcallowip=127.0.0.1",
+                "-rpcport=8332",
+                "-rpcauth=111:14c1e13a71b7d6a4dab6c9d8f107bb5b$73b9fbbd71dbbb1476efa6da7b37dde5111153a17ccb5fdef79537d276fd03d4",
+                "-prune=550",
+                "-blockfilterindex=1"
+            ]
+        )
 
-            Daemon.start(
-                [
-                    "-server=1",
-                    "-rpcbind=0.0.0.0",
-                    "-rpcallowip=127.0.0.1",
-                    "-rpcport=8332",
-                    "-rpcauth=111:14c1e13a71b7d6a4dab6c9d8f107bb5b$73b9fbbd71dbbb1476efa6da7b37dde5111153a17ccb5fdef79537d276fd03d4",
-                    "-prune=550",
-                    "-blockfilterindex=1"
-                ]
-            )
-        }
-        
         // Wait for the daemon to start (adjust the sleep time as needed)
         Thread.sleep(forTimeInterval: 5)
+    }
+
+    override class func tearDown() {
+        // Signal shutdown and block until entry() has fully returned
+        let semaphore = DispatchSemaphore(value: 0)
+        Task {
+            await Daemon.stopAndWait()
+            semaphore.signal()
+        }
+        semaphore.wait()
+
+        super.tearDown()
     }
 
     func testExample() async throws {
