@@ -1,10 +1,10 @@
 # Managed by subtree CLI - https://github.com/21-DOT-DEV/subtree
 subtrees:
-- name: old-bitcoin
+- name: bitcoin
   remote: https://github.com/bitcoin/bitcoin.git
-  prefix: Vendor/old-bitcoin
-  commit: 44d8b13c81e5276eb610c99f227a4d090cc532f6
-  tag: v26.0
+  prefix: Vendor/bitcoin
+  commit: 084cb796fb0f40eac962227afaedce21d62ae2a4
+  tag: v30.2
   squash: true
   extractions:
   - from: 'src/crc32c/{include,src}/**/*.{cc,h}'
@@ -62,6 +62,7 @@ subtrees:
     - '**/test/**'
     - '**/bench/**'
     - '**/ipc/**'
+    - '**/bitcoin.cpp'
     - '**/bitcoin-cli.cpp'
     - '**/bitcoin-tx.cpp'
     - '**/bitcoin-wallet.cpp'
@@ -87,6 +88,7 @@ subtrees:
     - '**/test/**'
     - '**/bench/**'
     - '**/ipc/**'
+    - '**/bitcoin.cpp'
     - '**/bitcoin-cli.cpp'
     - '**/bitcoin-tx.cpp'
     - '**/bitcoin-wallet.cpp'
