@@ -48,6 +48,10 @@ subtrees:
     - '**/scalar_low*'
     - '**/field_5x52_asm_impl*'
     - '**/wycheproof/**'
+  - from: 'src/ipc/exception.h'
+    to: Sources/bitcoind/src/ipc/
+  - from: 'src/ipc/exception.h'
+    to: Sources/walletsupport/src/ipc/
   - from: 'src/**/*.{h,cpp,c}'
     to: Sources/bitcoind/src/
     base: match

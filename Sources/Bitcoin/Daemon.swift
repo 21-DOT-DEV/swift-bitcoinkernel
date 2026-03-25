@@ -9,6 +9,11 @@
 //
 
 import bitcoind
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 
 public enum Daemon {
     private static var task: Task<Void, Never>?
@@ -40,13 +45,13 @@ public enum Daemon {
 
     /// Signal the daemon to shut down and wait for it to finish.
     public static func stopAndWait() async {
-        StartShutdown()
+        raise(SIGTERM)
         await task?.value
         task = nil
     }
 
     /// Signal the daemon to shut down without waiting.
     public static func stop() {
-        StartShutdown()
+        raise(SIGTERM)
     }
 }
