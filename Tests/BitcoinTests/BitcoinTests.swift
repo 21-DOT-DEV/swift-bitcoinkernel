@@ -26,14 +26,21 @@ final class BitcoinTests: XCTestCase {
     }
 
     override class func tearDown() {
-        // Signal shutdown and block until entry() has fully returned
+        // Send the RPC "stop" command and wait for the daemon to fully exit
+        let client = APIClient(
+            url: URL(string: "http://localhost:8332")!,
+            username: "111",
+            password: "222"
+        )
         let semaphore = DispatchSemaphore(value: 0)
         Task {
-            await Daemon.stopAndWait()
+            _ = try? await client.stop()
             semaphore.signal()
         }
         semaphore.wait()
 
+        // Block until entry() has fully returned (shutdown complete)
+        Daemon.waitUntilStopped()
         super.tearDown()
     }
 

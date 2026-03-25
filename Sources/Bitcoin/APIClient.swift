@@ -68,6 +68,14 @@ public class APIClient {
         }
     }
 
+    /// Requests a graceful shutdown of the Bitcoin node.
+    ///
+    /// - Returns: A string message from the server (e.g. "Bitcoin Core stopping").
+    /// - Throws: An error if the request fails.
+    public func stop() async throws -> String {
+        return try await send(.stop)
+    }
+
     /// Retrieves blockchain information from the Bitcoin node.
     ///
     /// - Returns: A `BlockchainInfo` instance representing the blockchain information.

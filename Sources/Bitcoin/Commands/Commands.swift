@@ -31,6 +31,9 @@ public enum Commands: String {
     
     /// Get a block in the blockchain by hash.
     case getBlock = "getblock"
+
+    /// Request a graceful shutdown of the server.
+    case stop = "stop"
     
     // Add more commands as needed, ensuring the raw value is lowercase
 }
