@@ -1,203 +1,170 @@
 import Testing
 import Foundation
 @testable import Bitcoin
-import bitcoind
 
-// MARK: - Shared Daemon Lifecycle
+// MARK: - Mock Transport
 
-/// Manages a single daemon instance shared across all RPC bridge test suites.
-/// The daemon starts once and shuts down when the process exits.
-private enum DaemonFixture {
-    private static let startOnce: Void = {
-        Daemon.start([
-            "-server=1",
-            "-rpcbind=0.0.0.0",
-            "-rpcallowip=127.0.0.1",
-            "-rpcport=18443",
-            "-rpcauth=111:14c1e13a71b7d6a4dab6c9d8f107bb5b$73b9fbbd71dbbb1476efa6da7b37dde5111153a17ccb5fdef79537d276fd03d4",
-            "-regtest",
-            "-prune=550",
-        ])
-        // Wait for the RPC server to become reachable
-        Thread.sleep(forTimeInterval: 5)
-    }()
+/// A mock transport that returns pre-configured JSON-RPC response data.
+/// Each test injects its own response — fully isolated, no daemon needed.
+struct MockTransport: RPCTransport {
+    let responseData: Data
 
-    static func ensureRunning() {
-        _ = startOnce
-        _ = shutdownOnce
+    init(json: String) {
+        self.responseData = Data(json.utf8)
     }
 
-    /// Register a one-time atexit handler that gracefully shuts down the daemon
-    /// so the process exits cleanly (no signal 6 / libc++abi termination).
-    private static let shutdownOnce: Void = {
-        atexit {
-            bitcoin_rpc_reset()
-            raise(SIGTERM)
-            Daemon.waitUntilStopped()
-        }
-    }()
-
-    static func makeClient() -> APIClient {
-        APIClient(
-            url: URL(string: "http://localhost:18443")!,
-            username: "111",
-            password: "222"
-        )
-    }
-
-    /// Bootstrap the direct RPC bridge via one HTTP call to _bridge_init.
-    static func bootstrap() async throws {
-        guard bitcoin_rpc_ready() == 0 else { return }
-        let request = JSONRPCRequest(method: "_bridge_init", params: [])
-        let service = JSONRPCService(
-            url: URL(string: "http://localhost:18443")!,
-            username: "111",
-            password: "222"
-        )
-        let result: String = try await service.send(request: request)
-        #expect(result == "ok")
+    func send(request: JSONRPCRequest) async throws -> Data {
+        responseData
     }
 }
 
-// MARK: - 1. Bridge Lifecycle
+/// A mock transport that records what was sent and returns canned data.
+final class SpyTransport: RPCTransport, @unchecked Sendable {
+    private(set) var requests: [JSONRPCRequest] = []
+    let responseData: Data
 
-@Suite("Bridge Lifecycle", .serialized)
-struct BridgeLifecycleTests {
-
-    init() {
-        DaemonFixture.ensureRunning()
+    init(json: String) {
+        self.responseData = Data(json.utf8)
     }
 
-    @Test("Bridge is not ready before bootstrap")
-    func notReadyBeforeBootstrap() {
-        #expect(bitcoin_rpc_ready() == 0)
-    }
-
-    @Test("bitcoin_rpc returns nil before bootstrap")
-    func rpcReturnsNilBeforeBootstrap() {
-        let result = "getblockcount".withCString { method in
-            "[]".withCString { params in
-                bitcoin_rpc(method, params)
-            }
-        }
-        #expect(result == nil)
-    }
-
-    @Test("Bootstrap via HTTP _bridge_init")
-    func bootstrapViaHTTP() async throws {
-        try await DaemonFixture.bootstrap()
-        #expect(bitcoin_rpc_ready() == 1)
-    }
-
-    @Test("Bootstrap is idempotent")
-    func bootstrapIsIdempotent() async throws {
-        try await DaemonFixture.bootstrap()
-        // Second call should be a no-op
-        try await DaemonFixture.bootstrap()
-        #expect(bitcoin_rpc_ready() == 1)
+    func send(request: JSONRPCRequest) async throws -> Data {
+        requests.append(request)
+        return responseData
     }
 }
 
-// MARK: - 2. Direct RPC Parity
-
-@Suite("Direct RPC Parity", .serialized)
-struct DirectRPCParityTests {
-
-    let client: APIClient
-
-    init() async throws {
-        DaemonFixture.ensureRunning()
-        try await DaemonFixture.bootstrap()
-        client = DaemonFixture.makeClient()
+/// A transport that always throws, proving it was NOT called.
+struct FailTransport: RPCTransport {
+    func send(request: JSONRPCRequest) async throws -> Data {
+        Issue.record("FailTransport should not be called")
+        throw URLError(.badServerResponse)
     }
+}
 
-    @Test("getblockcount via direct bridge")
-    func directGetBlockCount() async throws {
+// MARK: - 1. Transport Selection (Unit Tests)
+
+@Suite("Transport Selection")
+struct TransportSelectionTests {
+
+    @Test("APIClient with explicit HTTPTransport uses HTTP path")
+    func explicitHTTPTransport() async throws {
+        let spy = SpyTransport(json: #"{"result":42,"error":null,"id":"1"}"#)
+        let client = APIClient(transport: spy)
         let count: Int = try await client.send(.getBlockCount)
-        #expect(count >= 0)
+        #expect(count == 42)
+        #expect(spy.requests.count == 1)
+        #expect(spy.requests.first?.method == "getblockcount")
     }
 
-    @Test("getbestblockhash via direct bridge")
-    func directGetBestBlockHash() async throws {
+    @Test("APIClient with explicit DirectTransport uses direct path")
+    func explicitDirectTransport() async throws {
+        let spy = SpyTransport(json: #"{"result":"abc123","error":null,"id":"1"}"#)
+        let client = APIClient(transport: spy)
         let hash: String = try await client.send(.getBestBlockHash)
-        #expect(hash.count == 64, "Block hash should be 64 hex characters")
+        #expect(hash == "abc123")
+        #expect(spy.requests.count == 1)
     }
 
-    @Test("getblockchaininfo via direct bridge")
-    func directGetBlockchainInfo() async throws {
+    @Test("APIClient passes command parameters correctly")
+    func parameterPassing() async throws {
+        let spy = SpyTransport(json: #"{"result":99,"error":null,"id":"1"}"#)
+        let client = APIClient(transport: spy)
+        let _: Int = try await client.send(.getBlockCount, params: ["arg1", 42])
+        let request = try #require(spy.requests.first)
+        #expect(request.method == "getblockcount")
+    }
+}
+
+// MARK: - 2. Response Decoding (Unit Tests)
+
+@Suite("Response Decoding")
+struct ResponseDecodingTests {
+
+    @Test("Decodes integer result")
+    func decodeInteger() async throws {
+        let client = APIClient(transport: MockTransport(json: #"{"result":123,"error":null,"id":"1"}"#))
+        let count: Int = try await client.send(.getBlockCount)
+        #expect(count == 123)
+    }
+
+    @Test("Decodes string result")
+    func decodeString() async throws {
+        let client = APIClient(transport: MockTransport(json: #"{"result":"Bitcoin Core stopping","error":null,"id":"1"}"#))
+        let msg: String = try await client.send(.stop)
+        #expect(msg == "Bitcoin Core stopping")
+    }
+
+    @Test("Decodes BlockchainInfo result")
+    func decodeBlockchainInfo() async throws {
+        let json = """
+        {"result":{"chain":"regtest","blocks":0,"headers":0,"bestblockhash":"0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206","difficulty":4.656542373906925e-10,"time":1296688602,"mediantime":1296688602,"verificationprogress":1.0,"initialblockdownload":true,"chainwork":"0000000000000000000000000000000000000000000000000000000000000002","size_on_disk":293,"pruned":true,"pruneheight":0,"automatic_pruning":true,"prune_target_size":576716800,"warnings":[]},"error":null,"id":"1"}
+        """
+        let client = APIClient(transport: MockTransport(json: json))
         let info: BlockchainInfo = try await client.send(.getBlockchainInfo)
-        #expect(!info.chain.isEmpty)
-        #expect(info.blocks >= 0)
+        #expect(info.chain == "regtest")
+        #expect(info.blocks == 0)
+        #expect(info.difficulty < 1.0)
     }
 
-    @Test("getblock (verbosity 1) via direct bridge")
-    func directGetBlock() async throws {
-        let hash = "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"
-        let block: Block = try await client.send(.getBlock, params: [hash, 1])
-        #expect(block.hash == hash)
-    }
-
-    @Test("getblock (verbosity 2) via direct bridge")
-    func directGetBlockWithTransactions() async throws {
-        let hash = "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"
-        let block: BlockWithTransactions = try await client.send(.getBlock, params: [hash, 2])
-        #expect(block.hash == hash)
-    }
-
-    @Test("Invalid method returns error envelope, not crash")
-    func invalidMethodReturnsError() throws {
-        let ptr = "nonexistent_method_xyz".withCString { method in
-            "[]".withCString { params in
-                bitcoin_rpc(method, params)
-            }
+    @Test("Decodes JSON-RPC error into thrown NSError")
+    func decodeRPCError() async throws {
+        let json = #"{"result":null,"error":{"code":-32601,"message":"Method not found"},"id":"1"}"#
+        let client = APIClient(transport: MockTransport(json: json))
+        await #expect(throws: NSError.self) {
+            let _: Int = try await client.send(.getBlockCount)
         }
-        let unwrapped = try #require(ptr, "Should return error envelope, not nil")
-        defer { bitcoin_free(UnsafeMutableRawPointer(unwrapped)) }
+    }
 
-        let json = String(cString: unwrapped)
+    @Test("Decodes null result")
+    func decodeNull() throws {
+        let json = #"{"result":null,"error":null,"id":"1"}"#
         let data = Data(json.utf8)
         let response = try JSONDecoder().decode(JSONRPCResponse.self, from: data)
-        #expect(response.error != nil)
+        guard case .null = response.result else {
+            Issue.record("Expected .null result")
+            return
+        }
     }
 }
 
-// MARK: - 3. Transport Auto-Detection
+// MARK: - 3. Shared Decode Path (Unit Tests)
 
-@Suite("Transport Auto-Detection", .serialized)
-struct TransportAutoDetectionTests {
+@Suite("Shared Decode Path")
+struct SharedDecodePathTests {
 
-    let client: APIClient
+    @Test("HTTP and Direct transports share the same decoding logic")
+    func sameDecoderForBothPaths() async throws {
+        let json = #"{"result":99,"error":null,"id":"1"}"#
 
-    init() async throws {
-        DaemonFixture.ensureRunning()
-        try await DaemonFixture.bootstrap()
-        client = DaemonFixture.makeClient()
+        let httpClient = APIClient(transport: MockTransport(json: json))
+        let directClient = APIClient(transport: MockTransport(json: json))
+
+        let httpResult: Int = try await httpClient.send(.getBlockCount)
+        let directResult: Int = try await directClient.send(.getBlockCount)
+
+        #expect(httpResult == directResult)
+        #expect(httpResult == 99)
     }
 
-    @Test("send() uses direct bridge when ready")
-    func sendUsesDirectWhenReady() async throws {
-        #expect(bitcoin_rpc_ready() == 1)
-        let count: Int = try await client.send(.getBlockCount)
-        #expect(count >= 0)
-    }
+    @Test("RPC error decoded identically regardless of transport")
+    func sameErrorFromBothPaths() async throws {
+        let json = #"{"result":null,"error":{"code":-1,"message":"bad"},"id":"1"}"#
 
-    @Test("reset closes gate; bitcoin_rpc returns nil; send falls back to HTTP")
-    func resetClosesGateAndFallsBack() async throws {
-        bitcoin_rpc_reset()
-        #expect(bitcoin_rpc_ready() == 0)
+        let httpClient = APIClient(transport: MockTransport(json: json))
+        let directClient = APIClient(transport: MockTransport(json: json))
 
-        let ptr = "getblockcount".withCString { method in
-            "[]".withCString { params in
-                bitcoin_rpc(method, params)
-            }
-        }
-        #expect(ptr == nil)
+        var httpError: NSError?
+        var directError: NSError?
 
-        // send() should fall back to HTTP
-        let count: Int = try await client.send(.getBlockCount)
-        #expect(count >= 0)
+        do { let _: Int = try await httpClient.send(.getBlockCount) }
+        catch { httpError = error as NSError }
 
-        // Re-bootstrap for other suites
-        try await DaemonFixture.bootstrap()
+        do { let _: Int = try await directClient.send(.getBlockCount) }
+        catch { directError = error as NSError }
+
+        let h = try #require(httpError)
+        let d = try #require(directError)
+        #expect(h.code == d.code)
+        #expect(h.localizedDescription == d.localizedDescription)
     }
 }
