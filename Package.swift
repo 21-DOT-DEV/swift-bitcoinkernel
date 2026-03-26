@@ -121,6 +121,6 @@ func cxxSettings() -> [CXXSetting] {
         .headerSearchPath("src"),
         .headerSearchPath("src/univalue/include"),
         .define("BOOST_MULTI_INDEX_DISABLE_SERIALIZATION"),
-        .define("MAIN_FUNCTION", to: "int entry(int argc, char* argv[])")
+        .define("MAIN_FUNCTION", to: "int bitcoind_main(int argc, char* argv[])")
     ]
 }

@@ -12,34 +12,54 @@ import bitcoind
 import Foundation
 
 public enum Daemon {
-    /// Signaled when the blocking `entry()` call returns.
+    /// Signaled when the blocking `bitcoind_main()` call returns.
     private static let finished = DispatchSemaphore(value: 0)
 
-    /// Launch the daemon on a dedicated thread. Returns immediately.
+    /// Register the RPC bridge and launch the daemon on a dedicated thread.
+    /// Returns immediately.
     public static func start(_ arguments: [String]) {
         let arguments: [String] = ["bitcoind"] + arguments
 
         Thread.detachNewThread {
-            // Convert the Swift strings to arrays of CChar, and keep them in scope to manage memory automatically
-            let cStringArrays: [Array<CChar>] = arguments.map { Array($0.utf8CString) }
+            // Register the hidden "_bridge_init" RPC BEFORE bitcoind_main() starts
+            // the RPC server. appendCommand aborts if called while RPC is running.
+            bitcoin_rpc_register()
 
-            // Convert the arrays of CChar to pointers to CChar
-            var cStringPointers: [UnsafeMutablePointer<CChar>?] = cStringArrays.map {
-                UnsafeMutablePointer(mutating: $0)
+            // Allocate stable C strings that survive the entire bitcoind_main call.
+            let argc = Int32(arguments.count)
+            let cStrings = arguments.map { strdup($0) }
+            var argv: [UnsafeMutablePointer<CChar>?] = cStrings
+            argv.append(nil)
+            let exitCode = argv.withUnsafeMutableBufferPointer { buf in
+                bitcoind_main(argc, buf.baseAddress!)
             }
-
-            // Now, get an UnsafeMutablePointer to the array of pointers
-            cStringPointers.withUnsafeMutableBufferPointer { buffer in
-                let argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>! = UnsafeMutablePointer(mutating: buffer.baseAddress)
-                print(entry(Int32(arguments.count), argv))
-            }
+            print(exitCode)
+            cStrings.forEach { free($0) }
 
             finished.signal()
         }
     }
 
-    /// Block until the daemon's `entry()` call has fully returned.
+    /// Block synchronously until `bitcoind_main()` has fully returned.
+    /// Use this when shutdown has already been signaled externally (e.g. via HTTP RPC "stop").
     public static func waitUntilStopped() {
         finished.wait()
+    }
+
+    /// Signal shutdown. Returns immediately; Bitcoin Core begins tearing down.
+    public static func stop() {
+        bitcoin_rpc_reset()
+        raise(SIGTERM)
+    }
+
+    /// Signal shutdown and wait until `bitcoind_main()` has fully returned.
+    public static func stopAndWait() async {
+        stop()
+        await withCheckedContinuation { continuation in
+            Thread.detachNewThread {
+                finished.wait()
+                continuation.resume()
+            }
+        }
     }
 }

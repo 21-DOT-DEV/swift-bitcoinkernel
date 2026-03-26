@@ -27,7 +27,7 @@ public struct BlockchainInfo: Codable, Sendable {
     public let bestblockhash: String
     
     /// The current difficulty.
-    public let difficulty: Int
+    public let difficulty: Double
     
     /// The block time in UNIX epoch time.
     public let time: Int
@@ -60,7 +60,7 @@ public struct BlockchainInfo: Codable, Sendable {
     public let pruneTargetSize: Int
     
     /// Any network and blockchain warnings.
-    public let warnings: String
+    public let warnings: [String]
 
     /// Coding keys for mapping JSON keys to struct properties.
     enum CodingKeys: String, CodingKey {
