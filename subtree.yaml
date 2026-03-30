@@ -3,22 +3,21 @@ subtrees:
 - name: bitcoin
   remote: https://github.com/bitcoin/bitcoin.git
   prefix: Vendor/bitcoin
-  commit: 084cb796fb0f40eac962227afaedce21d62ae2a4
-  tag: v30.2
+  commit: e25b4bcc3e6270dcd2848d4314d14f19fea13374
+  tag: v31.0rc2
   squash: true
   extractions:
-  - from: 'src/crc32c/{include,src}/**/*.{cc,h}'
+  - from: src/crc32c/{include,src}/**/*.{cc,h}
     to: Sources/crc32c/
-    base: match
     exclude:
     - '**/*_unittest*'
     - '**/*_test_main*'
     - '**/*_benchmark*'
     - '**/*_capi_*'
     - '**/*_extend_*'
-  - from: 'src/leveldb/{include,db,helpers,port,table,util}/**/*.{cc,h}'
-    to: Sources/leveldb/
     base: match
+  - from: src/leveldb/{include,db,helpers,port,table,util}/**/*.{cc,h}
+    to: Sources/leveldb/
     exclude:
     - '**/*_test.cc'
     - '**/testharness*'
@@ -27,19 +26,19 @@ subtrees:
     - '**/leveldbutil*'
     - '**/port_example*'
     - '**/windows_logger*'
-  - from: 'src/leveldb/helpers/memenv/*.h'
+    base: match
+  - from: src/leveldb/helpers/memenv/*.h
     to: Sources/leveldb/include/leveldb/helpers/memenv/
     base: match
-  - from: 'src/minisketch/{include,src}/**/*.{cpp,h}'
+  - from: src/minisketch/{include,src}/**/*.{cpp,h}
     to: Sources/minisketch/
-    base: match
     exclude:
     - '**/bench*'
     - '**/test*'
     - '**/clmul_*'
-  - from: 'src/secp256k1/{include,src}/**/*.{c,h}'
-    to: Sources/secp256k1/
     base: match
+  - from: src/secp256k1/{include,src}/**/*.{c,h}
+    to: Sources/secp256k1/
     exclude:
     - '**/bench*'
     - '**/test*'
@@ -48,13 +47,13 @@ subtrees:
     - '**/scalar_low*'
     - '**/field_5x52_asm_impl*'
     - '**/wycheproof/**'
-  - from: 'src/ipc/exception.h'
-    to: Sources/bitcoind/src/ipc/
-  - from: 'src/ipc/exception.h'
-    to: Sources/walletsupport/src/ipc/
-  - from: 'src/**/*.{h,cpp,c}'
-    to: Sources/bitcoind/src/
     base: match
+  - from: src/ipc/exception.h
+    to: Sources/bitcoind/src/ipc/
+  - from: src/ipc/exception.h
+    to: Sources/walletsupport/src/ipc/
+  - from: src/**/*.{h,cpp,c}
+    to: Sources/bitcoind/src/
     exclude:
     - '**/crc32c/**'
     - '**/leveldb/**'
@@ -79,9 +78,9 @@ subtrees:
     - '**/crypto/ctaes/bench.c'
     - '**/crypto/ctaes/test.c'
     - '**/compat/compat.h'
-  - from: 'src/**/*.{h,cpp,c}'
-    to: Sources/walletsupport/src/
     base: match
+  - from: src/**/*.{h,cpp,c}
+    to: Sources/walletsupport/src/
     exclude:
     - '**/crc32c/**'
     - '**/leveldb/**'
@@ -106,3 +105,4 @@ subtrees:
     - '**/crypto/ctaes/test.c'
     - '**/dummywallet.cpp'
     - '**/compat/compat.h'
+    base: match
