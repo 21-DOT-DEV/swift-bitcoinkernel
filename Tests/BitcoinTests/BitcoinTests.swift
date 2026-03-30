@@ -1,62 +1,96 @@
-import XCTest
+import Testing
 import Bitcoin
+import Foundation
 
+// MARK: - Shared Daemon Fixture
 
-final class BitcoinTests: XCTestCase {
+/// Manages the Bitcoin daemon lifecycle for integration tests.
+///
+/// The daemon starts exactly once across all tests via `startOnce`, and is
+/// stopped gracefully via an `atexit` handler registered by `shutdownOnce`.
+/// Both are triggered by `ensureRunning()` which each test suite calls from
+/// its `init()`.
+private enum DaemonFixture {
+    static let auth = RPCAuth(
+        rawString: "111:14c1e13a71b7d6a4dab6c9d8f107bb5b$73b9fbbd71dbbb1476efa6da7b37dde5111153a17ccb5fdef79537d276fd03d4"
+    )!
 
-    // This will run once before any test methods in this class are executed
-    override class func setUp() {
-        super.setUp()
-
-        // Code you want to run once before all tests
-        Task{
-            print("Starting Bitcoin...")
-
-            Daemon.start(
-                [
-                    "-server=1",
-                    "-rpcbind=0.0.0.0",
-                    "-rpcallowip=127.0.0.1",
-                    "-rpcport=8332",
-                    "-rpcauth=111:14c1e13a71b7d6a4dab6c9d8f107bb5b$73b9fbbd71dbbb1476efa6da7b37dde5111153a17ccb5fdef79537d276fd03d4",
-                    "-prune=550",
-                    "-blockfilterindex=1"
-                ]
-            )
-        }
-        
-        // Wait for the daemon to start (adjust the sleep time as needed)
+    private static let startOnce: Void = {
+        // try! is safe here: we know this config is valid.
+        // If validation throws (ConfigError), it's a programmer error and a
+        // crash with the typed error message is the right outcome.
+        try! Daemon.start(with:
+            BitcoinConfig.mainnet()
+                .server()
+                .rpcBind(.allInterfaces)
+                .rpcAllowIP(.localhost)
+                .rpcPort(8332)
+                .rpcAuth(auth)
+                .prune(.minimum)
+                .blockFilterIndex(.all)
+        )
         Thread.sleep(forTimeInterval: 5)
+    }()
+
+    /// Registers a one-time atexit handler that gracefully shuts down the
+    /// daemon so the process exits cleanly.
+    private static let shutdownOnce: Void = {
+        atexit {
+            let client = DaemonFixture.makeClient()
+            let semaphore = DispatchSemaphore(value: 0)
+            Task {
+                _ = try? await client.stop()
+                semaphore.signal()
+            }
+            semaphore.wait()
+            Daemon.waitUntilStopped()
+        }
+    }()
+
+    static func ensureRunning() {
+        _ = startOnce
+        _ = shutdownOnce
     }
 
-    func testExample() async throws {
-        // XCTest Documentation
-        // https://developer.apple.com/documentation/xctest
-
-        // Defining Test Cases and Test Methods
-        // https://developer.apple.com/documentation/xctest/defining_test_cases_and_test_methods
-
-        let client = APIClient(
+    static func makeClient() -> APIClient {
+        APIClient(
             url: URL(string: "http://localhost:8332")!,
             username: "111",
             password: "222"
         )
+    }
+}
 
-        // Retry logic
+// MARK: - Bitcoin Integration Tests
+
+@Suite("Bitcoin Integration", .serialized)
+final class BitcoinTests {
+
+    init() {
+        DaemonFixture.ensureRunning()
+    }
+
+    @Test("getBlock returns genesis block via HTTP")
+    func getGenesisBlock() async throws {
+        let client = DaemonFixture.makeClient()
+
         let maxRetries = 5
         var retryCount = 0
 
         while retryCount < maxRetries {
             do {
-                _ = try await client.getBlock(hash: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f", verbosity: .jsonWithTransactions)
-                break
+                _ = try await client.getBlock(
+                    hash: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
+                    verbosity: .jsonWithTransactions
+                )
+                return
             } catch {
-                print("Connection attempt \(retryCount + 1) failed: \(error)")
                 retryCount += 1
                 if retryCount < maxRetries {
-                    try await Task.sleep(nanoseconds: 2_000_000_000) // Wait 2 seconds before retrying
+                    try await Task.sleep(nanoseconds: 2_000_000_000)
                 }
             }
         }
+        Issue.record("getBlock failed after \(maxRetries) retries")
     }
 }

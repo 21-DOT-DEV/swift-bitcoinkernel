@@ -1,1 +1,0 @@
-../../../../Submodules/bitcoin/src/compat/compat.h

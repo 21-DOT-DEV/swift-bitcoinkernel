@@ -1,1 +1,0 @@
-../../../Submodules/bitcoin/src/bech32.h

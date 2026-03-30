@@ -145,6 +145,3 @@ iOSInjectionProject/
 
 ### Tuist managed dependencies ###
 Tuist/.build
-
-# Ignore the specific bitcoind.cpp used for the swift-bitcoin package
-Sources/bitcoind/src/bitcoind.cpp

@@ -1,1 +1,0 @@
-../../../../Submodules/bitcoin/src/script/signingprovider.h

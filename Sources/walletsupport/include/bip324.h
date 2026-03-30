@@ -1,1 +1,0 @@
-../../../Submodules/bitcoin/src/bip324.h

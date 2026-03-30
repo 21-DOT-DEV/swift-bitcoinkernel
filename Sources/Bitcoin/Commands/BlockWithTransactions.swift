@@ -11,7 +11,7 @@
 import Foundation
 
 /// Represents a block with full transaction details in the Bitcoin blockchain.
-public struct BlockWithTransactions: Codable {
+public struct BlockWithTransactions: Codable, Sendable {
     /// The block hash.
     public let hash: String
     
@@ -70,8 +70,11 @@ public struct BlockWithTransactions: Codable {
     public let nextBlockHash: String?
 
     enum CodingKeys: String, CodingKey {
-        case hash, confirmations, size, weight, height, version, versionHex, merkleRoot, tx, time, medianTime, nonce, bits, difficulty, chainWork, nTx
+        case hash, confirmations, size, weight, height, version, versionHex, tx, time, nonce, bits, difficulty, nTx
         case strippedSize = "strippedsize"
+        case merkleRoot = "merkleroot"
+        case medianTime = "mediantime"
+        case chainWork = "chainwork"
         case previousBlockHash = "previousblockhash"
         case nextBlockHash = "nextblockhash"
     }

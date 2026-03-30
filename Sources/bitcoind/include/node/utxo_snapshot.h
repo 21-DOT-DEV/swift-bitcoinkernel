@@ -1,1 +1,0 @@
-../../../../Submodules/bitcoin/src/node/utxo_snapshot.h

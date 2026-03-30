@@ -9,25 +9,42 @@
 //
 
 import Foundation
+import bitcoind
 
 /// A client for interacting with the Bitcoin JSON-RPC API.
 ///
 /// `APIClient` provides a high-level interface for sending commands to a Bitcoin node
-/// using the JSON-RPC protocol. It abstracts away the details of constructing and
-/// sending HTTP requests, allowing you to focus on the Bitcoin-specific operations.
+/// using the JSON-RPC protocol. It supports multiple transports: HTTP for remote nodes
+/// and a direct in-process bridge for embedded daemons.
 ///
-/// - Important: This class assumes that `JSONRPCRequest`, `JSONRPCResponse`, `JSONRPCService`,
-///   and related types are already defined elsewhere in the project.
+/// Transport selection can be explicit (via ``init(transport:)``) or automatic
+/// (via ``init(url:username:password:)``), which picks the direct bridge when
+/// available and falls back to HTTP.
 public class APIClient {
-    /// The underlying service used to send JSON-RPC requests.
-    private let rpcService: JSONRPCService
+    /// The transport used to send JSON-RPC requests.
+    private let transport: any RPCTransport
 
-    /// Initializes a new API client with the specified URL.
+    /// Initializes a new API client with an explicit transport.
     ///
-    /// - Parameter url: The URL of the Bitcoin node's JSON-RPC endpoint.
-    ///   Defaults to `http://127.0.0.1:8332` if not provided.
+    /// - Parameter transport: The transport to use for all RPC calls.
+    public init(transport: any RPCTransport) {
+        self.transport = transport
+    }
+
+    /// Initializes a new API client that auto-detects the best transport.
+    ///
+    /// Uses the direct in-process bridge when `bitcoin_rpc_ready()` returns 1,
+    /// otherwise falls back to HTTP. The decision is made per-call.
+    ///
+    /// - Parameters:
+    ///   - url: The URL of the Bitcoin node's JSON-RPC endpoint.
+    ///   - username: The username for HTTP authentication.
+    ///   - password: The password for HTTP authentication.
     public init(url: URL, username: String, password: String) {
-        self.rpcService = JSONRPCService(url: url, username: username, password: password)
+        self.transport = AutoTransport(
+            http: HTTPTransport(url: url, username: username, password: password),
+            direct: DirectTransport()
+        )
     }
 
     /// Sends a command to the Bitcoin node and returns the decoded response.
@@ -38,7 +55,38 @@ public class APIClient {
     /// - Throws: An error if the request fails or if the response cannot be decoded.
     public func send<T: Codable>(_ command: Commands, params: [Any] = []) async throws -> T {
         let request = JSONRPCRequest(method: command.rawValue, params: params)
-        return try await rpcService.send(request: request)
+        let data = try await transport.send(request: request)
+        return try Self.decode(data)
+    }
+
+    /// Decode raw JSON-RPC response data into the expected result type.
+    static func decode<T: Codable>(_ data: Data) throws -> T {
+        let response = try JSONDecoder().decode(JSONRPCResponse.self, from: data)
+
+        if let error = response.error {
+            throw NSError(
+                domain: "JSONRPCError",
+                code: error.code,
+                userInfo: [NSLocalizedDescriptionKey: error.message]
+            )
+        }
+
+        switch response.result {
+        case .integer(let intValue):
+            if T.self == Int.self { return intValue as! T }
+        case .string(let stringValue):
+            if T.self == String.self { return stringValue as! T }
+        case .blockchainInfo(let blockchainInfo):
+            if T.self == BlockchainInfo.self { return blockchainInfo as! T }
+        case .blockWithTransactions(let blockWithTransactions):
+            if T.self == BlockWithTransactions.self { return blockWithTransactions as! T }
+        case .block(let block):
+            if T.self == Block.self { return block as! T }
+        case .null:
+            if T.self == Void.self { return () as! T }
+        }
+
+        throw URLError(.cannotParseResponse)
     }
 
     /// Retrieves the current block count from the Bitcoin node.
@@ -66,6 +114,14 @@ public class APIClient {
         case .jsonWithTransactions:
             return try await send(.getBlock, params: params) as BlockWithTransactions
         }
+    }
+
+    /// Requests a graceful shutdown of the Bitcoin node.
+    ///
+    /// - Returns: A string message from the server (e.g. "Bitcoin Core stopping").
+    /// - Throws: An error if the request fails.
+    public func stop() async throws -> String {
+        return try await send(.stop)
     }
 
     /// Retrieves blockchain information from the Bitcoin node.

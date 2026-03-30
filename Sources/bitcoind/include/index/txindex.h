@@ -1,1 +1,0 @@
-../../../../Submodules/bitcoin/src/index/txindex.h

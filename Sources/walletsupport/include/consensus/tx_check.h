@@ -1,1 +1,0 @@
-../../../../Submodules/bitcoin/src/consensus/tx_check.h
