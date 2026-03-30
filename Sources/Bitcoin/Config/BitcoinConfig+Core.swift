@@ -99,7 +99,9 @@ extension BitcoinConfig {
         appending("persistmempool", bool: enabled)
     }
 
-    /// Maximum number of orphan transactions to keep in memory.
+    /// - Note: Removed in Bitcoin Core. Kept as a no-op for source compatibility;
+    ///   the argument is accepted but silently ignored by the daemon.
+    @available(*, deprecated, message: "maxorphantx was removed from Bitcoin Core — remove this call.")
     public func maxOrphanTx(_ count: UInt) -> Self {
         appending("maxorphantx", count)
     }

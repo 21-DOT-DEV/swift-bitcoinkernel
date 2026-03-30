@@ -280,6 +280,43 @@ struct ConfigBuildingTests {
         #expect(args.contains("-signetchallenge=51"))
     }
 
+    @Test("assumeValid() appends -assumevalid=")
+    func assumeValidArg() {
+        let hash = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
+        let args = BitcoinConfig.mainnet().assumeValid(hash).arguments
+        #expect(args.contains("-assumevalid=\(hash)"))
+    }
+
+    @Test("assumeValid(\"0\") disables optimization")
+    func assumeValidDisabled() {
+        let args = BitcoinConfig.mainnet().assumeValid("0").arguments
+        #expect(args.contains("-assumevalid=0"))
+    }
+
+    @Test("persistMempool() appends -persistmempool=1")
+    func persistMempoolEnabled() {
+        let args = BitcoinConfig.mainnet().persistMempool().arguments
+        #expect(args.contains("-persistmempool=1"))
+    }
+
+    @Test("persistMempool(false) appends -persistmempool=0")
+    func persistMempoolDisabled() {
+        let args = BitcoinConfig.mainnet().persistMempool(false).arguments
+        #expect(args.contains("-persistmempool=0"))
+    }
+
+    @Test("peerBloomFilters() appends -peerbloomfilters=1")
+    func peerBloomFiltersEnabled() {
+        let args = BitcoinConfig.mainnet().peerBloomFilters().arguments
+        #expect(args.contains("-peerbloomfilters=1"))
+    }
+
+    @Test("peerBloomFilters(false) appends -peerbloomfilters=0")
+    func peerBloomFiltersDisabled() {
+        let args = BitcoinConfig.mainnet().peerBloomFilters(false).arguments
+        #expect(args.contains("-peerbloomfilters=0"))
+    }
+
     @Test("loadBlock() appends -loadblock=")
     func loadBlockArg() {
         let args = BitcoinConfig.mainnet().loadBlock("/path/to/blk00000.dat").arguments
@@ -371,6 +408,29 @@ struct ConfigValidationTests {
         let config = BitcoinConfig.mainnet().blocksOnly().maxMempool(300)
         let warnings = try config.validate()
         #expect(warnings.contains(.blocksOnlyWithMaxMempool))
+    }
+
+    @Test("rpcBind without server produces serverDisabledWithRPCOptions warning")
+    func serverDisabledWithRPCBind() throws {
+        let config = BitcoinConfig.mainnet().rpcBind(.localhost)
+        let warnings = try config.validate()
+        #expect(warnings.contains(.serverDisabledWithRPCOptions))
+    }
+
+    @Test("rpcAuth without server produces serverDisabledWithRPCOptions warning")
+    func serverDisabledWithRPCAuth() throws {
+        let auth = RPCAuth(username: "u", salt: "s", passwordHMAC: "h")
+        let config = BitcoinConfig.mainnet().rpcAuth(auth)
+        let warnings = try config.validate()
+        #expect(warnings.contains(.serverDisabledWithRPCOptions))
+    }
+
+    @Test("server(true) with rpcBind produces no serverDisabledWithRPCOptions warning")
+    func serverEnabledWithRPCBind() throws {
+        let auth = RPCAuth(username: "u", salt: "s", passwordHMAC: "h")
+        let config = BitcoinConfig.mainnet().server().rpcBind(.localhost).rpcAllowIP(.localhost).rpcAuth(auth)
+        let warnings = try config.validate()
+        #expect(!warnings.contains(.serverDisabledWithRPCOptions))
     }
 
     @Test("clean config produces no errors or warnings")
@@ -1075,5 +1135,122 @@ struct Phase4ConfAndCookieTests {
     func rpcWorkQueueClampMax() {
         let args = BitcoinConfig.mainnet().rpcWorkQueue(9999).arguments
         #expect(args.contains("-rpcworkqueue=1024"))
+    }
+}
+
+// MARK: - Misconfigured Values
+
+/// Tests that out-of-range values are silently clamped to their documented
+/// minimum/maximum rather than producing invalid arguments.
+@Suite("Misconfigured Values")
+struct MisconfiguredValueTests {
+
+    // MARK: dbCache
+
+    @Test("dbCache(0) clamps to minimum 4 MiB")
+    func dbCacheZero() {
+        let args = BitcoinConfig.mainnet().dbCache(0).arguments
+        #expect(args.contains("-dbcache=4"))
+    }
+
+    @Test("dbCache(3) clamps to minimum 4 MiB")
+    func dbCacheBelowMin() {
+        let args = BitcoinConfig.mainnet().dbCache(3).arguments
+        #expect(args.contains("-dbcache=4"))
+    }
+
+    @Test("dbCache(4) is accepted as-is (boundary)")
+    func dbCacheAtMin() {
+        let args = BitcoinConfig.mainnet().dbCache(4).arguments
+        #expect(args.contains("-dbcache=4"))
+    }
+
+    // MARK: maxMempool
+
+    @Test("maxMempool(0) clamps to minimum 5 MiB")
+    func maxMempoolZero() {
+        let args = BitcoinConfig.mainnet().maxMempool(0).arguments
+        #expect(args.contains("-maxmempool=5"))
+    }
+
+    @Test("maxMempool(4) clamps to minimum 5 MiB")
+    func maxMempoolBelowMin() {
+        let args = BitcoinConfig.mainnet().maxMempool(4).arguments
+        #expect(args.contains("-maxmempool=5"))
+    }
+
+    @Test("maxMempool(5) is accepted as-is (boundary)")
+    func maxMempoolAtMin() {
+        let args = BitcoinConfig.mainnet().maxMempool(5).arguments
+        #expect(args.contains("-maxmempool=5"))
+    }
+
+    // MARK: mempoolExpiry
+
+    @Test("mempoolExpiry(0) clamps to minimum 1 hour")
+    func mempoolExpiryZero() {
+        let args = BitcoinConfig.mainnet().mempoolExpiry(0).arguments
+        #expect(args.contains("-mempoolexpiry=1"))
+    }
+
+    @Test("mempoolExpiry(1) is accepted as-is (boundary)")
+    func mempoolExpiryAtMin() {
+        let args = BitcoinConfig.mainnet().mempoolExpiry(1).arguments
+        #expect(args.contains("-mempoolexpiry=1"))
+    }
+
+    // MARK: limitDescendantCount
+
+    @Test("limitDescendantCount(0) clamps to minimum 1")
+    func limitDescendantCountZero() {
+        let args = BitcoinConfig.mainnet().limitDescendantCount(0).arguments
+        #expect(args.contains("-limitdescendantcount=1"))
+    }
+
+    // MARK: FeeRate
+
+    @Test("FeeRate.satoshisPerByte(0) produces 0 (zero is valid)")
+    func feeRateZeroSatPerByte() {
+        let rate = FeeRate.satoshisPerByte(0)
+        #expect(rate.description == "0")
+    }
+
+    @Test("FeeRate.btcPerKvB(0) produces 0 (zero is valid)")
+    func feeRateZeroBtcPerKvB() {
+        let rate = FeeRate.btcPerKvB(0)
+        #expect(rate.description == "0")
+    }
+
+    // MARK: PruneMode
+
+    @Test("PruneMode.minimum rawValue is 550")
+    func pruneModeMinimumRawValue() {
+        #expect(PruneMode.minimum.rawValue == 550)
+    }
+
+    @Test("PruneMode.size(mb: 550) rawValue is 550 (boundary)")
+    func pruneModeAtMinBoundary() {
+        #expect(PruneMode.size(mb: 550).rawValue == 550)
+    }
+
+    @Test("PruneMode.disabled rawValue is 0")
+    func pruneModeDisabledRawValue() {
+        #expect(PruneMode.disabled.rawValue == 0)
+    }
+
+    // MARK: blockMaxWeight
+
+    @Test("blockMaxWeight(4_000_001) clamps to consensus limit 4,000,000")
+    func blockMaxWeightOverLimit() {
+        let args = BitcoinConfig.mainnet().blockMaxWeight(4_000_001).arguments
+        #expect(args.contains("-blockmaxweight=4000000"))
+    }
+
+    // MARK: checkLevel
+
+    @Test("checkLevel(5) clamps to maximum 4")
+    func checkLevelOverMax() {
+        let args = BitcoinConfig.mainnet().checkLevel(5).arguments
+        #expect(args.contains("-checklevel=4"))
     }
 }

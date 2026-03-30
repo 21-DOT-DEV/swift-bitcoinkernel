@@ -164,4 +164,12 @@ extension BitcoinConfig {
     public func torPassword(_ password: String) -> Self {
         appending("torpassword", password)
     }
+
+    /// Support filtering of blocks and transactions with bloom filters (BIP37).
+    ///
+    /// Enable this when serving lightweight/SPV clients that issue `filterload`,
+    /// `filteradd`, or `filterclear` messages. Disabled by default in Bitcoin Core.
+    public func peerBloomFilters(_ enabled: Bool = true) -> Self {
+        appending("peerbloomfilters", bool: enabled)
+    }
 }
