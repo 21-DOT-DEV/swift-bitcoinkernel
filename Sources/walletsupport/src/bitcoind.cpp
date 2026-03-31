@@ -34,7 +34,7 @@
 
 using node::NodeContext;
 
-// G_TRANSLATION_FUN provided by libbitcoinkernel — do not redefine
+const TranslateFn G_TRANSLATION_FUN{nullptr};
 
 #if HAVE_DECL_FORK
 

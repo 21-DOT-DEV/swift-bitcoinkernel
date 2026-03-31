@@ -65,43 +65,25 @@ subtrees:
     - '**/bench/**'
     - '**/ipc/**'
     - '**/compat/compat.h'
-  # libbitcoinkernel: kernel .cpp sources (matches kernel/CMakeLists.txt)
-  - from: 'src/kernel/{bitcoinkernel,chain,checks,chainparams,coinstats,context,cs_main,disconnected_transactions,mempool_removal_reason}.cpp'
-    to: Sources/libbitcoinkernel/src/kernel/
-    base: match
-  - from: 'src/{arith_uint256,chain,clientversion,coins,compressor,dbwrapper,deploymentinfo,deploymentstatus,flatfile,hash,logging,pow,pubkey,random,randomenv,signet,streams,sync,txdb,txgraph,txmempool,uint256,validation,validationinterface,versionbits}.cpp'
-    to: Sources/libbitcoinkernel/src/
-    base: match
-  - from: 'src/consensus/{merkle,tx_check,tx_verify}.cpp'
-    to: Sources/libbitcoinkernel/src/consensus/
-    base: match
-  - from: 'src/crypto/{aes,chacha20,chacha20poly1305,hex_base,hkdf_sha256_32,hmac_sha256,hmac_sha512,muhash,poly1305,ripemd160,sha1,sha256,sha256_sse4,sha3,sha512,siphash}.cpp'
-    to: Sources/libbitcoinkernel/src/crypto/
-    base: match
-  - from: 'src/crypto/ctaes/ctaes.c'
+  # libbitcoinkernel: kernel sources (matches kernel/CMakeLists.txt)
+  - from:
+    - 'src/kernel/{bitcoinkernel,chain,checks,chainparams,coinstats,context,cs_main,disconnected_transactions,mempool_removal_reason}.cpp'
+    - 'src/{arith_uint256,chain,clientversion,coins,compressor,dbwrapper,deploymentinfo,deploymentstatus,flatfile,hash,logging,pow,pubkey,random,randomenv,signet,streams,sync,txdb,txgraph,txmempool,uint256,validation,validationinterface,versionbits}.cpp'
+    - 'src/consensus/{merkle,tx_check,tx_verify}.cpp'
+    - 'src/crypto/{aes,chacha20,chacha20poly1305,hex_base,hkdf_sha256_32,hmac_sha256,hmac_sha512,muhash,poly1305,ripemd160,sha1,sha256,sha256_sse4,sha3,sha512,siphash}.cpp'
+    - 'src/crypto/ctaes/ctaes.c'
+    - 'src/node/{blockstorage,chainstate,utxo_snapshot}.cpp'
+    - 'src/policy/{ephemeral_policy,feerate,packages,policy,rbf,settings,truc_policy}.cpp'
+    - 'src/primitives/{block,transaction}.cpp'
+    - 'src/script/{interpreter,script,script_error,sigcache,solver}.cpp'
+    - 'src/support/{cleanse,lockedpool}.cpp'
+    - 'src/util/{chaintype,check,expected,feefrac,fs,fs_helpers,hasher,moneystr,rbf,serfloat,signalinterrupt,syserror,threadnames,time,tokenpipe}.cpp'
     to: Sources/libbitcoinkernel/
-  - from: 'src/node/{blockstorage,chainstate,utxo_snapshot}.cpp'
-    to: Sources/libbitcoinkernel/src/node/
-    base: match
-  - from: 'src/policy/{ephemeral_policy,feerate,packages,policy,rbf,settings,truc_policy}.cpp'
-    to: Sources/libbitcoinkernel/src/policy/
-    base: match
-  - from: 'src/primitives/{block,transaction}.cpp'
-    to: Sources/libbitcoinkernel/src/primitives/
-    base: match
-  - from: 'src/script/{interpreter,script,script_error,sigcache,solver}.cpp'
-    to: Sources/libbitcoinkernel/src/script/
-    base: match
-  - from: 'src/support/{cleanse,lockedpool}.cpp'
-    to: Sources/libbitcoinkernel/src/support/
-    base: match
-  - from: 'src/util/{chaintype,check,expected,feefrac,fs,fs_helpers,hasher,moneystr,rbf,serfloat,signalinterrupt,syserror,threadnames,time,tokenpipe}.cpp'
-    to: Sources/libbitcoinkernel/src/util/
-    base: match
   - from: src/ipc/exception.h
     to: Sources/bitcoind/src/ipc/
   - from: src/ipc/exception.h
     to: Sources/walletsupport/src/ipc/
+  # bitcoind: all src except kernel .cpp (kernel symbols linked from libbitcoinkernel)
   - from: src/**/*.{h,cpp,c}
     to: Sources/bitcoind/src/
     exclude:
@@ -124,11 +106,23 @@ subtrees:
     - '**/bitcoin-node.cpp'
     - '**/bitcoin-gui.cpp'
     - '**/bitcoin-qt.cpp'
-    - '**/bitcoinkernel.cpp'
     - '**/crypto/ctaes/bench.c'
     - '**/crypto/ctaes/test.c'
     - '**/compat/compat.h'
+    # kernel sources (compiled by libbitcoinkernel)
+    - '**/kernel/{bitcoinkernel,chain,checks,chainparams,coinstats,context,cs_main,disconnected_transactions,mempool_removal_reason}.cpp'
+    - '**/{arith_uint256,chain,clientversion,coins,compressor,dbwrapper,deploymentinfo,deploymentstatus,flatfile,hash,logging,pow,pubkey,random,randomenv,signet,streams,sync,txdb,txgraph,txmempool,uint256,validation,validationinterface,versionbits}.cpp'
+    - '**/consensus/{merkle,tx_check,tx_verify}.cpp'
+    - '**/crypto/{aes,chacha20,chacha20poly1305,hex_base,hkdf_sha256_32,hmac_sha256,hmac_sha512,muhash,poly1305,ripemd160,sha1,sha256,sha256_sse4,sha3,sha512,siphash}.cpp'
+    - '**/crypto/ctaes/ctaes.c'
+    - '**/node/{blockstorage,chainstate,utxo_snapshot}.cpp'
+    - '**/policy/{ephemeral_policy,feerate,packages,policy,rbf,settings,truc_policy}.cpp'
+    - '**/primitives/{block,transaction}.cpp'
+    - '**/script/{interpreter,script,script_error,sigcache,solver}.cpp'
+    - '**/support/{cleanse,lockedpool}.cpp'
+    - '**/util/{chaintype,check,expected,feefrac,fs,fs_helpers,hasher,moneystr,rbf,serfloat,signalinterrupt,syserror,threadnames,time,tokenpipe}.cpp'
     base: match
+  # walletsupport: all src except kernel .cpp (kernel symbols linked from libbitcoinkernel)
   - from: src/**/*.{h,cpp,c}
     to: Sources/walletsupport/src/
     exclude:
@@ -150,9 +144,20 @@ subtrees:
     - '**/bitcoin-node.cpp'
     - '**/bitcoin-gui.cpp'
     - '**/bitcoin-qt.cpp'
-    - '**/bitcoinkernel.cpp'
     - '**/crypto/ctaes/bench.c'
     - '**/crypto/ctaes/test.c'
     - '**/dummywallet.cpp'
     - '**/compat/compat.h'
+    # kernel sources (compiled by libbitcoinkernel)
+    - '**/kernel/{bitcoinkernel,chain,checks,chainparams,coinstats,context,cs_main,disconnected_transactions,mempool_removal_reason}.cpp'
+    - '**/{arith_uint256,chain,clientversion,coins,compressor,dbwrapper,deploymentinfo,deploymentstatus,flatfile,hash,logging,pow,pubkey,random,randomenv,signet,streams,sync,txdb,txgraph,txmempool,uint256,validation,validationinterface,versionbits}.cpp'
+    - '**/consensus/{merkle,tx_check,tx_verify}.cpp'
+    - '**/crypto/{aes,chacha20,chacha20poly1305,hex_base,hkdf_sha256_32,hmac_sha256,hmac_sha512,muhash,poly1305,ripemd160,sha1,sha256,sha256_sse4,sha3,sha512,siphash}.cpp'
+    - '**/crypto/ctaes/ctaes.c'
+    - '**/node/{blockstorage,chainstate,utxo_snapshot}.cpp'
+    - '**/policy/{ephemeral_policy,feerate,packages,policy,rbf,settings,truc_policy}.cpp'
+    - '**/primitives/{block,transaction}.cpp'
+    - '**/script/{interpreter,script,script_error,sigcache,solver}.cpp'
+    - '**/support/{cleanse,lockedpool}.cpp'
+    - '**/util/{chaintype,check,expected,feefrac,fs,fs_helpers,hasher,moneystr,rbf,serfloat,signalinterrupt,syserror,threadnames,time,tokenpipe}.cpp'
     base: match
