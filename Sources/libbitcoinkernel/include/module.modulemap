@@ -1,0 +1,4 @@
+module libbitcoinkernel [system] {
+    header "../src/kernel/bitcoinkernel.h"
+    export *
+}

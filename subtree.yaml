@@ -48,8 +48,6 @@ subtrees:
     - '**/field_5x52_asm_impl*'
     - '**/wycheproof/**'
     base: match
-  - from: 'src/kernel/bitcoinkernel.h'
-    to: Sources/libbitcoinkernel/include/
   - from: 'src/**/*.{h,cpp,c}'
     to: Sources/libbitcoinkernel/src/
     base: match
