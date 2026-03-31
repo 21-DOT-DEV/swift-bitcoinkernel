@@ -24,14 +24,14 @@ let package = Package(
         .target(
             name: "bitcoind",
             dependencies: bitcoinDependencies(),
-            exclude: ["src/crypto/ctaes/ctaes.c"],
+            exclude: ["src/crypto/ctaes/ctaes.c"] + kernelSourceExcludes(),
             publicHeadersPath: "include",
             cxxSettings: cxxSettings()
         ),
         .target(
             name: "walletsupport",
             dependencies: bitcoinDependencies(),
-            exclude: ["src/crypto/ctaes/ctaes.c"],
+            exclude: ["src/crypto/ctaes/ctaes.c"] + kernelSourceExcludes(),
             publicHeadersPath: "include",
             cxxSettings: cxxSettings(),
             linkerSettings: [
@@ -91,11 +91,16 @@ let package = Package(
         .testTarget(
             name: "BitcoinTests",
             dependencies: [
-                "Bitcoin"
+                "Bitcoin",
+                "BitcoinKernel",
             ],
             swiftSettings: [
                 .interoperabilityMode(.Cxx)
             ]
+        ),
+        .testTarget(
+            name: "BitcoinKernelTests",
+            dependencies: ["BitcoinKernel"]
         ),
     ],
     cLanguageStandard: .c89,
@@ -122,7 +127,8 @@ func bitcoinDependencies() -> [Target.Dependency] {
         .target(name: "crc32c"),
         .target(name: "leveldb"),
         .target(name: "minisketch"),
-        .target(name: "secp256k1")
+        .target(name: "secp256k1"),
+        .target(name: "libbitcoinkernel"),
     ]
 }
 
@@ -157,6 +163,110 @@ func kernelCxxSettings() -> [CXXSetting] {
         .headerSearchPath("src/univalue/include"),
         .define("BITCOINKERNEL_BUILD", to: "1"),
         .define("BOOST_MULTI_INDEX_DISABLE_SERIALIZATION"),
+    ]
+}
+
+/// Kernel .cpp sources that bitcoind/walletsupport must exclude to avoid
+/// duplicate symbols — these are compiled by libbitcoinkernel instead.
+/// Matches the brace-expansion patterns in subtree.yaml.
+func kernelSourceExcludes() -> [String] {
+    [
+        // kernel/
+        "src/kernel/chain.cpp",
+        "src/kernel/checks.cpp",
+        "src/kernel/chainparams.cpp",
+        "src/kernel/coinstats.cpp",
+        "src/kernel/context.cpp",
+        "src/kernel/cs_main.cpp",
+        "src/kernel/disconnected_transactions.cpp",
+        "src/kernel/mempool_removal_reason.cpp",
+        // src/
+        "src/arith_uint256.cpp",
+        "src/chain.cpp",
+        "src/clientversion.cpp",
+        "src/coins.cpp",
+        "src/compressor.cpp",
+        "src/dbwrapper.cpp",
+        "src/deploymentinfo.cpp",
+        "src/deploymentstatus.cpp",
+        "src/flatfile.cpp",
+        "src/hash.cpp",
+        "src/logging.cpp",
+        "src/pow.cpp",
+        "src/pubkey.cpp",
+        "src/random.cpp",
+        "src/randomenv.cpp",
+        "src/signet.cpp",
+        "src/streams.cpp",
+        "src/sync.cpp",
+        "src/txdb.cpp",
+        "src/txgraph.cpp",
+        "src/txmempool.cpp",
+        "src/uint256.cpp",
+        "src/validation.cpp",
+        "src/validationinterface.cpp",
+        "src/versionbits.cpp",
+        // consensus/
+        "src/consensus/merkle.cpp",
+        "src/consensus/tx_check.cpp",
+        "src/consensus/tx_verify.cpp",
+        // crypto/
+        "src/crypto/aes.cpp",
+        "src/crypto/chacha20.cpp",
+        "src/crypto/chacha20poly1305.cpp",
+        "src/crypto/hex_base.cpp",
+        "src/crypto/hkdf_sha256_32.cpp",
+        "src/crypto/hmac_sha256.cpp",
+        "src/crypto/hmac_sha512.cpp",
+        "src/crypto/muhash.cpp",
+        "src/crypto/poly1305.cpp",
+        "src/crypto/ripemd160.cpp",
+        "src/crypto/sha1.cpp",
+        "src/crypto/sha256.cpp",
+        "src/crypto/sha256_sse4.cpp",
+        "src/crypto/sha3.cpp",
+        "src/crypto/sha512.cpp",
+        "src/crypto/siphash.cpp",
+        // node/
+        "src/node/blockstorage.cpp",
+        "src/node/chainstate.cpp",
+        "src/node/utxo_snapshot.cpp",
+        // policy/
+        "src/policy/ephemeral_policy.cpp",
+        "src/policy/feerate.cpp",
+        "src/policy/packages.cpp",
+        "src/policy/policy.cpp",
+        "src/policy/rbf.cpp",
+        "src/policy/settings.cpp",
+        "src/policy/truc_policy.cpp",
+        // primitives/
+        "src/primitives/block.cpp",
+        "src/primitives/transaction.cpp",
+        // script/
+        "src/script/interpreter.cpp",
+        "src/script/script.cpp",
+        "src/script/script_error.cpp",
+        "src/script/sigcache.cpp",
+        "src/script/solver.cpp",
+        // support/
+        "src/support/cleanse.cpp",
+        "src/support/lockedpool.cpp",
+        // util/
+        "src/util/chaintype.cpp",
+        "src/util/check.cpp",
+        "src/util/expected.cpp",
+        "src/util/feefrac.cpp",
+        "src/util/fs.cpp",
+        "src/util/fs_helpers.cpp",
+        "src/util/hasher.cpp",
+        "src/util/moneystr.cpp",
+        "src/util/rbf.cpp",
+        "src/util/serfloat.cpp",
+        "src/util/signalinterrupt.cpp",
+        "src/util/syserror.cpp",
+        "src/util/threadnames.cpp",
+        "src/util/time.cpp",
+        "src/util/tokenpipe.cpp",
     ]
 }
 
