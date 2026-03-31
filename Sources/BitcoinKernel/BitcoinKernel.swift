@@ -1,14 +1,11 @@
 import libbitcoinkernel
 
-/// Minimal Swift wrapper around the libbitcoinkernel C API.
-public struct BitcoinKernel: Sendable {
+public enum BitcoinKernel {
+    public static func createContextOptions() -> OpaquePointer? {
+        btck_context_options_create()
+    }
 
-    /// Creates a kernel context with default options and immediately destroys it.
-    /// Returns true if the context was created successfully.
-    @discardableResult
-    public static func verify() -> Bool {
-        guard let context = btck_context_create(nil) else { return false }
-        btck_context_destroy(context)
-        return true
+    public static func destroyContextOptions(_ options: OpaquePointer) {
+        btck_context_options_destroy(options)
     }
 }

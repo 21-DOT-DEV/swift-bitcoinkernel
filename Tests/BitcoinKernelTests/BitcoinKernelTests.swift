@@ -1,11 +1,10 @@
 import Testing
 import BitcoinKernel
 
-@Suite("BitcoinKernel Tests")
-struct BitcoinKernelTests {
-
-    @Test("Kernel context creation succeeds")
-    func createContext() {
-        #expect(BitcoinKernel.verify())
+@Test func contextOptionsCreateDestroy() {
+    let options = BitcoinKernel.createContextOptions()
+    #expect(options != nil)
+    if let options {
+        BitcoinKernel.destroyContextOptions(options)
     }
 }
