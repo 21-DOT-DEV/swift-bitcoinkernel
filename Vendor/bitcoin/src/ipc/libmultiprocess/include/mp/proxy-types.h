@@ -87,7 +87,7 @@ struct StructField
 // actually construct the read destination object. For example, if a std::string
 // is being read, the ReadField call will call the custom emplace_fn with char*
 // and size_t arguments, and the emplace function can decide whether to call the
-// constructor via the operator or make_shared or emplace or just return a
+// constructor via the operator, make_shared, emplace or just return a
 // temporary string that is moved from.
 template <typename LocalType, typename EmplaceFn>
 struct ReadDestEmplace
@@ -205,11 +205,11 @@ void BuildField(TypeList<LocalTypes...>, Context& context, Output&& output, Valu
     }
 }
 
-// Adapter to let BuildField overloads methods work set & init list elements as
-// if they were fields of a struct. If BuildField is changed to use some kind of
-// accessor class instead of calling method pointers, then then maybe this could
-// go away or be simplified, because would no longer be a need to return
-// ListOutput method pointers emulating capnp struct method pointers..
+// Adapter that allows BuildField overloads to work with, set, and initialize list
+// elements as if they were fields of a struct. If BuildField is changed to use some
+// kind of accessor class instead of calling method pointers, then maybe this could
+// go away or be simplified, because there would no longer be a need to return
+// ListOutput method pointers emulating capnp struct method pointers.
 template <typename ListType>
 struct ListOutput;
 
@@ -445,9 +445,36 @@ struct ServerCall
     template <typename ServerContext, typename... Args>
     decltype(auto) invoke(ServerContext& server_context, TypeList<>, Args&&... args) const
     {
-        return ProxyServerMethodTraits<typename decltype(server_context.call_context.getParams())::Reads>::invoke(
-            server_context,
-            std::forward<Args>(args)...);
+        // If cancel_lock is set, release it while executing the method, and
+        // reacquire it afterwards. The lock is needed to prevent params and
+        // response structs from being deleted by the event loop thread if the
+        // request is canceled, so it is only needed before and after method
+        // execution. It is important to release the lock during execution
+        // because the method can take arbitrarily long to return and the event
+        // loop will need the lock itself in on_cancel if the call is canceled.
+        if (server_context.cancel_lock) server_context.cancel_lock->m_lock.unlock();
+        return TryFinally(
+            [&]() -> decltype(auto) {
+                return ProxyServerMethodTraits<
+                    typename decltype(server_context.call_context.getParams())::Reads
+                >::invoke(server_context, std::forward<Args>(args)...);
+            },
+            [&] {
+                if (server_context.cancel_lock) server_context.cancel_lock->m_lock.lock();
+                // If the IPC request was canceled, throw InterruptException
+                // because there is no point continuing and trying to fill the
+                // call_context.getResults() struct. It's also important to stop
+                // executing because the connection may have been destroyed as
+                // described in https://github.com/bitcoin/bitcoin/issues/34250
+                // and there could be invalid references to the destroyed
+                // Connection object if this continued.
+                // If the IPC method itself threw an exception, the
+                // InterruptException thrown below will take precedence over it.
+                // Since the call has been canceled that exception can't be
+                // returned to the caller, so it needs to be discarded like
+                // other result values.
+                if (server_context.request_canceled) throw InterruptException{"canceled"};
+            });
     }
 };
 
