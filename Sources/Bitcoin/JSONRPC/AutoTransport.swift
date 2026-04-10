@@ -20,10 +20,15 @@ struct AutoTransport: RPCTransport {
     let http: HTTPTransport
     let direct: DirectTransport
 
-    func send(request: JSONRPCRequest) async throws -> Data {
-        if bitcoin_rpc_ready() == 1 {
-            return try await direct.send(request: request)
+    func send(_ request: JSONRPCRequest, path: String?) async throws -> Data {
+        // Wallet RPCs (non-nil path) require HTTP — DirectTransport doesn't
+        // support /wallet/<name> scoping.
+        if path != nil {
+            return try await http.send(request, path: path)
         }
-        return try await http.send(request: request)
+        if bitcoin_rpc_ready() == 1 {
+            return try await direct.send(request, path: nil)
+        }
+        return try await http.send(request, path: nil)
     }
 }

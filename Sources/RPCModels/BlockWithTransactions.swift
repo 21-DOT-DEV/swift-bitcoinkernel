@@ -1,6 +1,6 @@
 //
 //  BlockWithTransactions.swift
-//  21-DOT-DEV/Bitcoin
+//  21-DOT-DEV/RPCModels
 //
 //  Copyright (c) 2024 Timechain Software Initiative 
 //  Distributed under the MIT software license
@@ -8,10 +8,8 @@
 //  See the accompanying file LICENSE for information
 //
 
-import Foundation
-
 /// Represents a block with full transaction details in the Bitcoin blockchain.
-public struct BlockWithTransactions: Codable, Sendable {
+public struct BlockWithTransactions: Codable, Sendable, Equatable {
     /// The block hash.
     public let hash: String
     
@@ -43,16 +41,19 @@ public struct BlockWithTransactions: Codable, Sendable {
     public let tx: [Transaction]
     
     /// The block time in UNIX timestamp.
-    public let time: Int
+    public let time: UnixTimestamp
     
     /// The median block time in UNIX timestamp.
-    public let medianTime: Int
+    public let medianTime: UnixTimestamp
     
     /// The nonce.
-    public let nonce: Int
+    public let nonce: Int64
     
     /// The bits representing the block difficulty.
     public let bits: String
+
+    /// The difficulty target in hexadecimal.
+    public let target: String?
     
     /// The difficulty of this block.
     public let difficulty: Double
@@ -70,7 +71,7 @@ public struct BlockWithTransactions: Codable, Sendable {
     public let nextBlockHash: String?
 
     enum CodingKeys: String, CodingKey {
-        case hash, confirmations, size, weight, height, version, versionHex, tx, time, nonce, bits, difficulty, nTx
+        case hash, confirmations, size, weight, height, version, versionHex, tx, time, nonce, bits, target, difficulty, nTx
         case strippedSize = "strippedsize"
         case merkleRoot = "merkleroot"
         case medianTime = "mediantime"

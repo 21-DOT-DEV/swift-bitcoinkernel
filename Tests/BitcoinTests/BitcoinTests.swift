@@ -52,8 +52,8 @@ private enum DaemonFixture {
         _ = shutdownOnce
     }
 
-    static func makeClient() -> APIClient {
-        APIClient(
+    static func makeClient() -> RPCClient {
+        RPCClient(
             url: URL(string: "http://localhost:8332")!,
             username: "111",
             password: "222"
@@ -70,7 +70,7 @@ final class BitcoinTests {
         DaemonFixture.ensureRunning()
     }
 
-    @Test("getBlock returns genesis block via HTTP")
+    @Test("getBlockVerbose returns genesis block via HTTP")
     func getGenesisBlock() async throws {
         let client = DaemonFixture.makeClient()
 
@@ -79,10 +79,10 @@ final class BitcoinTests {
 
         while retryCount < maxRetries {
             do {
-                _ = try await client.getBlock(
-                    hash: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
-                    verbosity: .jsonWithTransactions
+                let block = try await client.getBlockVerbose(
+                    hash: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
                 )
+                #expect(block.height == 0)
                 return
             } catch {
                 retryCount += 1
@@ -91,6 +91,6 @@ final class BitcoinTests {
                 }
             }
         }
-        Issue.record("getBlock failed after \(maxRetries) retries")
+        Issue.record("getBlockVerbose failed after \(maxRetries) retries")
     }
 }

@@ -12,6 +12,7 @@ let package = Package(
     products: [
         .library(name: "Bitcoin", targets: ["Bitcoin"]),
         .library(name: "BitcoinKernel", targets: ["BitcoinKernel"]),
+        .library(name: "RPCModels", targets: ["RPCModels"]),
         .library(name: "BitcoinWalletSupport", targets: ["BitcoinWalletSupport"]),
     ],
     dependencies: [
@@ -37,9 +38,10 @@ let package = Package(
                 .linkedLibrary("sqlite3")
             ]
         ),
+        .target(name: "RPCModels"),
         .target(
             name: "Bitcoin",
-            dependencies: ["bitcoind"],
+            dependencies: ["bitcoind", "RPCModels"],
             swiftSettings: [
                 .interoperabilityMode(.Cxx)
             ]
@@ -96,6 +98,11 @@ let package = Package(
             swiftSettings: [
                 .interoperabilityMode(.Cxx)
             ]
+        ),
+        .testTarget(
+            name: "RPCModelsTests",
+            dependencies: ["RPCModels"],
+            resources: [.copy("Fixtures")]
         ),
         .testTarget(
             name: "BitcoinKernelTests",

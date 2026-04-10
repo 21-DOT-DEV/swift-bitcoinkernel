@@ -22,13 +22,13 @@ final class CommandListViewModel: ObservableObject {
         self.commands = [
             Command(title: "RPC GetBestBlockHash", action: {
                 Task {
-                    let response: String = try await APIClient().command(.getBestBlockHash)
+                    let response: String = try await RPCClient().command(.getBestBlockHash)
                     print(response)
                 }
             }),
             Command(title: "RPC GetBlockchainInfo", action: {
                 Task {
-                    let response: String = try await APIClient().command(.getBlockchainInfo)
+                    let response: String = try await RPCClient().command(.getBlockchainInfo)
                     print(response)
                 }
             }),

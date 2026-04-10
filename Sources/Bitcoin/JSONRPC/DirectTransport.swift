@@ -13,11 +13,21 @@ import bitcoind
 
 /// Sends JSON-RPC requests directly to the in-process Bitcoin Core dispatch
 /// table via `bitcoin_rpc()`, bypassing HTTP entirely.
+///
+/// Conforms to ``RPCTransport`` only (not ``WalletCapableTransport``) — wallet
+/// scoping is not supported over IPC. Throws ``RPCClientError/walletPathNotSupported``
+/// if `path` is non-nil.
 public struct DirectTransport: RPCTransport {
 
     public init() {}
 
-    public func send(request: JSONRPCRequest) async throws -> Data {
+    public func send(_ request: JSONRPCRequest, path: String?) async throws -> Data {
+        if path != nil {
+            throw RPCClientError.walletPathNotSupported
+        }
+
+        try Task.checkCancellation()
+
         let paramsData = try JSONEncoder().encode(request.params)
         let paramsJSON = String(data: paramsData, encoding: .utf8) ?? "[]"
 
