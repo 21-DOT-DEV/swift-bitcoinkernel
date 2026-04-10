@@ -49,6 +49,19 @@ subtrees:
     - '**/field_5x52_asm_impl*'
     - '**/wycheproof/**'
     base: match
+  # Test fixtures: Bitcoin Core upstream test data for RPC model decode tests
+  - from: test/functional/data/rpc_getblock*.json
+    to: Tests/RPCModelsTests/Fixtures/
+    base: match
+  - from: src/test/data/blockfilter*.json
+    to: Tests/RPCModelsTests/Fixtures/
+    base: match
+  - from: test/functional/data/rpc_decodescript.json
+    to: Tests/RPCModelsTests/Fixtures/
+    base: match
+  - from: test/functional/data/rpc_psbt.json
+    to: Tests/RPCModelsTests/Fixtures/
+    base: match
   # libbitcoinkernel: all headers for include resolution
   - from: 'src/**/*.h'
     to: Sources/libbitcoinkernel/src/

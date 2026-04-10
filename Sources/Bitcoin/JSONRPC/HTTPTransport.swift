@@ -11,7 +11,10 @@
 import Foundation
 
 /// Sends JSON-RPC requests over HTTP to a Bitcoin node.
-public struct HTTPTransport: RPCTransport {
+///
+/// Conforms to ``WalletCapableTransport`` — appends `/wallet/<name>` to the
+/// base URL when `path` is non-nil.
+public struct HTTPTransport: WalletCapableTransport {
     private let url: URL
     private let username: String
     private let password: String
@@ -24,8 +27,15 @@ public struct HTTPTransport: RPCTransport {
         self.session = session
     }
 
-    public func send(request: JSONRPCRequest) async throws -> Data {
-        var urlRequest = URLRequest(url: url)
+    public func send(_ request: JSONRPCRequest, path: String?) async throws -> Data {
+        try Task.checkCancellation()
+
+        var targetURL = url
+        if let path {
+            targetURL = url.appendingPathComponent(path)
+        }
+
+        var urlRequest = URLRequest(url: targetURL)
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("text/plain", forHTTPHeaderField: "Content-Type")
 
@@ -43,7 +53,10 @@ public struct HTTPTransport: RPCTransport {
             throw URLError(.badServerResponse)
         }
 
-        if httpResponse.statusCode != 200 {
+        // Bitcoin Core returns HTTP 500 for valid JSON-RPC errors (e.g.,
+        // "Method not found", invalid params, wallet not loaded). Pass these
+        // through so RPCClient.decode() can extract the structured RPCError.
+        if httpResponse.statusCode != 200 && httpResponse.statusCode != 500 {
             throw URLError(.badServerResponse)
         }
 

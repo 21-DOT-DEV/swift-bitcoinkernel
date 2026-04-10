@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import RPCModels
 @testable import Bitcoin
 
 /// Unit tests for JSON-RPC envelope decoding.
@@ -13,40 +14,29 @@ struct EnvelopeDecodingTests {
     @Test("Integer result decodes correctly")
     func integerResult() throws {
         let json = #"{"result":123,"error":null,"id":"1"}"#
-        let response = try JSONDecoder().decode(JSONRPCResponse.self, from: Data(json.utf8))
+        let response = try JSONDecoder().decode(JSONRPCResponse<Int>.self, from: Data(json.utf8))
 
         #expect(response.error == nil)
         #expect(response.id == "1")
-        guard case .integer(let value) = response.result else {
-            Issue.record("Expected .integer result, got \(response.result)")
-            return
-        }
-        #expect(value == 123)
+        #expect(response.result == 123)
     }
 
     @Test("String result decodes correctly")
     func stringResult() throws {
         let json = #"{"result":"Bitcoin Core stopping","error":null,"id":"1"}"#
-        let response = try JSONDecoder().decode(JSONRPCResponse.self, from: Data(json.utf8))
+        let response = try JSONDecoder().decode(JSONRPCResponse<String>.self, from: Data(json.utf8))
 
         #expect(response.error == nil)
-        guard case .string(let value) = response.result else {
-            Issue.record("Expected .string result, got \(response.result)")
-            return
-        }
-        #expect(value == "Bitcoin Core stopping")
+        #expect(response.result == "Bitcoin Core stopping")
     }
 
     @Test("Null result decodes correctly")
     func nullResult() throws {
         let json = #"{"result":null,"error":null,"id":"1"}"#
-        let response = try JSONDecoder().decode(JSONRPCResponse.self, from: Data(json.utf8))
+        let response = try JSONDecoder().decode(JSONRPCResponse<String?>.self, from: Data(json.utf8))
 
         #expect(response.error == nil)
-        guard case .null = response.result else {
-            Issue.record("Expected .null result, got \(response.result)")
-            return
-        }
+        #expect(response.result == nil)
     }
 
     // MARK: - Error Envelopes
@@ -54,7 +44,7 @@ struct EnvelopeDecodingTests {
     @Test("RPC error decodes correctly")
     func rpcError() throws {
         let json = #"{"result":null,"error":{"code":-32601,"message":"Method not found"},"id":"1"}"#
-        let response = try JSONDecoder().decode(JSONRPCResponse.self, from: Data(json.utf8))
+        let response = try JSONDecoder().decode(JSONRPCResponse<Int>.self, from: Data(json.utf8))
 
         let error = try #require(response.error)
         #expect(error.code == -32601)
@@ -64,7 +54,7 @@ struct EnvelopeDecodingTests {
     @Test("Internal error decodes correctly")
     func internalError() throws {
         let json = #"{"result":null,"error":{"code":-32603,"message":"something went wrong"},"id":"1"}"#
-        let response = try JSONDecoder().decode(JSONRPCResponse.self, from: Data(json.utf8))
+        let response = try JSONDecoder().decode(JSONRPCResponse<Int>.self, from: Data(json.utf8))
 
         let error = try #require(response.error)
         #expect(error.code == -32603)
@@ -78,13 +68,10 @@ struct EnvelopeDecodingTests {
         let json = """
         {"result":{"chain":"main","blocks":0,"headers":0,"bestblockhash":"000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f","difficulty":1.0,"time":1231006505,"mediantime":1231006505,"verificationprogress":1.0,"initialblockdownload":true,"chainwork":"0000000000000000000000000000000000000000000000000000000100010001","size_on_disk":285,"pruned":true,"pruneheight":0,"automatic_pruning":true,"prune_target_size":576716800,"warnings":[]},"error":null,"id":"1"}
         """
-        let response = try JSONDecoder().decode(JSONRPCResponse.self, from: Data(json.utf8))
+        let response = try JSONDecoder().decode(JSONRPCResponse<BlockchainInfo>.self, from: Data(json.utf8))
 
         #expect(response.error == nil)
-        guard case .blockchainInfo(let info) = response.result else {
-            Issue.record("Expected .blockchainInfo result, got \(response.result)")
-            return
-        }
+        let info = try #require(response.result)
         #expect(info.chain == "main")
         #expect(info.blocks == 0)
     }
