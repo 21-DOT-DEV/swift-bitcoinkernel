@@ -11,6 +11,8 @@
 import Foundation
 import RPCModels
 
+#if Xcode || ENABLE_WALLET
+
 // MARK: - Wallet RPCs
 // https://developer.bitcoin.org/reference/rpc/#wallet-rpcs
 //
@@ -190,11 +192,9 @@ extension RPCClient {
     }
 
     /// Displays an address on an external signer (hardware wallet).
-    #if ENABLE_EXTERNAL_SIGNER
     public func walletDisplayAddress(wallet: String, address: String) async throws -> Data {
         try await callWallet("walletdisplayaddress", wallet: wallet, params: [.string(address)])
     }
-    #endif
 
     // MARK: Balance & Coins
 
@@ -627,3 +627,5 @@ extension RPCClient {
         try await send("encryptwallet", wallet: wallet, params: [.string(passphrase)])
     }
 }
+
+#endif

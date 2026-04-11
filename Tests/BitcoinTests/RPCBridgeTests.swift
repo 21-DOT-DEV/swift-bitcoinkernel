@@ -334,11 +334,17 @@ struct BugRegressionTests {
         let data = try await client.callWallet("listdescriptors", wallet: "test")
         #expect(!data.isEmpty)
     }
+}
 
-    // -- Bug: sendToAddress skips confTarget when replaceable is nil --
-    // Bitcoin Core's sendtoaddress uses positional params. If replaceable was nil
-    // but confTarget was set, confTarget landed in position 6 (replaceable's slot)
-    // instead of position 7. The fix inserts a .null placeholder.
+#if Xcode || ENABLE_WALLET
+
+// -- Bug: sendToAddress skips confTarget when replaceable is nil --
+// Bitcoin Core's sendtoaddress uses positional params. If replaceable was nil
+// but confTarget was set, confTarget landed in position 6 (replaceable's slot)
+// instead of position 7. The fix inserts a .null placeholder.
+
+@Suite("sendToAddress Param Layout")
+struct SendToAddressParamLayoutTests {
 
     @Test("sendToAddress: confTarget without replaceable inserts null placeholder")
     func sendToAddressNullPlaceholder() async throws {
@@ -527,6 +533,8 @@ struct ListSinceBlockParamLayoutTests {
         #expect(paramsArray[0] == .string(hash))
     }
 }
+
+#endif
 
 // MARK: - AutoTransport Routing
 

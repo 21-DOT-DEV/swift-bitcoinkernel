@@ -657,6 +657,8 @@ struct Phase2NetworkOptionTests {
     }
 }
 
+#if Xcode || ENABLE_WALLET
+
 // MARK: - Phase 2: Wallet Option Building
 
 @Suite("Phase 2 Wallet Options")
@@ -707,6 +709,8 @@ struct Phase2WalletOptionTests {
         #expect(args.contains("-txconfirmtarget=1"))
     }
 }
+
+#endif
 
 // MARK: - Phase 2: Relay Option Building
 
@@ -776,6 +780,7 @@ struct Phase2ValidationTests {
         #expect(warnings.contains(.connectDisablesPeerDiscovery))
     }
 
+    #if Xcode || ENABLE_WALLET
     @Test("disableWallet + wallet option produces walletOptionWithDisableWallet warning")
     func disableWalletWithWalletOption() throws {
         let config = BitcoinConfig.mainnet().disableWallet().wallet("test.dat")
@@ -790,6 +795,7 @@ struct Phase2ValidationTests {
         let warnings = try config.validate()
         #expect(!warnings.contains(.walletOptionWithDisableWallet))
     }
+    #endif
 
     @Test("maxUploadTarget + listen produces maxUploadTargetWithListen warning")
     func maxUploadTargetWithListen() throws {

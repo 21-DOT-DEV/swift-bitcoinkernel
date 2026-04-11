@@ -8,6 +8,8 @@
 //  See the accompanying file LICENSE for information
 //
 
+#if Xcode || ENABLE_WALLET
+
 // MARK: - Wallet Options
 
 extension BitcoinConfig {
@@ -108,3 +110,5 @@ extension BitcoinConfig {
         appending("discardfee", rate).setting(.walletOption)
     }
 }
+
+#endif
