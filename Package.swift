@@ -1,19 +1,18 @@
 // swift-tools-version: 6.3
-// The swift-tools-version declares the minimum version of Swift required to build this package.
-
 import PackageDescription
 
 let package = Package(
     name: "Bitcoin",
     platforms: [
         .macOS(.v11),
-        .iOS(.v14)
+        .iOS(.v14),
     ],
     products: [
         .library(name: "Bitcoin", targets: ["Bitcoin"]),
         .library(name: "BitcoinKernel", targets: ["BitcoinKernel"]),
-        .library(name: "RPCModels", targets: ["RPCModels"]),
-        .library(name: "BitcoinWalletSupport", targets: ["BitcoinWalletSupport"]),
+    ],
+    traits: [
+        .trait(name: "wallet")
     ],
     dependencies: [
         .package(url: "https://github.com/csjones/lefthook-plugin.git", exact: "1.6.15"),
@@ -23,14 +22,28 @@ let package = Package(
         .package(url: "https://github.com/21-DOT-DEV/swift-plugin-subtree.git", exact: "0.0.13"),
     ],
     targets: [
+
         .target(
-            name: "bitcoind",
-            dependencies: Target.Dependency.bitcoinDeps,
-            publicHeadersPath: "include",
-            cxxSettings: CXXSetting.bitcoinSettings
+            name: "Bitcoin",
+            dependencies: ["bitcoind", "RPCModels"],
+            swiftSettings: SwiftSetting.bitcoinSettings
         ),
         .target(
-            name: "walletsupport",
+            name: "BitcoinKernel",
+            dependencies: ["libbitcoinkernel"]
+        ),
+
+        // MARK: - Bitcoin Core
+
+        .target(
+            name: "libbitcoinkernel",
+            dependencies: Target.Dependency.kernelDeps,
+            exclude: ["src/crypto/ctaes/ctaes.c"],
+            publicHeadersPath: "include",
+            cxxSettings: CXXSetting.kernelSettings
+        ),
+        .target(
+            name: "bitcoind",
             dependencies: Target.Dependency.bitcoinDeps,
             publicHeadersPath: "include",
             cxxSettings: CXXSetting.bitcoinSettings,
@@ -38,21 +51,9 @@ let package = Package(
                 .linkedLibrary("sqlite3")
             ]
         ),
-        .target(name: "RPCModels"),
-        .target(
-            name: "Bitcoin",
-            dependencies: ["bitcoind", "RPCModels"],
-            swiftSettings: [
-                .interoperabilityMode(.Cxx)
-            ]
-        ),
-        .target(
-            name: "BitcoinWalletSupport",
-            dependencies: ["walletsupport"],
-            swiftSettings: [
-                .interoperabilityMode(.Cxx)
-            ]
-        ),
+
+        // MARK: - Vendored C/C++ Libraries
+
         .target(name: "crc32c"),
         .target(
             name: "leveldb",
@@ -67,37 +68,26 @@ let package = Package(
             name: "secp256k1",
             publicHeadersPath: "include",
             cSettings: [
-                // Basic config values that are universal and require no dependencies.
                 .define("ECMULT_GEN_PREC_BITS", to: "4"),
                 .define("ECMULT_WINDOW_SIZE", to: "15"),
-                // Enabling additional secp256k1 modules.
                 .define("ENABLE_MODULE_ELLSWIFT"),
                 .define("ENABLE_MODULE_EXTRAKEYS"),
                 .define("ENABLE_MODULE_RECOVERY"),
                 .define("ENABLE_MODULE_SCHNORRSIG"),
-                .define("ENABLE_MODULE_MUSIG")
+                .define("ENABLE_MODULE_MUSIG"),
             ]
         ),
-        .target(
-            name: "libbitcoinkernel",
-            dependencies: Target.Dependency.kernelDeps,
-            exclude: ["src/crypto/ctaes/ctaes.c"],
-            publicHeadersPath: "include",
-            cxxSettings: CXXSetting.kernelSettings
-        ),
-        .target(
-            name: "BitcoinKernel",
-            dependencies: ["libbitcoinkernel"]
-        ),
+
+        // MARK: - Swift Modules
+
+        .target(name: "RPCModels"),
+
+        // MARK: - Tests
+
         .testTarget(
             name: "BitcoinTests",
-            dependencies: [
-                "Bitcoin",
-                "BitcoinKernel",
-            ],
-            swiftSettings: [
-                .interoperabilityMode(.Cxx)
-            ]
+            dependencies: ["Bitcoin"],
+            swiftSettings: SwiftSetting.bitcoinSettings
         ),
         .testTarget(
             name: "RPCModelsTests",
@@ -116,10 +106,8 @@ let package = Package(
 // MARK: - Extensions
 
 extension Target.Dependency {
-    /// Boost header-only modules required by Bitcoin Core v30.2 CMake.
-    /// swift-boost doesn't declare inter-target deps, so we list them all explicitly.
+    /// Boost header-only modules required by Bitcoin Core CMake.
     static let boostDeps: [Self] = [
-
         "assert", "bind", "config", "container_hash", "core", "describe",
         "detail", "foreach", "function", "integer", "iterator", "move",
         "mp11", "mpl", "multi_index", "optional", "preprocessor",
@@ -129,36 +117,56 @@ extension Target.Dependency {
     ].map { .product(name: $0, package: "swift-boost") }
 
     /// Dependencies for the libbitcoinkernel target.
-    static let kernelDeps: [Self] = boostDeps + [
-        .target(name: "crc32c"),
-        .target(name: "leveldb"),
-        .target(name: "secp256k1"),
-    ]
+    static let kernelDeps: [Self] =
+        boostDeps + [
+            .target(name: "crc32c"),
+            .target(name: "leveldb"),
+            .target(name: "secp256k1"),
+        ]
 
-    /// Dependencies for the bitcoind and walletsupport targets.
-    static let bitcoinDeps: [Self] = kernelDeps + [
-        .product(name: "libevent", package: "swift-libevent"),
-        .target(name: "minisketch"),
-        .target(name: "libbitcoinkernel"),
+    /// Dependencies for the bitcoind target.
+    static let bitcoinDeps: [Self] =
+        kernelDeps + [
+            .product(name: "libevent", package: "swift-libevent"),
+            .target(name: "minisketch"),
+            .target(name: "libbitcoinkernel"),
+        ]
+}
+
+extension SwiftSetting {
+    /// Swift settings for the Bitcoin target.
+    ///
+    /// - Note: Xcode does not resolve `.when(traits:)` conditions for Swift settings,
+    ///   so Swift source files use `#if Xcode || ENABLE_WALLET` guards as a workaround.
+    ///   Xcode automatically defines `Xcode` in all Swift compilations.
+    static let bitcoinSettings: [Self] = [
+        .interoperabilityMode(.Cxx),
+        .define("ENABLE_WALLET", .when(traits: ["wallet"])),
     ]
 }
 
 extension CXXSetting {
+    /// Define shared across all Bitcoin Core C++ targets.
+    static let boostDefine: Self = .define("BOOST_MULTI_INDEX_DISABLE_SERIALIZATION")
+
     /// Shared C++ settings for all Bitcoin Core C++ targets.
     static let shared: [Self] = [
         .headerSearchPath("src"),
         .headerSearchPath("src/univalue/include"),
-        .define("BOOST_MULTI_INDEX_DISABLE_SERIALIZATION"),
+        boostDefine,
     ]
 
-    /// C++ settings for the bitcoind and walletsupport targets.
-    static let bitcoinSettings: [Self] = shared + [
-        .define("MAIN_FUNCTION", to: "int bitcoind_main(int argc, char* argv[])"),
-        .define("G_TRANSLATION_FUN", to: "G_TRANSLATION_FUN_LOCAL"),
-    ]
+    /// C++ settings for the bitcoind target.
+    static let bitcoinSettings: [Self] =
+        shared + [
+            .define("MAIN_FUNCTION", to: "int bitcoind_main(int argc, char* argv[])"),
+            .define("G_TRANSLATION_FUN", to: "G_TRANSLATION_FUN_LOCAL"),
+            .define("ENABLE_WALLET", to: "1", .when(traits: ["wallet"])),
+        ]
 
     /// C++ settings for the libbitcoinkernel target.
-    static let kernelSettings: [Self] = shared + [
-        .define("BITCOINKERNEL_BUILD", to: "1"),
-    ]
+    static let kernelSettings: [Self] =
+        shared + [
+            .define("BITCOINKERNEL_BUILD", to: "1")
+        ]
 }
