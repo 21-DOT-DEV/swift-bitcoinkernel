@@ -83,9 +83,17 @@ subtrees:
     - src/support/{cleanse,lockedpool}.cpp
     - src/util/{chaintype,check,expected,feefrac,fs,fs_helpers,hasher,moneystr,rbf,serfloat,signalinterrupt,syserror,threadnames,time,tokenpipe}.cpp
     to: Sources/libbitcoinkernel/
+  # bitcoind headers: only those NOT provided by libbitcoinkernel.
+  # All other headers are resolved via headerSearchPath("../libbitcoinkernel/src").
   - from: src/ipc/exception.h
-    to: Sources/bitcoind/src/ipc/
-  - from: src/**/*.{h,cpp,c}
+    to: Sources/bitcoind/
+  - from: src/wallet/**/*.h
+    to: Sources/bitcoind/src/wallet/
+    exclude:
+    - '**/test/**'
+    base: match
+  # bitcoind sources: all .cpp/.c except kernel sources (linked from libbitcoinkernel)
+  - from: src/**/*.{cpp,c}
     to: Sources/bitcoind/src/
     exclude:
     - '**/crc32c/**'
@@ -109,7 +117,9 @@ subtrees:
     - '**/bitcoin-qt.cpp'
     - '**/crypto/ctaes/bench.c'
     - '**/crypto/ctaes/test.c'
-    - '**/compat/compat.h'
+    # kernel sources (compiled by libbitcoinkernel)
+    # Use src/-anchored paths (not **) to avoid excluding wallet/rpc/ files
+    # that share names with kernel sources (e.g. coins.cpp, transaction.cpp).
     - src/kernel/{bitcoinkernel,chain,checks,chainparams,coinstats,context,cs_main,disconnected_transactions,mempool_removal_reason}.cpp
     - src/{arith_uint256,chain,clientversion,coins,compressor,dbwrapper,deploymentinfo,deploymentstatus,flatfile,hash,logging,pow,pubkey,random,randomenv,signet,streams,sync,txdb,txgraph,txmempool,uint256,validation,validationinterface,versionbits}.cpp
     - src/consensus/{merkle,tx_check,tx_verify}.cpp

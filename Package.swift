@@ -159,6 +159,8 @@ extension CXXSetting {
     /// C++ settings for the bitcoind target.
     static let bitcoinSettings: [Self] =
         shared + [
+            .headerSearchPath("../libbitcoinkernel/src"),
+            .headerSearchPath("../libbitcoinkernel/src/univalue/include"),
             .define("MAIN_FUNCTION", to: "int bitcoind_main(int argc, char* argv[])"),
             .define("G_TRANSLATION_FUN", to: "G_TRANSLATION_FUN_LOCAL"),
             .define("ENABLE_WALLET", to: "1", .when(traits: ["wallet"])),
