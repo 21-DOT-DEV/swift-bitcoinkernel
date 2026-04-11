@@ -190,8 +190,26 @@ extension RPCClient {
     /// Returns transaction spending prevout information (v24+).
     ///
     /// Each element is `{"txid": ..., "vout": ...}`.
-    public func getTxSpendingPrevout(outputs: [[String: RPCParam]]) async throws -> [TxSpendingPrevout] {
-        try await send("gettxspendingprevout", params: [.encodable(outputs)])
+    ///
+    /// - Parameters:
+    ///   - outputs: The prevouts to query `[{"txid": ..., "vout": ...}]`.
+    ///   - mempoolOnly: Only check the mempool, not confirmed transactions (v31+).
+    ///   - returnSpendingTx: Include the full spending transaction in the result (v31+).
+    public func getTxSpendingPrevout(
+        outputs: [[String: RPCParam]],
+        mempoolOnly: Bool? = nil,
+        returnSpendingTx: Bool? = nil
+    ) async throws -> [TxSpendingPrevout] {
+        var params: [RPCParam] = [.encodable(outputs)]
+        if let mempoolOnly {
+            params.append(.bool(mempoolOnly))
+        } else if returnSpendingTx != nil {
+            params.append(.null)
+        }
+        if let returnSpendingTx {
+            params.append(.bool(returnSpendingTx))
+        }
+        return try await send("gettxspendingprevout", params: params)
     }
 
     // MARK: Mempool RPCs

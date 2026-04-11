@@ -78,11 +78,6 @@ extension BitcoinConfig {
         appending("mintxfee", rate).setting(.walletOption)
     }
 
-    /// Fee rate to use when sending transactions (BTC/kvB). Use 0 to rely on fee estimation.
-    public func payTxFee(_ rate: FeeRate) -> Self {
-        appending("paytxfee", rate).setting(.walletOption)
-    }
-
     /// Maximum total fees to use in a single wallet transaction (BTC).
     ///
     /// Set to 0 to disable the cap.
