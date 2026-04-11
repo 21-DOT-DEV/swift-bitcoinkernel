@@ -40,6 +40,9 @@ extension BitcoinConfig {
     }
 
     /// Set database cache size in MiB (minimum 4 MiB).
+    ///
+    /// When not specified, Bitcoin Core defaults to 1024 MiB on systems with
+    /// at least 4096 MiB of RAM, and 450 MiB otherwise.
     public func dbCache(_ mb: UInt) -> Self {
         appending("dbcache", max(4, mb))
     }
@@ -66,6 +69,14 @@ extension BitcoinConfig {
         var copy = appending("coinstatsindex", bool: enabled)
         if enabled { copy = copy.setting(.coinStatsIndex) }
         return copy
+    }
+
+    /// Maintain a transaction output spender index (v31+).
+    ///
+    /// When enabled, `gettxspendingprevout` can return the block hash of
+    /// confirmed spending transactions.
+    public func txoSpenderIndex(_ enabled: Bool = true) -> Self {
+        appending("txospenderindex", bool: enabled)
     }
 
     /// Maintain compact block filters for peer and personal use.
@@ -97,13 +108,6 @@ extension BitcoinConfig {
     /// Save the mempool to disk on shutdown and load it on startup.
     public func persistMempool(_ enabled: Bool = true) -> Self {
         appending("persistmempool", bool: enabled)
-    }
-
-    /// - Note: Removed in Bitcoin Core. Kept as a no-op for source compatibility;
-    ///   the argument is accepted but silently ignored by the daemon.
-    @available(*, deprecated, message: "maxorphantx was removed from Bitcoin Core — remove this call.")
-    public func maxOrphanTx(_ count: UInt) -> Self {
-        appending("maxorphantx", count)
     }
 
     /// Set the number of script verification threads (`-par`).

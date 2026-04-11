@@ -165,6 +165,15 @@ extension BitcoinConfig {
         appending("torpassword", password)
     }
 
+    /// Broadcast own transactions only via Tor or I2P (v31+).
+    ///
+    /// Prevents the originator's IP address from being revealed to
+    /// transaction recipients and avoids linking unrelated transactions
+    /// through the same connection. Requires Tor or I2P to be reachable.
+    public func privateBroadcast(_ enabled: Bool = true) -> Self {
+        appending("privatebroadcast", bool: enabled)
+    }
+
     /// Support filtering of blocks and transactions with bloom filters (BIP37).
     ///
     /// Enable this when serving lightweight/SPV clients that issue `filterload`,
