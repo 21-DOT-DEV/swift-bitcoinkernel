@@ -20,6 +20,13 @@ extension Daemon {
     ///
     /// Non-fatal warnings are printed to stdout with an `⚠️` prefix.
     ///
+    /// ```swift
+    /// let auth = RPCAuth(username: "user", salt: "abc", passwordHMAC: "def")
+    /// let config = BitcoinConfig.regtest().rpcAuth(auth).server()
+    /// try Daemon.start(with: config)
+    /// Daemon.waitUntilStopped()
+    /// ```
+    ///
     /// - Parameter config: The validated configuration to start the daemon with.
     /// - Throws: `ConfigError` if the configuration contains a fatal conflict.
     public static func start<N: BitcoinNetwork>(with config: BitcoinConfig<N>) throws(ConfigError) {

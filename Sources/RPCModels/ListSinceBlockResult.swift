@@ -24,11 +24,17 @@ public struct ListSinceBlockResult: Codable, Sendable, Equatable {
 
 /// A transaction from `listsinceblock` or `listtransactions`.
 public struct SinceBlockTransaction: Codable, Sendable, Equatable {
+    /// The bitcoin address involved.
     public let address: String?
+    /// The transaction category (`send`, `receive`, `generate`, `immature`, or `orphan`).
     public let category: String
+    /// The amount in BTC.
     public let amount: BTCAmount
+    /// The vout index.
     public let vout: Int
+    /// The fee in BTC (negative, only for `send` category).
     public let fee: BTCAmount?
+    /// The number of confirmations for the transaction.
     public let confirmations: Int
 
     /// Only present if the transaction's only input is a coinbase one.
@@ -37,13 +43,17 @@ public struct SinceBlockTransaction: Codable, Sendable, Equatable {
     /// Whether we consider the transaction trusted and safe to spend from (only for 0-conf).
     public let trusted: Bool?
 
+    /// The block hash containing the transaction.
     public let blockhash: String?
+    /// The block height containing the transaction.
     public let blockheight: Int?
 
     /// The index of the transaction in the block.
     public let blockindex: Int?
 
+    /// The block time in seconds since epoch.
     public let blocktime: UnixTimestamp?
+    /// The transaction id.
     public let txid: String
 
     /// The witness transaction id.
@@ -64,10 +74,15 @@ public struct SinceBlockTransaction: Codable, Sendable, Equatable {
     /// If a comment-to is associated with the transaction.
     public let to: String?
 
+    /// The transaction time in seconds since epoch.
     public let time: UnixTimestamp
+    /// The time received in seconds since epoch.
     public let timereceived: UnixTimestamp
+    /// A label for the address.
     public let label: String?
+    /// Comment associated with the transaction.
     public let comment: String?
+    /// Whether the output is considered abandoned.
     public let abandoned: Bool?
 
     /// Whether this transaction signals BIP125 replaceability ("yes", "no", or "unknown").

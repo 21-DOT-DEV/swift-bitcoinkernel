@@ -13,9 +13,13 @@
 /// - Note: Targets Bitcoin Core v31.x.
 /// - Note: The `scanning` field is omitted because it is polymorphic (`false` or `{duration, progress}`).
 public struct WalletInfo: Codable, Sendable, Equatable {
+    /// The wallet name.
     public let walletname: String
+    /// The wallet version.
     public let walletversion: Int
+    /// The database format (`bdb` or `sqlite`).
     public let format: String
+    /// The total number of transactions in the wallet.
     public let txcount: Int
 
     /// How many new keys are pre-generated (external keys only).

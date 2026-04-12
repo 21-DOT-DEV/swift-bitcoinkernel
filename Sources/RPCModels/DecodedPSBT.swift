@@ -78,21 +78,29 @@ public struct PSBTInput: Codable, Sendable, Equatable {
 
 /// Witness UTXO in a PSBT input.
 public struct WitnessUtxo: Codable, Sendable, Equatable {
+    /// The value in BTC.
     public let amount: BTCAmount
+    /// The output script.
     public let scriptPubKey: ScriptPubKey
 }
 
 /// Script representation in PSBT (asm + hex + type).
 public struct PSBTScript: Codable, Sendable, Equatable {
+    /// The script in assembly representation.
     public let asm: String
+    /// The raw script bytes, hex-encoded.
     public let hex: String
+    /// The script type (e.g., `pubkeyhash`, `scripthash`).
     public let type: String?
 }
 
 /// BIP 32 key derivation path.
 public struct BIP32Deriv: Codable, Sendable, Equatable {
+    /// The public key this derivation applies to.
     public let pubkey: String?
+    /// The fingerprint of the master key.
     public let masterFingerprint: String
+    /// The derivation path (e.g., `m/84'/0'/0'/0/0`).
     public let path: String
 
     enum CodingKeys: String, CodingKey {
@@ -104,9 +112,13 @@ public struct BIP32Deriv: Codable, Sendable, Equatable {
 
 /// Per-output PSBT data.
 public struct PSBTOutput: Codable, Sendable, Equatable {
+    /// Redeem script (if present).
     public let redeemScript: PSBTScript?
+    /// Witness script (if present).
     public let witnessScript: PSBTScript?
+    /// BIP 32 derivation paths.
     public let bip32Derivs: [BIP32Deriv]?
+    /// Unknown fields.
     public let unknown: [String: String]?
 
     enum CodingKeys: String, CodingKey {

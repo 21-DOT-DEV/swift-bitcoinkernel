@@ -39,12 +39,19 @@ public struct DecodedScript: Codable, Sendable, Equatable {
 
 /// Segwit details within a decoded script.
 public struct DecodedScriptSegwit: Codable, Sendable, Equatable {
+    /// Script public key in assembly representation.
     public let asm: String
+    /// The raw script bytes, hex-encoded.
     public let hex: String
+    /// The script type.
     public let type: String
+    /// The Bitcoin address (if applicable).
     public let address: String?
+    /// Descriptor for the script.
     public let desc: String?
+    /// Required signatures (deprecated).
     public let reqSigs: Int?
+    /// Associated addresses (deprecated).
     public let addresses: [String]?
 
     /// P2SH address for this witness script.

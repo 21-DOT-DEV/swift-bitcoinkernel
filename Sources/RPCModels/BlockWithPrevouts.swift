@@ -13,25 +13,45 @@
 /// Returned by `getblock` with verbosity=3. Each vin includes the prevout
 /// scriptPubKey and value from the spending output.
 public struct BlockWithPrevouts: Codable, Sendable, Equatable {
+    /// The block hash.
     public let hash: String
+    /// The number of confirmations, or `-1` if the block is not on the main chain.
     public let confirmations: Int
+    /// The block size.
     public let size: Int
+    /// The block size excluding witness data.
     public let strippedSize: Int
+    /// The block weight as defined in BIP 141.
     public let weight: Int
+    /// The block height or index.
     public let height: Int
+    /// The block version.
     public let version: Int
+    /// The block version formatted in hexadecimal.
     public let versionHex: String
+    /// The merkle root.
     public let merkleRoot: String
+    /// The transactions with prevout information.
     public let tx: [TransactionWithPrevout]
+    /// The block time expressed in UNIX epoch time.
     public let time: UnixTimestamp
+    /// The median block time expressed in UNIX epoch time.
     public let medianTime: UnixTimestamp
+    /// The nonce.
     public let nonce: Int64
+    /// nBits: compact representation of the block difficulty target.
     public let bits: String
+    /// The difficulty target.
     public let target: String?
+    /// The difficulty.
     public let difficulty: Double
+    /// Expected number of hashes required to produce the current chain.
     public let chainWork: String
+    /// The number of transactions in the block.
     public let nTx: Int
+    /// The hash of the previous block (if available).
     public let previousBlockHash: String?
+    /// The hash of the next block (if available).
     public let nextBlockHash: String?
 
     enum CodingKeys: String, CodingKey {
@@ -48,26 +68,43 @@ public struct BlockWithPrevouts: Codable, Sendable, Equatable {
 
 /// A transaction with prevout information on each input (verbosity 3).
 public struct TransactionWithPrevout: Codable, Sendable, Equatable {
+    /// The transaction id.
     public let txid: String
+    /// The transaction hash (differs from txid for witness transactions).
     public let hash: String
+    /// The version.
     public let version: Int
+    /// The serialized transaction size.
     public let size: Int
+    /// The virtual transaction size.
     public let vsize: Int
+    /// The transaction's weight.
     public let weight: Int
+    /// The lock time.
     public let locktime: Int64
+    /// The transaction inputs with prevout data.
     public let vin: [VinWithPrevout]
+    /// The transaction outputs.
     public let vout: [Vout]
+    /// The serialized, hex-encoded transaction data.
     public let hex: String?
 }
 
 /// A transaction input with prevout data (the output being spent).
 public struct VinWithPrevout: Codable, Sendable, Equatable {
+    /// The transaction id of the output being spent.
     public let txid: String?
+    /// The output index being spent.
     public let vout: Int?
+    /// The signature script.
     public let scriptSig: ScriptSig?
+    /// The coinbase value (only if coinbase transaction).
     public let coinbase: String?
+    /// Hex-encoded witness data (if any).
     public let txinwitness: [String]?
+    /// The script sequence number.
     public let sequence: Int64
+    /// The previous output being spent.
     public let prevout: Prevout?
 }
 

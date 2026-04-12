@@ -37,6 +37,15 @@ public final class ScriptPubkey: @unchecked Sendable {
 
     /// Verifies whether a transaction input spends this script pubkey.
     ///
+    /// ```swift
+    /// let script = ScriptPubkey(outputScriptData)
+    /// let (valid, status) = script.verify(
+    ///     amount: 50_000,
+    ///     transaction: spendingTx,
+    ///     inputIndex: 0
+    /// )
+    /// ```
+    ///
     /// - Parameters:
     ///   - amount: The amount associated with this output (used when witness flag is set).
     ///   - transaction: The spending transaction.

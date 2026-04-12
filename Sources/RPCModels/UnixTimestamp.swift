@@ -15,6 +15,12 @@ import Foundation
 /// Used for Bitcoin Core `NUM_TIME` fields: `time`, `blocktime`, `mediantime`,
 /// `lastsend`, `lastrecv`, `conntime`, etc.
 ///
+/// ```swift
+/// let ts = UnixTimestamp(seconds: 1_700_000_000)
+/// print(ts.date)        // 2023-11-14 22:13:20 +0000
+/// print(ts.description) // ISO 8601 formatted string
+/// ```
+///
 /// - Note: Some Core fields use 0 as a sentinel for "not set" (e.g., genesis
 ///   `mediantime`). Check `seconds == 0` at the call site where contextually
 ///   appropriate, or use `Optional<UnixTimestamp>` for fields that can be absent.

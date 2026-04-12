@@ -178,10 +178,15 @@ public struct FeeRate: Sendable, CustomStringConvertible {
 ///
 /// Passed to `-onlynet=` to restrict Bitcoin Core to a single network type.
 public enum NetworkType: String, Sendable {
+    /// IPv4 connections.
     case ipv4
+    /// IPv6 connections.
     case ipv6
+    /// Tor onion service connections.
     case onion
+    /// I2P (Invisible Internet Project) connections.
     case i2p
+    /// CJDNS mesh network connections.
     case cjdns
 }
 
@@ -191,9 +196,13 @@ public enum NetworkType: String, Sendable {
 ///
 /// Passed to `-addresstype=` and `-changetype=`.
 public enum AddressType: String, Sendable {
+    /// Legacy P2PKH addresses (starting with `1`).
     case legacy
+    /// P2SH-wrapped segwit addresses (starting with `3`).
     case p2shSegwit = "p2sh-segwit"
+    /// Native segwit v0 addresses (starting with `bc1q`).
     case bech32
+    /// Native segwit v1+ addresses, including Taproot (starting with `bc1p`).
     case bech32m
 }
 
@@ -233,33 +242,61 @@ public struct ZMQEndpoint: Sendable, CustomStringConvertible {
 /// Pass `.all` to enable every category. Call `.debug()` multiple times to
 /// enable a selective subset.
 public enum DebugCategory: String, Sendable {
+    /// Enable all debug categories.
     case all
+    /// Address manager operations.
     case addrman
+    /// Benchmarking and timing measurements.
     case bench
+    /// Block storage and disk I/O.
     case blockstorage
+    /// BIP 152 compact block relay.
     case cmpctblock
+    /// Coin database (UTXO set) operations.
     case coindb
+    /// Fee estimation logic.
     case estimatefee
+    /// HTTP server events.
     case http
+    /// I2P network connections.
     case i2p
+    /// Inter-process communication.
     case ipc
+    /// LevelDB low-level operations.
     case leveldb
+    /// libevent library events.
     case libevent
+    /// Mempool transaction processing.
     case mempool
+    /// Mempool transaction rejections.
     case mempoolrej
+    /// P2P network messages and connections.
     case net
+    /// SOCKS5 proxy events.
     case proxy
+    /// Block pruning operations.
     case prune
+    /// Random number generation.
     case rand
+    /// Block reindexing.
     case reindex
+    /// JSON-RPC request processing.
     case rpc
+    /// UTXO set scanning (e.g., `scantxoutset`).
     case scan
+    /// Coin selection algorithm.
     case selectcoins
+    /// Tor network connections.
     case tor
+    /// Transaction package processing.
     case txpackages
+    /// Transaction reconciliation (Erlay, BIP 330).
     case txreconciliation
+    /// Block and transaction validation.
     case validation
+    /// Wallet database operations.
     case walletdb
+    /// ZeroMQ notification events.
     case zmq
 }
 
@@ -267,7 +304,10 @@ public enum DebugCategory: String, Sendable {
 
 /// The verbosity level for Bitcoin Core's structured logging (`-loglevel=`).
 public enum LogLevel: String, Sendable {
+    /// General informational messages (default).
     case info
+    /// Detailed debugging information.
     case debug
+    /// Most verbose level; logs everything.
     case trace
 }

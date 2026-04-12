@@ -15,6 +15,15 @@ import Foundation
 /// Fields in sat-denominated Core JSON use plain `Int64` instead.
 /// Negative amounts are valid and expected (e.g., `fee` in wallet transactions).
 ///
+/// ```swift
+/// let amount = BTCAmount(satoshis: 100_000_000) // 1 BTC
+/// print(amount.btc) // 1
+/// print(amount)      // "1 BTC"
+///
+/// let fee = BTCAmount(btc: Decimal(string: "0.0001")!)
+/// print(fee.satoshis) // 10000
+/// ```
+///
 /// - Note: Targets Bitcoin Core v31.x.
 public struct BTCAmount: Codable, Sendable, Hashable, Comparable, AdditiveArithmetic, CustomStringConvertible {
     /// The amount in satoshis. Source of truth. Signed — negative amounts valid.
