@@ -8,4 +8,8 @@
 //  See the accompanying file LICENSE for information
 //
 
+/// Top-level namespace for the Bitcoin module.
+///
+/// Groups the embedded ``Daemon``, ``RPCClient``, and ``BitcoinConfig``
+/// configuration types for interacting with Bitcoin Core.
 public enum Bitcoin { }

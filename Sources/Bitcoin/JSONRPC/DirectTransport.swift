@@ -21,6 +21,10 @@ public struct DirectTransport: RPCTransport {
 
     public init() {}
 
+    /// Sends a JSON-RPC request directly to the in-process `bitcoin_rpc()` C bridge.
+    ///
+    /// Wallet-scoped calls (non-nil `path`) are not supported over the direct
+    /// transport and throw ``RPCClientError/walletPathNotSupported``.
     public func send(_ request: JSONRPCRequest, path: String?) async throws -> Data {
         if path != nil {
             throw RPCClientError.walletPathNotSupported

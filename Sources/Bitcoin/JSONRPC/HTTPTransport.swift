@@ -27,6 +27,12 @@ public struct HTTPTransport: WalletCapableTransport {
         self.session = session
     }
 
+    /// Sends a JSON-RPC request over HTTP with Basic authentication.
+    ///
+    /// When `path` is non-nil (e.g., `"/wallet/mywallet"`), it is appended to
+    /// the base URL for wallet-scoped RPC calls. Returns HTTP 200 and 500
+    /// responses (Bitcoin Core uses 500 for valid JSON-RPC errors); other
+    /// status codes throw `URLError(.badServerResponse)`.
     public func send(_ request: JSONRPCRequest, path: String?) async throws -> Data {
         try Task.checkCancellation()
 

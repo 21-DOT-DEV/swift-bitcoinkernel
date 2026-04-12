@@ -23,7 +23,10 @@ public final class Context: @unchecked Sendable {
     }
 
     /// Interrupts long-running validation operations such as reindexing,
-    /// importing, or processing blocks.
+    /// block importing, or block processing.
+    ///
+    /// This method is safe to call from any thread. It signals the kernel to
+    /// stop ongoing work at the next safe checkpoint.
     ///
     /// - Returns: `true` if the interrupt was successful.
     public func interrupt() -> Bool {

@@ -58,6 +58,15 @@ public final class RPCClient: Sendable {
     /// Uses the direct in-process bridge when `bitcoin_rpc_ready()` returns 1,
     /// otherwise falls back to HTTP. The decision is made per-call.
     ///
+    /// ```swift
+    /// let client = RPCClient(
+    ///     url: URL(string: "http://127.0.0.1:18443")!,
+    ///     username: "user",
+    ///     password: "pass"
+    /// )
+    /// let info: BlockchainInfo = try await client.send("getblockchaininfo")
+    /// ```
+    ///
     /// - Parameters:
     ///   - url: The URL of the Bitcoin node's JSON-RPC endpoint.
     ///   - username: The username for HTTP authentication.
@@ -105,6 +114,10 @@ public final class RPCClient: Sendable {
     // MARK: - Send Methods
 
     /// Sends an RPC and decodes the result into `T`.
+    ///
+    /// ```swift
+    /// let count: Int = try await client.send("getblockcount")
+    /// ```
     ///
     /// - Parameters:
     ///   - method: The RPC method name (e.g., `"getblockcount"`).

@@ -11,6 +11,10 @@
 import bitcoind
 import Foundation
 
+/// Controls the lifecycle of an embedded Bitcoin Core daemon process.
+///
+/// Provides static methods to start, stop, and wait for the `bitcoind` process.
+/// The daemon runs on a dedicated thread and communicates via JSON-RPC.
 public enum Daemon {
     /// Signaled when the blocking `bitcoind_main()` call returns.
     private static let finished = DispatchSemaphore(value: 0)

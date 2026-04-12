@@ -43,9 +43,13 @@ public final class ChainstateManager: @unchecked Sendable {
 
     /// Processes a block header for validation.
     ///
+    /// A `true` return means the header passed initial checks (proof-of-work,
+    /// timestamps, structure) — not necessarily that it extends the best chain.
+    /// Inspect `state` for detailed validation results on failure.
+    ///
     /// - Parameters:
     ///   - header: The block header to process.
-    ///   - state: The validation state (populated on return).
+    ///   - state: The validation state (populated on return with the detailed result).
     /// - Returns: `true` if header processing completed successfully.
     @discardableResult
     public func processBlockHeader(_ header: BlockHeader, state: BlockValidationState) -> Bool {

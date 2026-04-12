@@ -12,10 +12,15 @@
 ///
 /// - Note: Targets Bitcoin Core v31.x.
 public struct BannedInfo: Codable, Sendable, Equatable {
+    /// The IP/Subnet of the banned node.
     public let address: String
+    /// The UNIX epoch time the ban was created.
     public let banCreated: Int64
+    /// The UNIX epoch time the ban expires.
     public let banExpires: Int64
+    /// The ban duration, in seconds.
     public let banDuration: Int64
+    /// The time remaining until the ban expires, in seconds.
     public let timeRemaining: Int64
 
     enum CodingKeys: String, CodingKey {
