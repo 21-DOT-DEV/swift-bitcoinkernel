@@ -403,6 +403,13 @@ struct ConfigValidationTests {
         #expect(!warnings.contains(.missingRPCAuth))
     }
 
+    @Test("server(true) with rpcCookieFile produces no missingRPCAuth warning")
+    func serverWithCookieFile() throws {
+        let config = BitcoinConfig.mainnet().server().rpcCookieFile("/tmp/.cookie")
+        let warnings = try config.validate()
+        #expect(!warnings.contains(.missingRPCAuth))
+    }
+
     @Test("blocksOnly + maxMempool produces warning")
     func blocksOnlyWithMaxMempool() throws {
         let config = BitcoinConfig.mainnet().blocksOnly().maxMempool(300)

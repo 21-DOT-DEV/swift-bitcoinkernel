@@ -1,0 +1,12 @@
+//
+// Debug.xcconfig
+//
+// Project-level debug build settings
+//
+
+#include "Shared.xcconfig"
+
+
+// Swift Compiler - Code Generation
+
+SWIFT_OPTIMIZATION_LEVEL = -Onone

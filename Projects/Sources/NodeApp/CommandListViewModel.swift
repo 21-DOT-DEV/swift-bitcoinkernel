@@ -9,31 +9,76 @@
 //
 
 import Bitcoin
-import SwiftUI
+import Foundation
+import Observation
 
-//{"balance":0.000000000000000,"blocks":59952,"connections":48,"proxy":"","generate":false,
-//     "genproclimit":-1,"difficulty":16.61907875185736}
+@MainActor @Observable
+final class CommandsViewModel {
+    let commands: [RPCCommand] = RPCCommand.parameterFreeCommands
+    private let client = RPCClient(
+        url: InternalRPC.url,
+        cookieFile: InternalRPC.cookieFileURL
+    )
 
-final class CommandListViewModel: ObservableObject {
-    @Published var commands: [Command] = []
+    var searchText = ""
+    var responses: [String: String] = [:]
+    var errors: [String: String] = [:]
+    private(set) var executingCommandIDs = Set<String>()
 
-    init() {
-        // Initialize your commands here
-        self.commands = [
-            Command(title: "RPC GetBestBlockHash", action: {
-                Task {
-                    let response: String = try await RPCClient().command(.getBestBlockHash)
-                    print(response)
-                }
-            }),
-            Command(title: "RPC GetBlockchainInfo", action: {
-                Task {
-                    let response: String = try await RPCClient().command(.getBlockchainInfo)
-                    print(response)
-                }
-            }),
-            Command(title: "Daemon help", action: { Daemon.start(["-help"])}),
-            Command(title: "Daemon start", action: { Task { Daemon.start(["-rpcauth=111:2dbf38080910790185b22905795c516b$8a233a0796922ff51047d663347d04d3ef3f1b415d1a40584158ea2e717a6f76", "-prune=550", "-blockfilterindex=1"]) } }),
-        ]
+    var hasActiveExecutions: Bool { !executingCommandIDs.isEmpty }
+
+    func isExecuting(_ command: RPCCommand) -> Bool {
+        executingCommandIDs.contains(command.id)
+    }
+
+    var filteredCommands: [RPCCommand] {
+        if searchText.isEmpty {
+            return commands
+        }
+        return commands.filter {
+            $0.name.localizedCaseInsensitiveContains(searchText)
+                || $0.description.localizedCaseInsensitiveContains(searchText)
+                || $0.category.rawValue.localizedCaseInsensitiveContains(searchText)
+        }
+    }
+
+    var commandsByCategory: [(category: RPCCategory, commands: [RPCCommand])] {
+        let grouped = Dictionary(grouping: filteredCommands, by: \.category)
+        return RPCCategory.allCases.compactMap { category in
+            guard let commands = grouped[category], !commands.isEmpty else { return nil }
+            return (category: category, commands: commands)
+        }
+    }
+
+    func response(for command: RPCCommand) -> String? {
+        responses[command.id]
+    }
+
+    func error(for command: RPCCommand) -> String? {
+        errors[command.id]
+    }
+
+    func execute(_ command: RPCCommand) async {
+        executingCommandIDs.insert(command.id)
+        defer { executingCommandIDs.remove(command.id) }
+        errors[command.id] = nil
+        responses[command.id] = nil
+
+        do {
+            let data = try await client.call(command.methodName)
+            responses[command.id] = prettyPrintJSON(data)
+        } catch {
+            errors[command.id] = error.localizedDescription
+        }
+    }
+
+    private func prettyPrintJSON(_ data: Data) -> String {
+        if let json = try? JSONSerialization.jsonObject(with: data),
+           let pretty = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]),
+           let string = String(data: pretty, encoding: .utf8)
+        {
+            return string
+        }
+        return String(data: data, encoding: .utf8) ?? "Unable to decode response"
     }
 }

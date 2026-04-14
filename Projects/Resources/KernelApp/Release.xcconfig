@@ -1,0 +1,7 @@
+//
+// Release.xcconfig
+//
+// KernelApp - Release configuration
+//
+
+#include "Shared.xcconfig"

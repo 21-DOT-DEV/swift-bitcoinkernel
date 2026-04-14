@@ -49,8 +49,10 @@ public enum ConfigWarning: Sendable, CustomStringConvertible {
     /// irrelevant in blocks-only mode.
     case blocksOnlyWithMaxMempool
 
-    /// `server=1` is set but no `rpcauth` credentials are provided — no RPC
-    /// client will be able to authenticate.
+    /// `server=1` is set but neither `rpcauth` credentials nor an explicit
+    /// `rpccookiefile` path are provided. Bitcoin Core will still generate a
+    /// default cookie, but the warning helps catch configs where authentication
+    /// was unintentionally omitted.
     case missingRPCAuth
 
     /// `connect=<host>` is set — peer discovery via `-addnode`, `-seednode`,
@@ -74,7 +76,7 @@ public enum ConfigWarning: Sendable, CustomStringConvertible {
         case .blocksOnlyWithMaxMempool:
             return "blocksonly=1 is set with maxmempool — mempool settings are ignored in blocks-only mode."
         case .missingRPCAuth:
-            return "server=1 is set but no rpcauth credentials were provided — no client can connect."
+            return "server=1 is set but no rpcauth or rpccookiefile was provided — clients will need the default cookie to connect."
         case .connectDisablesPeerDiscovery:
             return "connect= is set — addnode, seednode, and dnsseed have no effect in fixed-peer mode."
         case .walletOptionWithDisableWallet:
@@ -113,13 +115,13 @@ extension BitcoinConfig {
         if flags.contains(.rpcBind) && !flags.contains(.rpcAllowIP) {
             warnings.append(.rpcBindWithoutAllowIP)
         }
-        if !flags.contains(.server) && (flags.contains(.rpcBind) || flags.contains(.rpcAuth) || flags.contains(.rpcAllowIP)) {
+        if !flags.contains(.server) && (flags.contains(.rpcBind) || flags.contains(.rpcAuth) || flags.contains(.rpcAllowIP) || flags.contains(.rpcCookieFile)) {
             warnings.append(.serverDisabledWithRPCOptions)
         }
         if flags.contains(.blocksOnly) && flags.contains(.maxMempool) {
             warnings.append(.blocksOnlyWithMaxMempool)
         }
-        if flags.contains(.server) && !flags.contains(.rpcAuth) {
+        if flags.contains(.server) && !flags.contains(.rpcAuth) && !flags.contains(.rpcCookieFile) {
             warnings.append(.missingRPCAuth)
         }
         if flags.contains(.connect) {

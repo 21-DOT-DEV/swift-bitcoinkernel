@@ -278,25 +278,33 @@ void StartRPC()
 
 void InterruptRPC()
 {
-    static std::once_flag g_rpc_interrupt_flag;
-    // This function could be called twice if the GUI has been started with -server=1.
-    std::call_once(g_rpc_interrupt_flag, []() {
-        LogDebug(BCLog::RPC, "Interrupting RPC\n");
-        // Interrupt e.g. running longpolls
-        g_rpc_running = false;
-    });
+    // Guard: this function could be called twice if the GUI has been started with -server=1.
+    if (!g_rpc_running) return;
+    LogDebug(BCLog::RPC, "Interrupting RPC\n");
+    // Interrupt e.g. running longpolls
+    g_rpc_running = false;
 }
+
+static bool g_rpc_stopped{false};
 
 void StopRPC()
 {
-    static std::once_flag g_rpc_stop_flag;
-    // This function could be called twice if the GUI has been started with -server=1.
+    // Guard: this function could be called twice if the GUI has been started with -server=1.
     assert(!g_rpc_running);
-    std::call_once(g_rpc_stop_flag, [&]() {
-        LogDebug(BCLog::RPC, "Stopping RPC\n");
-        DeleteAuthCookie();
-        LogDebug(BCLog::RPC, "RPC stopped.\n");
-    });
+    if (g_rpc_stopped) return;
+    g_rpc_stopped = true;
+    LogDebug(BCLog::RPC, "Stopping RPC\n");
+    DeleteAuthCookie();
+    LogDebug(BCLog::RPC, "RPC stopped.\n");
+}
+
+void ResetRPC()
+{
+    LOCK(g_rpc_warmup_mutex);
+    fRPCInWarmup = true;
+    rpcWarmupStatus = "RPC server started";
+    g_rpc_running = false;
+    g_rpc_stopped = false;
 }
 
 bool IsRPCRunning()

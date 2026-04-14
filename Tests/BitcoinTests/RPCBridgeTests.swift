@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-import os
+import Synchronization
 import RPCModels
 @testable import Bitcoin
 
@@ -22,7 +22,7 @@ struct MockTransport: RPCTransport {
 
 /// A mock transport that records what was sent and returns canned data.
 final class SpyTransport: RPCTransport, Sendable {
-    private let _requests = OSAllocatedUnfairLock(initialState: [JSONRPCRequest]())
+    private let _requests = Mutex([JSONRPCRequest]())
     var requests: [JSONRPCRequest] { _requests.withLock { $0 } }
     let responseData: Data
 
@@ -39,7 +39,7 @@ final class SpyTransport: RPCTransport, Sendable {
 /// A wallet-capable spy transport that records requests AND paths.
 final class WalletSpyTransport: WalletCapableTransport, Sendable {
     struct RecordedCall: Sendable { let request: JSONRPCRequest; let path: String? }
-    private let _calls = OSAllocatedUnfairLock(initialState: [RecordedCall]())
+    private let _calls = Mutex([RecordedCall]())
     var calls: [RecordedCall] { _calls.withLock { $0 } }
     let responseData: Data
 
@@ -222,7 +222,7 @@ struct ErrorPathTests {
                 return Data()
             }
         }
-        let client = RPCClient(transport: PathCheckTransport())
+        _ = RPCClient(transport: PathCheckTransport())
         do {
             // Use call() which passes path: nil by default — we need to test path != nil.
             // Call the transport directly to test the path check.
@@ -541,7 +541,7 @@ struct ListSinceBlockParamLayoutTests {
 /// A recording transport that tracks whether it was called and with what path.
 private final class RecordingTransport: RPCTransport, Sendable {
     private struct State { var callCount = 0; var lastPath: String?? }
-    private let _state = OSAllocatedUnfairLock(initialState: State())
+    private let _state = Mutex(State())
     var callCount: Int { _state.withLock { $0.callCount } }
     var lastPath: String?? { _state.withLock { $0.lastPath } }
     let responseData: Data
@@ -635,7 +635,349 @@ struct AutoTransportRoutingTests {
     }
 }
 
-// MARK: - 5. Shared Decode Path (Unit Tests)
+// MARK: - 5. send<Data>() vs call() Regression (Critical Fix)
+
+/// Regression tests for the critical bug where `send<Data>()` was used to
+/// fetch raw RPC responses. `JSONDecoder` decodes `Data` as base64, so any
+/// non-base64 JSON result (objects, integers, strings) throws
+/// `decodingFailed`. The fix is to use `call()` which returns raw bytes.
+@Suite("send<Data> vs call() Regression")
+struct SendDataVsCallRegressionTests {
+
+    // -- Proof the bug existed: send<Data>() fails on typical RPC payloads --
+
+    @Test("send<Data>() throws decodingFailed for JSON object result")
+    func sendDataFailsOnObject() async throws {
+        let json = #"{"result":{"chain":"main","blocks":100},"error":null,"id":"1"}"#
+        let client = RPCClient(transport: MockTransport(json: json))
+        do {
+            let _: Data = try await client.send("getblockchaininfo")
+            Issue.record("Expected decodingFailed — Data decodes as base64, not JSON objects")
+        } catch let error as RPCClientError {
+            #expect(error.method == "getblockchaininfo")
+            guard case .decodingFailed = error else {
+                Issue.record("Expected .decodingFailed, got \(error)")
+                return
+            }
+        }
+    }
+
+    @Test("send<Data>() throws decodingFailed for integer result")
+    func sendDataFailsOnInteger() async throws {
+        let json = #"{"result":42,"error":null,"id":"1"}"#
+        let client = RPCClient(transport: MockTransport(json: json))
+        do {
+            let _: Data = try await client.send("getblockcount")
+            Issue.record("Expected decodingFailed — Data decodes as base64, not integers")
+        } catch let error as RPCClientError {
+            #expect(error.method == "getblockcount")
+            guard case .decodingFailed = error else {
+                Issue.record("Expected .decodingFailed, got \(error)")
+                return
+            }
+        }
+    }
+
+    @Test("send<Data>() silently corrupts hex string result (base64 decode)")
+    func sendDataCorruptsHexString() async throws {
+        // Hex chars are valid base64 alphabet, so JSONDecoder decodes without
+        // error — but the resulting bytes are NOT the hex string. This is a
+        // subtle data corruption variant of the bug.
+        let hexHash = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
+        let json = #"{"result":"\#(hexHash)","error":null,"id":"1"}"#
+        let client = RPCClient(transport: MockTransport(json: json))
+        let data: Data = try await client.send("getbestblockhash")
+        // The decoded Data is base64-interpreted garbage, NOT the original string
+        let roundTripped = String(data: data, encoding: .utf8)
+        #expect(roundTripped != hexHash, "base64-decoded Data should NOT match the original hex string")
+    }
+
+    // -- Proof the fix works: call() returns parseable JSON for all result types --
+
+    @Test("call() returns parseable JSON for object result")
+    func callSucceedsOnObject() async throws {
+        let json = #"{"result":{"chain":"main","blocks":100},"error":null,"id":"1"}"#
+        let client = RPCClient(transport: MockTransport(json: json))
+        let data = try await client.call("getblockchaininfo")
+
+        // Verify it's valid JSON
+        let parsed = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let result = try #require(parsed?["result"] as? [String: Any])
+        #expect(result["chain"] as? String == "main")
+        #expect(result["blocks"] as? Int == 100)
+    }
+
+    @Test("call() returns parseable JSON for integer result")
+    func callSucceedsOnInteger() async throws {
+        let json = #"{"result":42,"error":null,"id":"1"}"#
+        let client = RPCClient(transport: MockTransport(json: json))
+        let data = try await client.call("getblockcount")
+
+        let parsed = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        #expect(parsed?["result"] as? Int == 42)
+    }
+
+    @Test("call() returns parseable JSON for string result")
+    func callSucceedsOnString() async throws {
+        let json = #"{"result":"abc123def","error":null,"id":"1"}"#
+        let client = RPCClient(transport: MockTransport(json: json))
+        let data = try await client.call("getbestblockhash")
+
+        let parsed = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        #expect(parsed?["result"] as? String == "abc123def")
+    }
+
+    @Test("call() returns parseable JSON for array result")
+    func callSucceedsOnArray() async throws {
+        let json = #"{"result":["addr1","addr2"],"error":null,"id":"1"}"#
+        let client = RPCClient(transport: MockTransport(json: json))
+        let data = try await client.call("getaddednodeinfo")
+
+        let parsed = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let result = try #require(parsed?["result"] as? [String])
+        #expect(result.count == 2)
+    }
+
+    @Test("call() returns parseable JSON for boolean result")
+    func callSucceedsOnBoolean() async throws {
+        let json = #"{"result":true,"error":null,"id":"1"}"#
+        let client = RPCClient(transport: MockTransport(json: json))
+        let data = try await client.call("verifychain")
+
+        let parsed = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        #expect(parsed?["result"] as? Bool == true)
+    }
+
+    @Test("call() pretty-printable JSON matches NodeApp display pattern")
+    func callPrettyPrintable() async throws {
+        let json = #"{"result":{"blocks":100,"chain":"main"},"error":null,"id":"1"}"#
+        let client = RPCClient(transport: MockTransport(json: json))
+        let data = try await client.call("getblockchaininfo")
+
+        // This is the exact pattern CommandsViewModel.prettyPrintJSON uses
+        let jsonObj = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let pretty = try JSONSerialization.data(withJSONObject: jsonObj, options: [.prettyPrinted, .sortedKeys])
+        let string = try #require(String(data: pretty, encoding: .utf8))
+        #expect(string.contains("\"blocks\""))
+        #expect(string.contains("\"chain\""))
+    }
+}
+
+// MARK: - 6. Cooperative Thread Pool Safety (Regression)
+
+/// A transport that simulates a blocking C call by sleeping on a GCD thread,
+/// mirroring DirectTransport's dispatch pattern.
+private struct SlowMockTransport: RPCTransport {
+    let delay: Duration
+    let json: String
+
+    init(delay: Duration = .seconds(1), json: String = #"{"result":true,"error":null,"id":"1"}"#) {
+        self.delay = delay
+        self.json = json
+    }
+
+    func send(_ request: JSONRPCRequest, path: String?) async throws -> Data {
+        // Mirror DirectTransport: dispatch blocking work to GCD, bridge back.
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                Thread.sleep(forTimeInterval: self.delay.timeInterval)
+                continuation.resume(returning: Data(self.json.utf8))
+            }
+        }
+    }
+}
+
+private extension Duration {
+    var timeInterval: TimeInterval {
+        let (seconds, attoseconds) = components
+        return Double(seconds) + Double(attoseconds) / 1e18
+    }
+}
+
+@Suite("Cooperative Pool Safety")
+struct CooperativePoolSafetyTests {
+
+    @Test("Blocking transport does not starve cooperative pool")
+    func blockingDoesNotStarve() async throws {
+        // Launch a "slow RPC" that blocks for 2 seconds (simulating cs_main wait)
+        let slowClient = RPCClient(transport: SlowMockTransport(delay: .seconds(2)))
+
+        // Concurrently, run a fast task on the cooperative pool
+        let start = ContinuousClock.now
+
+        async let slowResult: Bool = slowClient.send("getchaintips")
+        async let fastResult: Bool = {
+            // This should complete almost instantly if the cooperative pool is free
+            let fastClient = RPCClient(transport: MockTransport(json: #"{"result":true,"error":null,"id":"1"}"#))
+            return try await fastClient.send("getblockcount")
+        }()
+
+        let fast = try await fastResult
+        let fastElapsed = ContinuousClock.now - start
+
+        // The fast task should complete in well under 1 second
+        // (if the pool were blocked, it would wait ~2 seconds)
+        #expect(fast == true)
+        #expect(fastElapsed < .seconds(1), "Fast task took \(fastElapsed) — cooperative pool may be blocked")
+
+        // Clean up: await the slow task
+        let slow = try await slowResult
+        #expect(slow == true)
+    }
+
+    @Test("Multiple concurrent blocking transports don't exhaust pool")
+    func multipleConcurrentBlocking() async throws {
+        let start = ContinuousClock.now
+
+        // Launch several slow RPCs simultaneously
+        try await withThrowingTaskGroup(of: Bool.self) { group in
+            for _ in 0..<4 {
+                group.addTask {
+                    let client = RPCClient(transport: SlowMockTransport(delay: .seconds(1)))
+                    return try await client.send("getchaintips")
+                }
+            }
+            // Also add a fast task
+            group.addTask {
+                let client = RPCClient(transport: MockTransport(json: #"{"result":true,"error":null,"id":"1"}"#))
+                return try await client.send("getblockcount")
+            }
+
+            for try await result in group {
+                #expect(result == true)
+            }
+        }
+
+        let elapsed = ContinuousClock.now - start
+        // All 4 slow tasks run in parallel on GCD (not serial on cooperative pool)
+        // so total should be ~1s, not ~4s
+        #expect(elapsed < .seconds(3), "Tasks appear serialized (\(elapsed)) — pool may be exhausted")
+    }
+}
+
+// MARK: - 7. Direct Bridge Timeout (Regression)
+
+/// Mirrors DirectTransport's exact timeout + OnceFlag pattern but uses
+/// Thread.sleep instead of bitcoin_rpc() for deterministic testing.
+private struct TimingOutTransport: RPCTransport {
+    let callDuration: Duration
+    let timeout: TimeInterval
+    let json: String
+
+    init(
+        callDuration: Duration,
+        timeout: TimeInterval,
+        json: String = #"{"result":true,"error":null,"id":"1"}"#
+    ) {
+        self.callDuration = callDuration
+        self.timeout = timeout
+        self.json = json
+    }
+
+    func send(_ request: JSONRPCRequest, path: String?) async throws -> Data {
+        let deadline = timeout
+        let sleep = callDuration.timeInterval
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let resumed = makeOnceFlag()
+
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + deadline) {
+                let alreadyResumed = resumed.withLock { flag -> Bool in
+                    if flag { return true }
+                    flag = true
+                    return false
+                }
+                if !alreadyResumed {
+                    continuation.resume(throwing: URLError(.timedOut))
+                }
+            }
+
+            DispatchQueue.global(qos: .userInitiated).async {
+                Thread.sleep(forTimeInterval: sleep)
+                let alreadyResumed = resumed.withLock { flag -> Bool in
+                    if flag { return true }
+                    flag = true
+                    return false
+                }
+                if !alreadyResumed {
+                    continuation.resume(returning: Data(self.json.utf8))
+                }
+            }
+        }
+    }
+}
+
+/// Mirrors DirectTransport's exactly-once guard using Mutex.
+private func makeOnceFlag() -> Mutex<Bool> {
+    Mutex(false)
+}
+
+@Suite("Direct Bridge Timeout")
+struct DirectBridgeTimeoutTests {
+
+    @Test("Timeout fires when RPC exceeds deadline")
+    func timeoutFires() async throws {
+        // RPC takes 5s, timeout is 1s → should get URLError(.timedOut)
+        let client = RPCClient(transport: TimingOutTransport(
+            callDuration: .seconds(5),
+            timeout: 1
+        ))
+
+        let start = ContinuousClock.now
+        do {
+            let _: Bool = try await client.send("getchaintips")
+            Issue.record("Expected timeout error")
+        } catch let error as URLError {
+            #expect(error.code == .timedOut)
+        }
+
+        let elapsed = ContinuousClock.now - start
+        // Should complete in ~1s (the timeout), not ~5s (the call duration)
+        #expect(elapsed < .seconds(2), "Took \(elapsed) — timeout didn't fire promptly")
+    }
+
+    @Test("Fast RPC completes before timeout")
+    func fastRPCSucceeds() async throws {
+        // RPC takes 0.1s, timeout is 5s → should succeed
+        let client = RPCClient(transport: TimingOutTransport(
+            callDuration: .milliseconds(100),
+            timeout: 5,
+            json: #"{"result":42,"error":null,"id":"1"}"#
+        ))
+
+        let result: Int = try await client.send("getblockcount")
+        #expect(result == 42)
+    }
+
+    @Test("Cooperative pool remains free during timeout wait")
+    func poolFreeDuringTimeout() async throws {
+        let start = ContinuousClock.now
+
+        // Launch a slow RPC that will timeout after 1s
+        async let timedOut: Void = {
+            let client = RPCClient(transport: TimingOutTransport(
+                callDuration: .seconds(10),
+                timeout: 1
+            ))
+            _ = try? await client.send("getchaintips") as Bool
+        }()
+
+        // Fast task should complete instantly
+        async let fast: Bool = {
+            let client = RPCClient(transport: MockTransport(json: #"{"result":true,"error":null,"id":"1"}"#))
+            return try await client.send("getblockcount")
+        }()
+
+        let fastResult = try await fast
+        let fastElapsed = ContinuousClock.now - start
+        #expect(fastResult == true)
+        #expect(fastElapsed < .seconds(1), "Fast task delayed by timeout wait")
+
+        await timedOut
+    }
+}
+
+// MARK: - 8. Shared Decode Path (Unit Tests)
 
 @Suite("Shared Decode Path")
 struct SharedDecodePathTests {
@@ -675,5 +1017,240 @@ struct SharedDecodePathTests {
         #expect(h == d)
         #expect(h.code == -1)
         #expect(h.message == "bad")
+    }
+}
+
+// MARK: - 9. Cookie Parsing (Unit Tests)
+
+@Suite("Cookie Parsing")
+struct CookieParsingTests {
+
+    @Test("Parses valid cookie: __cookie__:hex")
+    func validCookie() throws {
+        let (user, pass) = try Daemon.parseCookie("__cookie__:abc123def456")
+        #expect(user == "__cookie__")
+        #expect(pass == "abc123def456")
+    }
+
+    @Test("Strips trailing newline")
+    func trailingNewline() throws {
+        let (user, pass) = try Daemon.parseCookie("__cookie__:abc123\n")
+        #expect(user == "__cookie__")
+        #expect(pass == "abc123")
+    }
+
+    @Test("Strips trailing carriage return + newline")
+    func trailingCRLF() throws {
+        let (user, pass) = try Daemon.parseCookie("__cookie__:abc123\r\n")
+        #expect(user == "__cookie__")
+        #expect(pass == "abc123")
+    }
+
+    @Test("Preserves colons in password (maxSplits: 1)")
+    func colonInPassword() throws {
+        let (user, pass) = try Daemon.parseCookie("user:pass:with:colons")
+        #expect(user == "user")
+        #expect(pass == "pass:with:colons")
+    }
+
+    @Test("Empty string throws")
+    func emptyString() {
+        #expect(throws: URLError.self) {
+            _ = try Daemon.parseCookie("")
+        }
+    }
+
+    @Test("Whitespace-only string throws")
+    func whitespaceOnly() {
+        #expect(throws: URLError.self) {
+            _ = try Daemon.parseCookie("  \n  ")
+        }
+    }
+
+    @Test("No colon throws")
+    func noColon() {
+        #expect(throws: URLError.self) {
+            _ = try Daemon.parseCookie("nocredentials")
+        }
+    }
+
+    @Test("Colon only (empty username and password) throws")
+    func colonOnly() {
+        #expect(throws: URLError.self) {
+            _ = try Daemon.parseCookie(":")
+        }
+    }
+
+    @Test("Empty password throws")
+    func emptyPassword() {
+        #expect(throws: URLError.self) {
+            _ = try Daemon.parseCookie("user:")
+        }
+    }
+
+    @Test("Empty username throws")
+    func emptyUsername() {
+        #expect(throws: URLError.self) {
+            _ = try Daemon.parseCookie(":pass")
+        }
+    }
+}
+
+// MARK: - 10. CookieTransport (Unit Tests)
+
+@Suite("CookieTransport")
+struct CookieTransportTests {
+
+    private func tempCookieFile(contents: String? = nil) throws -> URL {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("test-cookie-\(UUID().uuidString)")
+        if let contents {
+            try contents.write(to: url, atomically: true, encoding: .utf8)
+        }
+        return url
+    }
+
+    @Test("Throws when cookie file does not exist")
+    func fileNotFound() async {
+        let transport = CookieTransport(
+            url: URL(string: "http://127.0.0.1:18443")!,
+            cookieFile: URL(fileURLWithPath: "/nonexistent/.cookie")
+        )
+        let request = JSONRPCRequest(method: "getblockcount")
+        do {
+            _ = try await transport.send(request, path: nil)
+            Issue.record("Expected file-read error")
+        } catch is URLError {
+            // Could be userAuthenticationRequired — but file read should
+            // throw CocoaError.fileReadNoSuchFile before parseCookie runs.
+            Issue.record("Got URLError — expected CocoaError for missing file")
+        } catch {
+            // CocoaError.fileReadNoSuchFile or similar — expected
+            #expect(true)
+        }
+    }
+
+    @Test("Throws userAuthenticationRequired for malformed cookie")
+    func malformedCookie() async throws {
+        let file = try tempCookieFile(contents: "nocredentials")
+        defer { try? FileManager.default.removeItem(at: file) }
+
+        let transport = CookieTransport(
+            url: URL(string: "http://127.0.0.1:18443")!,
+            cookieFile: file
+        )
+        let request = JSONRPCRequest(method: "getblockcount")
+        do {
+            _ = try await transport.send(request, path: nil)
+            Issue.record("Expected userAuthenticationRequired")
+        } catch let error as URLError {
+            #expect(error.code == .userAuthenticationRequired)
+        }
+    }
+
+    @Test("Valid cookie is parsed and delegates to HTTP (connection refused)")
+    func validCookieDelegatesToHTTP() async throws {
+        let file = try tempCookieFile(contents: "__cookie__:abc123hex\n")
+        defer { try? FileManager.default.removeItem(at: file) }
+
+        let transport = CookieTransport(
+            url: URL(string: "http://127.0.0.1:19999")!,  // unused port
+            cookieFile: file
+        )
+        let request = JSONRPCRequest(method: "getblockcount")
+        do {
+            _ = try await transport.send(request, path: nil)
+            Issue.record("Expected connection error")
+        } catch let error as URLError {
+            // Connection refused — NOT userAuthenticationRequired.
+            // This proves the cookie was parsed and HTTP was attempted.
+            #expect(error.code != .userAuthenticationRequired,
+                    "Cookie should have been parsed successfully")
+        }
+    }
+}
+
+// MARK: - 11. Poll Backoff (Unit Tests)
+
+@Suite("Poll Backoff")
+struct PollBackoffTests {
+
+    @Test("Succeeds immediately on first attempt")
+    func succeedsImmediately() async throws {
+        let attempts = Mutex(0)
+        try await Daemon.poll(timeout: .seconds(5)) {
+            attempts.withLock { $0 += 1 }
+        }
+        #expect(attempts.withLock { $0 } == 1)
+    }
+
+    @Test("Succeeds after multiple retries")
+    func succeedsAfterRetries() async throws {
+        let attempts = Mutex(0)
+        try await Daemon.poll(timeout: .seconds(5)) {
+            let current = attempts.withLock { $0 += 1; return $0 }
+            if current < 3 {
+                throw URLError(.cannotConnectToHost)
+            }
+        }
+        #expect(attempts.withLock { $0 } == 3)
+    }
+
+    @Test("Times out and throws last error")
+    func timesOut() async throws {
+        let start = ContinuousClock.now
+        do {
+            try await Daemon.poll(timeout: .milliseconds(500)) {
+                throw URLError(.cannotConnectToHost)
+            }
+            Issue.record("Expected timeout")
+        } catch let error as URLError {
+            #expect(error.code == .cannotConnectToHost)
+        }
+        let elapsed = ContinuousClock.now - start
+        #expect(elapsed >= .milliseconds(400), "Timed out too early: \(elapsed)")
+        #expect(elapsed < .seconds(2), "Timed out too late: \(elapsed)")
+    }
+
+    @Test("Respects task cancellation")
+    func respectsCancellation() async {
+        let task = Task {
+            try await Daemon.poll(timeout: .seconds(30)) {
+                throw URLError(.cannotConnectToHost)
+            }
+        }
+
+        // Let it start polling
+        try? await Task.sleep(for: .milliseconds(100))
+        task.cancel()
+
+        do {
+            try await task.value
+            Issue.record("Expected CancellationError")
+        } catch is CancellationError {
+            // Expected
+        } catch {
+            Issue.record("Expected CancellationError, got \(type(of: error)): \(error)")
+        }
+    }
+
+    @Test("Uses exponential backoff (not fixed delay)")
+    func exponentialBackoff() async throws {
+        let timestamps = Mutex([ContinuousClock.Instant]())
+        let attempts = Mutex(0)
+
+        try await Daemon.poll(timeout: .seconds(5)) {
+            timestamps.withLock { $0.append(.now) }
+            let current = attempts.withLock { $0 += 1; return $0 }
+            if current < 4 { throw URLError(.cannotConnectToHost) }
+        }
+
+        #expect(attempts.withLock { $0 } == 4)
+        // Verify delays increase: gap[1] > gap[0]
+        let ts = timestamps.withLock { $0 }
+        guard ts.count >= 3 else { return }
+        let gap0 = ts[1] - ts[0]
+        let gap1 = ts[2] - ts[1]
+        #expect(gap1 > gap0, "Expected exponential backoff: gap1 (\(gap1)) should be > gap0 (\(gap0))")
     }
 }

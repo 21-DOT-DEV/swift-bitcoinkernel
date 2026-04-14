@@ -413,6 +413,14 @@ void Shutdown(NodeContext& node)
 
     RemovePidFile(*node.args);
 
+    // Reset global state so that bitcoind_main() can be called again within
+    // the same process (e.g. an embedded iOS/macOS app that restarts the
+    // daemon without relaunching).
+    g_shutdown.reset();
+    gArgs.ClearArgs();
+    ResetRPC();
+    LogInstance().DisconnectTestLogger();
+
     LogInfo("Shutdown done");
 }
 

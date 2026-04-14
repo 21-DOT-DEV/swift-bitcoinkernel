@@ -143,5 +143,8 @@ iOSInjectionProject/
 # VSCode
 .vscode
 
+# Local developer settings (team ID, signing overrides)
+Local.xcconfig
+
 ### Tuist managed dependencies ###
 Tuist/.build
