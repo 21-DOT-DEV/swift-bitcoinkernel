@@ -25,8 +25,11 @@
 #elif defined(WIN32)
 #include <iphlpapi.h>
 #elif defined(__APPLE__)
+#include <TargetConditionals.h>
+#if TARGET_OS_OSX
 #include <net/route.h>
 #include <sys/sysctl.h>
+#endif
 #endif
 
 #ifdef HAVE_IFADDRS
@@ -226,7 +229,7 @@ std::optional<CNetAddr> QueryDefaultGatewayImpl(sa_family_t family)
     return std::nullopt;
 }
 
-#elif defined(__APPLE__)
+#elif defined(__APPLE__) && TARGET_OS_OSX
 
 #define ROUNDUP32(a) \
     ((a) > 0 ? (1 + (((a) - 1) | (sizeof(uint32_t) - 1))) : sizeof(uint32_t))

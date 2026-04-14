@@ -64,7 +64,7 @@ extension BitcoinConfig {
     /// Defaults to `<datadir>/.cookie`. Useful for sandboxed macOS apps that
     /// read credentials from a known container path rather than the data directory.
     public func rpcCookieFile(_ path: String) -> Self {
-        appending("rpccookiefile", path)
+        appending("rpccookiefile", path).setting(.rpcCookieFile)
     }
 
     /// Unix file permission mode for the RPC cookie file (e.g. `"0600"`).

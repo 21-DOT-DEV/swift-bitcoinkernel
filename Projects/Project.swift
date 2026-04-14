@@ -1,42 +1,109 @@
 import ProjectDescription
 
-/// List app targets
-let targets: [Target]
+let deploymentTargets = ProjectDescription.DeploymentTargets.multiplatform(
+    iOS: "18.0",
+    macOS: "15.0"
+)
 
 let project = Project(
-    name: "NodeApp",
+    name: "Bitcoin",
     packages: [
         .package(path: "..")
     ],
     settings: .settings(
         configurations: [
-            .debug(
-                name: ConfigurationName(stringLiteral: "Debug"),
-                xcconfig: Path(stringLiteral: "Resources/NodeApp/Debug.xcconfig")
-            )
+            .debug(name: "Debug", xcconfig: "Resources/Project/Debug.xcconfig"),
+            .release(name: "Release", xcconfig: "Resources/Project/Release.xcconfig")
         ]
     ),
     targets: [
+        // MARK: - Example Apps
+
         .target(
             name: "NodeApp",
-            destinations: .iOS,
+            destinations: [.iPhone, .iPad, .mac],
             product: .app,
             bundleId: "dev.21.NodeApp",
-            infoPlist: .extendingDefault(
-                with: [
-                    "UILaunchStoryboardName": "LaunchScreen.storyboard",
-                ]
-            ),
+            deploymentTargets: deploymentTargets,
             sources: ["Sources/NodeApp/**"],
             resources: [
-                "Resources/NodeApp/Assets.xcassets",
-                "Resources/NodeApp/Preview Content/**",
-                "Resources/NodeApp/LaunchScreen.storyboard"
+                "Resources/NodeApp/Assets.xcassets/**",
+                "Resources/NodeApp/Preview Content/**"
             ],
             entitlements: "Resources/NodeApp/NodeApp.entitlements",
             dependencies: [
                 .package(product: "Bitcoin")
-            ]
-        )
+            ],
+            settings: .settings(
+                base: [
+                    "CODE_SIGN_IDENTITY": "Apple Development",
+                    "SWIFT_ACTIVE_COMPILATION_CONDITIONS": "$(inherited) Xcode",
+                    "SWIFT_OBJC_INTEROP_MODE": "objcxx",
+                ],
+                configurations: [
+                    .debug(name: "Debug", xcconfig: "Resources/NodeApp/Debug.xcconfig"),
+                    .release(name: "Release", xcconfig: "Resources/NodeApp/Release.xcconfig")
+                ]
+            )
+        ),
+
+        .target(
+            name: "KernelApp",
+            destinations: [.iPhone, .iPad, .mac],
+            product: .app,
+            bundleId: "dev.21.KernelApp",
+            deploymentTargets: deploymentTargets,
+            sources: ["Sources/KernelApp/**"],
+            resources: [
+                "Resources/KernelApp/Assets.xcassets/**",
+                "Resources/KernelApp/Preview Content/**"
+            ],
+            entitlements: "Resources/KernelApp/KernelApp.entitlements",
+            dependencies: [
+                .package(product: "BitcoinKernel")
+            ],
+            settings: .settings(
+                base: [
+                    "CODE_SIGN_IDENTITY": "Apple Development",
+                    "SWIFT_ACTIVE_COMPILATION_CONDITIONS": "$(inherited) Xcode",
+                ],
+                configurations: [
+                    .debug(name: "Debug", xcconfig: "Resources/KernelApp/Debug.xcconfig"),
+                    .release(name: "Release", xcconfig: "Resources/KernelApp/Release.xcconfig")
+                ]
+            )
+        ),
+        // MARK: - Tests
+
+        .target(
+            name: "NodeAppTests",
+            destinations: [.iPhone, .iPad, .mac],
+            product: .unitTests,
+            bundleId: "dev.21.NodeAppTests",
+            deploymentTargets: deploymentTargets,
+            sources: ["Sources/NodeAppTests/**"],
+            dependencies: [.target(name: "NodeApp")],
+            settings: .settings(
+                configurations: [
+                    .debug(name: "Debug", xcconfig: "Resources/NodeAppTests/Debug.xcconfig"),
+                    .release(name: "Release", xcconfig: "Resources/NodeAppTests/Release.xcconfig")
+                ]
+            )
+        ),
+        .target(
+            name: "KernelAppTests",
+            destinations: [.iPhone, .iPad, .mac],
+            product: .unitTests,
+            bundleId: "dev.21.KernelAppTests",
+            deploymentTargets: deploymentTargets,
+            sources: ["Sources/KernelAppTests/**"],
+            dependencies: [.target(name: "KernelApp")],
+            settings: .settings(
+                configurations: [
+                    .debug(name: "Debug", xcconfig: "Resources/KernelAppTests/Debug.xcconfig"),
+                    .release(name: "Release", xcconfig: "Resources/KernelAppTests/Release.xcconfig")
+                ]
+            )
+        ),
     ]
 )

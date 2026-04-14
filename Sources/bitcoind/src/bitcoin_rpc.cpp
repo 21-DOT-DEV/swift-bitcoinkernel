@@ -20,7 +20,7 @@
 #include <cstring>
 #include <atomic>
 
-static node::NodeContext* g_node_ctx = nullptr;
+static std::atomic<node::NodeContext*> g_node_ctx{nullptr};
 static std::atomic<bool> g_ready{false};
 
 static char* to_heap(const std::string& s) {
@@ -39,7 +39,7 @@ static RPCHelpMan bridge_init_rpc() {
         RPCExamples{""},
         [](const RPCHelpMan&, const JSONRPCRequest& request) -> UniValue {
             if (!g_ready.load()) {
-                g_node_ctx = &EnsureAnyNodeContext(request.context);
+                g_node_ctx.store(&EnsureAnyNodeContext(request.context));
                 g_ready.store(true);
             }
             return UniValue{"ok"};
@@ -49,7 +49,13 @@ static RPCHelpMan bridge_init_rpc() {
 
 // Register the "_bridge_init" command. Must be called before bitcoind_main()
 // because appendCommand has CHECK_NONFATAL(!IsRPCRunning()).
+// Idempotent: the static CRPCCommand and tableRPC entry persist across
+// in-process restarts (tableRPC is a global, never destroyed), so
+// registration only needs to happen once per process lifetime.
 void bitcoin_rpc_register(void) {
+    static bool registered = false;
+    if (registered) return;
+    registered = true;
     static CRPCCommand cmd{"hidden", &bridge_init_rpc};
     tableRPC.appendCommand(cmd.name, &cmd);
 }
@@ -64,7 +70,12 @@ int bitcoin_rpc_ready(void) {
 // Returns NULL if the bridge is not yet bootstrapped.
 // Caller must pass the result to bitcoin_free().
 char* bitcoin_rpc(const char* method, const char* params_json) {
-    if (!method || !g_ready.load() || !g_node_ctx) return nullptr;
+    if (!method || !g_ready.load()) return nullptr;
+
+    // Load into a local so a concurrent bitcoin_rpc_reset() cannot null
+    // the pointer between our check and use (TOCTOU).
+    node::NodeContext* ctx = g_node_ctx.load();
+    if (!ctx) return nullptr;
 
     try {
         UniValue params{UniValue::VARR};
@@ -78,7 +89,7 @@ char* bitcoin_rpc(const char* method, const char* params_json) {
         JSONRPCRequest req;
         req.strMethod = method;
         req.params    = params;
-        req.context   = g_node_ctx;
+        req.context   = ctx;
 
         UniValue result = tableRPC.execute(req);
 
@@ -107,11 +118,12 @@ char* bitcoin_rpc(const char* method, const char* params_json) {
     }
 }
 
-// Clear bridge state BEFORE raise(SIGTERM). Concurrent bitcoin_rpc() calls
-// will return NULL immediately instead of touching a half-destroyed NodeContext.
+// Clear bridge state so concurrent bitcoin_rpc() calls return NULL immediately
+// instead of touching a half-destroyed NodeContext. Must be called from Swift
+// BEFORE triggering the "stop" RPC to close the gate ahead of teardown.
 void bitcoin_rpc_reset(void) {
     g_ready.store(false);
-    g_node_ctx = nullptr;
+    g_node_ctx.store(nullptr);
 }
 
 void bitcoin_free(void* ptr) {

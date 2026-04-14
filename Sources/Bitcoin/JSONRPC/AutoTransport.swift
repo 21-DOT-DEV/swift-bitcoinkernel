@@ -17,7 +17,7 @@ import bitcoind
 /// When the direct bridge is bootstrapped, calls go through `DirectTransport`
 /// with zero network overhead. Otherwise, calls fall back to `HTTPTransport`.
 struct AutoTransport: RPCTransport {
-    let http: HTTPTransport
+    let http: any RPCTransport
     let direct: DirectTransport
 
     func send(_ request: JSONRPCRequest, path: String?) async throws -> Data {

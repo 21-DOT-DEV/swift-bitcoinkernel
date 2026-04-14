@@ -38,6 +38,7 @@ struct ConfigFlags: OptionSet, Sendable {
     static let blockFilterIndexAll = ConfigFlags(rawValue: 1 << 13)
     static let listen              = ConfigFlags(rawValue: 1 << 14)
     static let maxUploadTarget     = ConfigFlags(rawValue: 1 << 15)
+    static let rpcCookieFile       = ConfigFlags(rawValue: 1 << 16)
 }
 
 // MARK: - BitcoinConfig

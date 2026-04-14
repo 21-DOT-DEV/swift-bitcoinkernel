@@ -16,10 +16,10 @@
 #define CLIENT_VERSION_IS_RELEASE true
 
 /* Major version */
-#define CLIENT_VERSION_MAJOR 30
+#define CLIENT_VERSION_MAJOR 31
 
 /* Minor version */
-#define CLIENT_VERSION_MINOR 2
+#define CLIENT_VERSION_MINOR 0
 
 /* Copyright holder(s) before %s replacement */
 #define COPYRIGHT_HOLDERS "The %s developers"
@@ -46,8 +46,11 @@
 /* #undef HAVE_FDATASYNC */
 
 /* Define this symbol if the BSD getentropy system call is available with
-   sys/random.h */
+   sys/random.h (macOS only; iOS does not ship sys/random.h) */
+#include <TargetConditionals.h>
+#if TARGET_OS_OSX
 #define HAVE_GETENTROPY_RAND 1
+#endif
 
 /* Define to 1 if O_CLOEXEC flag is available. */
 #define HAVE_O_CLOEXEC 1
@@ -58,8 +61,11 @@
 /* Define this symbol if the BSD sysctl() is available */
 #define HAVE_SYSCTL 1
 
-/* Define to 1 if std::system or ::wsystem is available. */
+/* Define to 1 if std::system or ::wsystem is available.
+   system() is unavailable on iOS. */
+#if TARGET_OS_OSX
 #define HAVE_SYSTEM 1
+#endif
 
 /* Define to the address where bug reports for this package should be sent. */
 #define CLIENT_BUGREPORT "https://github.com/bitcoin/bitcoin/issues"
@@ -71,7 +77,7 @@
 #define CLIENT_URL "https://bitcoincore.org/"
 
 /* Define to the version of this package. */
-#define CLIENT_VERSION_STRING "30.2.0"
+#define CLIENT_VERSION_STRING "31.0.0"
 
 /* Define to 1 if strerror_r returns char *. */
 /* #undef STRERROR_R_CHAR_P */

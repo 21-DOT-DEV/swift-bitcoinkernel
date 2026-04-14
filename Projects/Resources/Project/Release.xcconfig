@@ -1,0 +1,13 @@
+//
+// Release.xcconfig
+//
+// Project-level release build settings
+//
+
+#include "Shared.xcconfig"
+
+
+// Swift Compiler - Code Generation
+
+SWIFT_COMPILATION_MODE = wholemodule
+SWIFT_OPTIMIZATION_LEVEL = -O

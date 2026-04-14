@@ -4,8 +4,8 @@ import PackageDescription
 let package = Package(
     name: "Bitcoin",
     platforms: [
-        .macOS(.v11),
-        .iOS(.v14),
+        .macOS(.v15),
+        .iOS(.v18),
     ],
     products: [
         .library(name: "Bitcoin", targets: ["Bitcoin"]),

@@ -56,7 +56,8 @@ public final class RPCClient: Sendable {
     /// Initializes a new API client that auto-detects the best transport.
     ///
     /// Uses the direct in-process bridge when `bitcoin_rpc_ready()` returns 1,
-    /// otherwise falls back to HTTP. The decision is made per-call.
+    /// otherwise falls back to HTTP with explicit credentials. The decision is
+    /// made per-call.
     ///
     /// ```swift
     /// let client = RPCClient(
@@ -74,6 +75,30 @@ public final class RPCClient: Sendable {
     public init(url: URL, username: String, password: String) {
         self.transport = AutoTransport(
             http: HTTPTransport(url: url, username: username, password: password),
+            direct: DirectTransport()
+        )
+    }
+
+    /// Initializes a new API client using cookie-file authentication.
+    ///
+    /// Uses the direct in-process bridge when `bitcoin_rpc_ready()` returns 1,
+    /// otherwise falls back to HTTP with credentials read from the `.cookie`
+    /// file on each call. This is the preferred init for embedded daemons —
+    /// no hardcoded credentials required.
+    ///
+    /// ```swift
+    /// let client = RPCClient(
+    ///     url: URL(string: "http://127.0.0.1:8332")!,
+    ///     cookieFile: dataDir.appending(path: ".cookie")
+    /// )
+    /// ```
+    ///
+    /// - Parameters:
+    ///   - url: The URL of the Bitcoin node's JSON-RPC endpoint.
+    ///   - cookieFile: File URL to the `.cookie` file written by Bitcoin Core.
+    public init(url: URL, cookieFile: URL) {
+        self.transport = AutoTransport(
+            http: CookieTransport(url: url, cookieFile: cookieFile),
             direct: DirectTransport()
         )
     }

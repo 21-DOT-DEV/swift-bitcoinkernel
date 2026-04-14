@@ -1,0 +1,130 @@
+//
+// Shared.xcconfig
+//
+// NodeApp - Shared configuration
+//
+
+
+// Primary App Icon Set Name
+
+ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon
+
+
+// Global Accent Color Name
+
+ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor
+
+
+// Launch Image (suppress)
+
+ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME =
+
+
+// Code Signing Style
+
+CODE_SIGN_STYLE = Automatic
+
+
+// Current Project Version
+
+CURRENT_PROJECT_VERSION = 1
+
+
+// Development Assets
+
+DEVELOPMENT_ASSET_PATHS = "Resources/NodeApp/Preview Content"
+
+
+// Enable Previews
+
+ENABLE_PREVIEWS = YES
+
+
+// User Script Sandboxing
+
+ENABLE_USER_SCRIPT_SANDBOXING = YES
+
+
+// Generate Info.plist File
+
+GENERATE_INFOPLIST_FILE = YES
+
+
+// Application Scene Manifest (Generation)
+
+INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*] = YES
+INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*] = YES
+
+
+// Supports Indirect Events
+
+INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*] = YES
+INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphonesimulator*] = YES
+
+
+// Launch Screen (Generation) — replaces LaunchScreen.storyboard
+
+INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphoneos*] = YES
+INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*] = YES
+
+
+// Status Bar Style
+
+INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*] = UIStatusBarStyleDefault
+INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*] = UIStatusBarStyleDefault
+
+
+// Supported Interface Orientations (iPad)
+
+INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+
+
+// Supported Interface Orientations (iPhone)
+
+INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+
+
+// Runpath Search Paths
+
+LD_RUNPATH_SEARCH_PATHS = @executable_path/Frameworks
+LD_RUNPATH_SEARCH_PATHS[sdk=macosx*] = @executable_path/../Frameworks
+
+
+// Marketing Version
+
+MARKETING_VERSION = 1.0
+
+
+// Product Name
+
+PRODUCT_NAME = $(TARGET_NAME)
+
+
+// Base SDK
+
+SDKROOT = auto
+
+
+// Supported Platforms
+
+SUPPORTED_PLATFORMS = iphoneos iphonesimulator macosx
+
+
+// Use Compiler to Extract Swift Strings
+
+SWIFT_EMIT_LOC_STRINGS = YES
+
+
+// C++ and Objective-C Interoperability
+
+SWIFT_OBJC_INTEROP_MODE = objcxx
+
+
+// Swift Language Version
+
+SWIFT_VERSION = 6.0
+
+
+// Targeted Device Families
+
+TARGETED_DEVICE_FAMILY = 1,2

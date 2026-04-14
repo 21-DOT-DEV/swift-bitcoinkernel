@@ -1,5 +1,6 @@
 import Testing
 import Bitcoin
+import bitcoind
 import Foundation
 
 // MARK: - Shared Daemon Fixture
@@ -11,25 +12,39 @@ import Foundation
 /// Both are triggered by `ensureRunning()` which each test suite calls from
 /// its `init()`.
 private enum DaemonFixture {
-    static let auth = RPCAuth(
-        rawString: "111:14c1e13a71b7d6a4dab6c9d8f107bb5b$73b9fbbd71dbbb1476efa6da7b37dde5111153a17ccb5fdef79537d276fd03d4"
-    )!
+    static let port: UInt16 = 8332
+
+    static var cookieFileURL: URL {
+        URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("bitcoin-test-rpc.cookie")
+    }
 
     private static let startOnce: Void = {
-        // try! is safe here: we know this config is valid.
-        // If validation throws (ConfigError), it's a programmer error and a
-        // crash with the typed error message is the right outcome.
+        // Cookie auth — no hardcoded credentials. Bitcoin Core writes the
+        // cookie at the path we specify via -rpccookiefile.
         try! Daemon.start(with:
             BitcoinConfig.mainnet()
                 .server()
                 .rpcBind(.allInterfaces)
                 .rpcAllowIP(.localhost)
-                .rpcPort(8332)
-                .rpcAuth(auth)
+                .rpcPort(port)
+                .rpcCookieFile(cookieFileURL.path)
                 .prune(.minimum)
                 .blockFilterIndex(.all)
         )
-        Thread.sleep(forTimeInterval: 5)
+
+        // Bootstrap the direct RPC bridge using cookie authentication.
+        // Deterministic polling — returns as soon as the RPC server is
+        // ready, then activates the direct bridge via _bridge_init.
+        let semaphore = DispatchSemaphore(value: 0)
+        Task {
+            try! await Daemon.bootstrap(
+                cookieFile: cookieFileURL,
+                port: port
+            )
+            semaphore.signal()
+        }
+        semaphore.wait()
     }()
 
     /// Registers a one-time atexit handler that gracefully shuts down the
@@ -54,9 +69,8 @@ private enum DaemonFixture {
 
     static func makeClient() -> RPCClient {
         RPCClient(
-            url: URL(string: "http://localhost:8332")!,
-            username: "111",
-            password: "222"
+            url: URL(string: "http://localhost:\(port)")!,
+            cookieFile: cookieFileURL
         )
     }
 }
@@ -70,27 +84,17 @@ final class BitcoinTests {
         DaemonFixture.ensureRunning()
     }
 
-    @Test("getBlockVerbose returns genesis block via HTTP")
+    @Test("Direct RPC bridge is active after bootstrap")
+    func directBridgeActive() {
+        #expect(bitcoin_rpc_ready() == 1, "Direct bridge should be active after bootstrap")
+    }
+
+    @Test("getBlockVerbose returns genesis block")
     func getGenesisBlock() async throws {
         let client = DaemonFixture.makeClient()
-
-        let maxRetries = 5
-        var retryCount = 0
-
-        while retryCount < maxRetries {
-            do {
-                let block = try await client.getBlockVerbose(
-                    hash: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
-                )
-                #expect(block.height == 0)
-                return
-            } catch {
-                retryCount += 1
-                if retryCount < maxRetries {
-                    try await Task.sleep(nanoseconds: 2_000_000_000)
-                }
-            }
-        }
-        Issue.record("getBlockVerbose failed after \(maxRetries) retries")
+        let block = try await client.getBlockVerbose(
+            hash: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
+        )
+        #expect(block.height == 0)
     }
 }
