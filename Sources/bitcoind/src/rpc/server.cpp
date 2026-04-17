@@ -25,7 +25,6 @@
 #include <cassert>
 #include <chrono>
 #include <memory>
-#include <mutex>
 #include <string_view>
 #include <unordered_map>
 
@@ -285,14 +284,10 @@ void InterruptRPC()
     g_rpc_running = false;
 }
 
-static bool g_rpc_stopped{false};
-
 void StopRPC()
 {
     // Guard: this function could be called twice if the GUI has been started with -server=1.
     assert(!g_rpc_running);
-    if (g_rpc_stopped) return;
-    g_rpc_stopped = true;
     LogDebug(BCLog::RPC, "Stopping RPC\n");
     DeleteAuthCookie();
     LogDebug(BCLog::RPC, "RPC stopped.\n");
@@ -303,8 +298,6 @@ void ResetRPC()
     LOCK(g_rpc_warmup_mutex);
     fRPCInWarmup = true;
     rpcWarmupStatus = "RPC server started";
-    g_rpc_running = false;
-    g_rpc_stopped = false;
 }
 
 bool IsRPCRunning()

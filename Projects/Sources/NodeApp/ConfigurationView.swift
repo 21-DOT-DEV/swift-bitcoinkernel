@@ -59,6 +59,7 @@ enum NodeType: String, CaseIterable, Identifiable {
 
 struct ConfigurationView: View {
     var nodeViewModel: NodeViewModel
+    var torViewModel: TorViewModel
 
     // Network
     @AppStorage("bitcoin_network") private var network: String = BitcoinNetwork.mainnet.rawValue
@@ -93,6 +94,18 @@ struct ConfigurationView: View {
         )
     }
 
+    /// The Tor session currently active in the UI (or `nil` if Tor is off).
+    private var currentTorSession: UUID? {
+        torEnabled ? torViewModel.sessionID : nil
+    }
+
+    /// `true` when the live Tor session differs from the one the running
+    /// daemon was launched against. Catches both Tor restart (new session
+    /// UUID → dead port) and user toggling Tor on/off while node is up.
+    private var torConfigurationDrift: Bool {
+        nodeViewModel.isRunning && currentTorSession != nodeViewModel.launchedWithTorSession
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -107,6 +120,7 @@ struct ConfigurationView: View {
                 } footer: {
                     Text("Select the Bitcoin network to connect to. Restart required.")
                 }
+                .disabled(nodeViewModel.isRunning)
 
                 Section {
                     Picker("Node Type", selection: selectedNodeType) {
@@ -133,10 +147,36 @@ struct ConfigurationView: View {
                         Text("Enables BIP 157/158 compact block filters for light client support.")
                     }
                 }
+                .disabled(nodeViewModel.isRunning)
 
                 Section {
                     Toggle("Tor", isOn: $torEnabled)
+                        .onChange(of: torEnabled) { _, enabled in
+                            if enabled {
+                                torViewModel.start()
+                            } else {
+                                torViewModel.stop()
+                                // Clear persisted private-broadcast preference so a
+                                // later daemon launch without Tor can't silently emit
+                                // -privatebroadcast.
+                                privateBroadcastEnabled = false
+                            }
+                        }
+
+                    TorStatusView(viewModel: torViewModel)
+
                     Toggle("Private Broadcast", isOn: $privateBroadcastEnabled)
+                        .disabled(!torEnabled || !torViewModel.isReady)
+
+                    if torConfigurationDrift {
+                        Label {
+                            Text("Tor session changed — restart the node for connections to work.")
+                        } icon: {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                        }
+                        .font(.caption)
+                    }
                 } header: {
                     Label("Privacy", systemImage: "lock.shield")
                 } footer: {
@@ -158,6 +198,7 @@ struct ConfigurationView: View {
                 } header: {
                     Label("Resources", systemImage: "cpu")
                 }
+                .disabled(nodeViewModel.isRunning)
 
                 Section {
                     TextField("rpcauth string", text: $rpcAuth)
@@ -171,18 +212,22 @@ struct ConfigurationView: View {
                 } footer: {
                     Text("Format: username:salt$hash. Generated with rpcauth.py.")
                 }
+                .disabled(nodeViewModel.isRunning)
             }
             .formStyle(.grouped)
             .navigationTitle("Configuration")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
-                    NodeToolbarMenu(nodeViewModel: nodeViewModel, buildArguments: Self.buildArguments)
+                    NodeToolbarMenu(
+                        nodeViewModel: nodeViewModel,
+                        torViewModel: torViewModel,
+                        buildArguments: { DaemonConfig.buildArguments(torProxy: torViewModel.proxyAddress) }
+                    )
                 }
             }
-            .disabled(nodeViewModel.isRunning)
             .safeAreaInset(edge: .bottom) {
                 if nodeViewModel.isRunning {
-                    Text("Stop the node to change settings")
+                    Text("Stop the node to change network settings")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)
@@ -193,59 +238,4 @@ struct ConfigurationView: View {
         }
     }
 
-    /// Build daemon arguments from current configuration stored in UserDefaults.
-    static func buildArguments() -> [String] {
-        let defaults = UserDefaults.standard
-        var args: [String] = [
-            "-server",
-            "-rpcbind=127.0.0.1",
-            "-rpcallowip=127.0.0.1",
-            "-rpcport=\(InternalRPC.port)",
-            "-rpccookiefile=\(InternalRPC.cookieFileURL.path)",
-        ]
-
-        let network = BitcoinNetwork(rawValue: defaults.string(forKey: "bitcoin_network") ?? "") ?? .mainnet
-        if let networkArg = network.argument {
-            args.append(networkArg)
-        }
-
-        let nodeType = NodeType(rawValue: defaults.string(forKey: "node_type") ?? "") ?? .pruned
-        switch nodeType {
-        case .pruned:
-            let pruneSizeMB = defaults.double(forKey: "prune_size_mb")
-            args.append("-prune=\(Int(pruneSizeMB > 0 ? pruneSizeMB : 550))")
-        case .archival:
-            break
-        case .compactFilters:
-            args.append("-blockfilterindex=1")
-            args.append("-peerblockfilters=1")
-        }
-
-        if defaults.bool(forKey: "tor_enabled") {
-            args.append("-proxy=127.0.0.1:9050")
-        }
-
-        if defaults.bool(forKey: "private_broadcast_enabled") {
-            args.append("-privatebroadcast")
-        }
-
-        let maxMempoolMB = defaults.double(forKey: "max_mempool_mb")
-        args.append("-maxmempool=\(Int(maxMempoolMB > 0 ? maxMempoolMB : 300))")
-
-        let maxConnections = defaults.double(forKey: "max_connections")
-        args.append("-maxconnections=\(Int(maxConnections > 0 ? maxConnections : 125))")
-
-        // UserDefaults.bool returns false for unset keys; explicitly check
-        // for the key's presence so the default (listen=true) is respected.
-        if let listenValue = defaults.object(forKey: "listen_enabled") as? Bool, !listenValue {
-            args.append("-listen=0")
-        }
-
-        let rpcAuth = defaults.string(forKey: "rpc_auth") ?? ""
-        if !rpcAuth.isEmpty {
-            args.append("-rpcauth=\(rpcAuth)")
-        }
-
-        return args
-    }
 }

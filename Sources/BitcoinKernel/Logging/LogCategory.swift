@@ -1,7 +1,7 @@
 /// Categories for filtering kernel log messages.
 ///
 /// Maps to `btck_LogCategory` constants in the kernel C API.
-public enum LogCategory: UInt8, Sendable {
+public enum LogCategory: UInt8, Sendable, CaseIterable, Codable {
     /// All categories. Enables or disables logging for every category at once.
     case all          = 0
     /// Benchmarking and timing measurements.

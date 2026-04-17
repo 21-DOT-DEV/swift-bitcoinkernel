@@ -19,6 +19,7 @@ struct ContentView: View {
     @State private var selectedTab: AppTab = .commands
     @State private var nodeViewModel = NodeViewModel()
     @State private var commandsViewModel = CommandsViewModel()
+    @State private var torViewModel = TorViewModel(subsystem: "dev.21.NodeApp")
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -26,12 +27,19 @@ struct ContentView: View {
                 CommandsView(
                     viewModel: commandsViewModel,
                     nodeViewModel: nodeViewModel,
-                    buildArguments: ConfigurationView.buildArguments
+                    torViewModel: torViewModel,
+                    buildArguments: { DaemonConfig.buildArguments(torProxy: torViewModel.proxyAddress) }
                 )
             }
 
             Tab("Configuration", systemImage: "gearshape.2", value: .configuration) {
-                ConfigurationView(nodeViewModel: nodeViewModel)
+                ConfigurationView(nodeViewModel: nodeViewModel, torViewModel: torViewModel)
+            }
+        }
+        .task {
+            NodeDiagnostics.snapshot("app-launch")
+            if UserDefaults.standard.bool(forKey: "tor_enabled") {
+                torViewModel.start()
             }
         }
     }
@@ -41,7 +49,16 @@ struct ContentView: View {
 
 struct NodeToolbarMenu: View {
     @Bindable var nodeViewModel: NodeViewModel
+    var torViewModel: TorViewModel
     var buildArguments: () -> [String] = { [] }
+
+    @AppStorage("tor_enabled") private var torEnabled = false
+
+    /// `false` when Tor is enabled but not yet bootstrapped. Prevents the
+    /// daemon from launching without a proxy when the user expects Tor.
+    private var canStartNode: Bool {
+        !torEnabled || torViewModel.isReady
+    }
 
     var body: some View {
         Menu {
@@ -49,17 +66,30 @@ struct NodeToolbarMenu: View {
                 Label(nodeViewModel.nodeState.rawValue, systemImage: statusSymbol)
             }
 
+            if torViewModel.displayState != .disabled {
+                Section {
+                    Label(torStatusLabel, systemImage: torStatusSymbol)
+                }
+            }
+
             if nodeViewModel.nodeState == .stopped {
                 Button {
-                    nodeViewModel.start(arguments: buildArguments())
+                    startNode()
                 } label: {
                     Label("Start Node", systemImage: "play.fill")
+                }
+                .disabled(!canStartNode)
+
+                if !canStartNode {
+                    Label("Waiting for Tor to bootstrap", systemImage: "hourglass")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
 
             if nodeViewModel.nodeState == .running {
                 Button(role: .destructive) {
-                    nodeViewModel.stop()
+                    stopNode()
                 } label: {
                     Label("Stop Node", systemImage: "stop.fill")
                 }
@@ -71,12 +101,45 @@ struct NodeToolbarMenu: View {
         }
     }
 
+    private func startNode() {
+        let socksPort = torEnabled ? torViewModel.socksEndpoint.map { UInt16(clamping: $0.port) } : nil
+        nodeViewModel.start(
+            arguments: buildArguments(),
+            torSession: torEnabled ? torViewModel.sessionID : nil,
+            torSocksPort: socksPort
+        )
+    }
+
+    private func stopNode() {
+        nodeViewModel.stop()
+    }
+
     private var statusSymbol: String {
         switch nodeViewModel.nodeState {
         case .stopped: "power.circle"
         case .starting: "bolt.circle"
         case .running: "power.circle.fill"
         case .stopping: "bolt.circle"
+        }
+    }
+
+    private var torStatusLabel: String {
+        switch torViewModel.displayState {
+        case .disabled: return "Tor Disabled"
+        case .starting: return "Tor: \(torViewModel.bootstrapProgress)%"
+        case .running:  return "Tor Connected"
+        case .stopping: return "Tor Stopping"
+        case .failed:   return "Tor Failed"
+        }
+    }
+
+    private var torStatusSymbol: String {
+        switch torViewModel.displayState {
+        case .disabled: return "network.slash"
+        case .starting: return "network.badge.shield.half.filled"
+        case .running:  return "network"
+        case .stopping: return "network.badge.shield.half.filled"
+        case .failed:   return "exclamationmark.triangle"
         }
     }
 

@@ -47,7 +47,7 @@ public struct IPAddress: ExpressibleByStringLiteral, CustomStringConvertible, Se
 ///
 /// The `rawValue` produced by this type is suitable for passing directly
 /// to the `-rpcauth=` CLI flag.
-public struct RPCAuth: Sendable {
+public struct RPCAuth: Sendable, Equatable, Hashable {
     /// The RPC username.
     public let username: String
 
@@ -116,7 +116,7 @@ public enum PruneMode: Sendable {
 // MARK: - BlockFilterMode
 
 /// Controls whether Bitcoin Core builds compact block filters.
-public enum BlockFilterMode: Sendable {
+public enum BlockFilterMode: Sendable, CaseIterable, Equatable, Hashable {
     /// Block filters disabled.
     case disabled
 
@@ -177,7 +177,7 @@ public struct FeeRate: Sendable, CustomStringConvertible {
 /// The network transport layer used to filter peer connections.
 ///
 /// Passed to `-onlynet=` to restrict Bitcoin Core to a single network type.
-public enum NetworkType: String, Sendable {
+public enum NetworkType: String, Sendable, CaseIterable, Codable, Equatable, Hashable {
     /// IPv4 connections.
     case ipv4
     /// IPv6 connections.
@@ -195,7 +195,7 @@ public enum NetworkType: String, Sendable {
 /// The output script type used for receiving and change addresses.
 ///
 /// Passed to `-addresstype=` and `-changetype=`.
-public enum AddressType: String, Sendable {
+public enum AddressType: String, Sendable, CaseIterable, Codable, Equatable, Hashable {
     /// Legacy P2PKH addresses (starting with `1`).
     case legacy
     /// P2SH-wrapped segwit addresses (starting with `3`).
@@ -241,7 +241,7 @@ public struct ZMQEndpoint: Sendable, CustomStringConvertible {
 ///
 /// Pass `.all` to enable every category. Call `.debug()` multiple times to
 /// enable a selective subset.
-public enum DebugCategory: String, Sendable {
+public enum DebugCategory: String, Sendable, CaseIterable, Codable, Equatable, Hashable {
     /// Enable all debug categories.
     case all
     /// Address manager operations.
@@ -303,11 +303,27 @@ public enum DebugCategory: String, Sendable {
 // MARK: - LogLevel
 
 /// The verbosity level for Bitcoin Core's structured logging (`-loglevel=`).
-public enum LogLevel: String, Sendable {
-    /// General informational messages (default).
-    case info
-    /// Detailed debugging information.
-    case debug
+///
+/// Ordering follows the POSIX / syslog(3) convention (shared with
+/// ``BitcoinKernel/LogLevel``): **lower rank = more verbose**. A filter of
+/// `level >= .info` suppresses everything below info.
+public enum LogLevel: String, Sendable, CaseIterable, Codable, Equatable, Hashable, Comparable {
     /// Most verbose level; logs everything.
     case trace
+    /// Detailed debugging information.
+    case debug
+    /// General informational messages (default).
+    case info
+
+    private var ordinal: Int {
+        switch self {
+        case .trace: return 0
+        case .debug: return 1
+        case .info:  return 2
+        }
+    }
+
+    public static func < (lhs: LogLevel, rhs: LogLevel) -> Bool {
+        lhs.ordinal < rhs.ordinal
+    }
 }

@@ -13,6 +13,7 @@ import SwiftUI
 struct CommandsView: View {
     @Bindable var viewModel: CommandsViewModel
     var nodeViewModel: NodeViewModel
+    var torViewModel: TorViewModel
     var buildArguments: () -> [String] = { [] }
 
     var body: some View {
@@ -45,7 +46,7 @@ struct CommandsView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
-                    NodeToolbarMenu(nodeViewModel: nodeViewModel, buildArguments: buildArguments)
+                    NodeToolbarMenu(nodeViewModel: nodeViewModel, torViewModel: torViewModel, buildArguments: buildArguments)
                 }
             }
         }

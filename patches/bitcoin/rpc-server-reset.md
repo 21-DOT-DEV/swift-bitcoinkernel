@@ -1,6 +1,8 @@
-# Bitcoin Core Upstream PR: Replace `std::once_flag` in RPC Server with Resettable Guards
+# Bitcoin Core Upstream PR: Remove `std::once_flag` from RPC Lifecycle
 
-Prepared draft for contributing resettable RPC lifecycle guards and a `ResetRPC()` function to Bitcoin Core's `src/rpc/server.cpp` and `src/rpc/server.h`.
+Prepared draft for removing unnecessary `std::once_flag` from `InterruptRPC()`/`StopRPC()` and adding `ResetRPC()` in Bitcoin Core's `src/rpc/server.cpp` and `src/rpc/server.h`.
+
+> **Upstream strategy**: This is **PR 1 of 2** (pure refactor). PR 2 (`upstream-shutdown-reset-pr.md`) adds `ResetRPC()` call + other global resets in `Shutdown()` for restart support. PR 1 stands alone — it simplifies code and fixes #31289.
 
 ## PR Title
 
@@ -11,10 +13,9 @@ rpc: replace std::once_flag with resettable guards in InterruptRPC/StopRPC
 ## PR Description
 
 ```markdown
-Replace the `static std::once_flag` + `std::call_once` pattern in
-`InterruptRPC()` and `StopRPC()` with simple boolean guards, and add a
-`ResetRPC()` function that restores all RPC server module state to its
-initial values.
+Remove `static std::once_flag` + `std::call_once` from `InterruptRPC()`
+and `StopRPC()`. Both functions are naturally idempotent without them.
+Add `ResetRPC()` to restore RPC warmup state to initial values.
 
 **Motivation:**
 
@@ -23,45 +24,49 @@ ensure their bodies execute at most once. The original intent was
 idempotency — these functions can be called twice when the GUI is started
 with `-server=1`.
 
-However, `std::once_flag` is **permanently one-shot** per C++ spec. This
-creates two problems:
+However, `std::once_flag` is **stronger than needed**:
 
-1. **In-process restart is impossible.** Projects embedding Bitcoin Core
-   as a library (mobile apps, test harnesses) that call `bitcoind_main()`
-   more than once in the same process can never interrupt or stop the RPC
-   server on the second run, because `std::call_once` silently skips the
-   lambda body. This means `g_rpc_running` is never set to `false`,
-   `DeleteAuthCookie()` is never called, and shutdown hangs.
+1. **`InterruptRPC()`** sets `g_rpc_running = false`. Setting an atomic
+   bool to `false` when it's already `false` is a no-op — the function
+   is naturally idempotent. An `if (!g_rpc_running) return` guard is
+   clearer and avoids the lambda indirection.
 
-2. **Existing race condition (#31289).** If `InterruptRPC()` fires before
-   `StartRPC()` completes (e.g. user types during splash screen),
-   `StopRPC()` hits `assert(!g_rpc_running)` because the interrupt's
-   `std::call_once` already consumed its one chance to set the flag.
+2. **`StopRPC()`** calls `DeleteAuthCookie()`, which internally calls
+   `fs::remove()` — returns `false` on a missing file, no error. The
+   body is naturally idempotent.
 
-A simple boolean guard (`if (already_done) return`) provides the same
-idempotency guarantee within a single lifecycle, while allowing the state
-to be reset between lifecycles.
+3. **Race in #31289**: `std::once_flag` in `InterruptRPC()` can be
+   consumed before `StartRPC()` sets `g_rpc_running = true`, leaving
+   `StopRPC()`'s `assert(!g_rpc_running)` to crash. Checking
+   `g_rpc_running` directly eliminates this race.
+
+4. **`std::once_flag` is permanently one-shot** per C++ spec and cannot
+   be reset between daemon lifecycles, blocking in-process restart for
+   library embedders.
 
 **Changes:**
 
-1. `InterruptRPC()`: replace `std::once_flag` + `std::call_once` with
-   an early `if (!g_rpc_running) return` guard — naturally idempotent
-   since the body sets `g_rpc_running = false`.
+1. `InterruptRPC()`: remove `std::once_flag`, add `if (!g_rpc_running)
+   return` — natural idempotency.
 
-2. `StopRPC()`: replace `std::once_flag` + `std::call_once` with a
-   file-scope `static bool g_rpc_stopped` guard.
+2. `StopRPC()`: remove `std::once_flag`, unwrap lambda — body is
+   idempotent (`DeleteAuthCookie` handles missing file).
 
-3. Add `ResetRPC()`: resets `fRPCInWarmup`, `rpcWarmupStatus`,
-   `g_rpc_running`, and `g_rpc_stopped` to their initial values.
-   Intended to be called at the end of `Shutdown()`.
+3. Remove `#include <mutex>` — no longer needed (`GlobalMutex`/`LOCK`
+   come from `<sync.h>`).
 
-4. Declare `ResetRPC()` in `src/rpc/server.h`.
+4. Add `ResetRPC()`: resets `fRPCInWarmup` and `rpcWarmupStatus` to
+   initial values. These are the only RPC globals with assertions that
+   block restart (`SetRPCWarmupFinished()` asserts `fRPCInWarmup`).
+
+5. Declare `ResetRPC()` in `src/rpc/server.h`.
 
 **Impact:**
 
 - Preserves the existing double-call safety for GUI + server shutdown
 - Zero behavior change for single-run invocations
-- Enables `bitcoind_main()` to be called again after `Shutdown()`
+- Fixes #31289 (race between InterruptRPC and StartRPC)
+- Enables `ResetRPC()` to be called from `Shutdown()` for restart support
 - No test changes required for existing tests
 - Does not affect consensus code
 ```
@@ -69,29 +74,27 @@ to be reset between lifecycles.
 ## Commit Message
 
 ```
-rpc: replace std::once_flag with resettable guards in InterruptRPC/StopRPC
+rpc: remove std::once_flag from InterruptRPC/StopRPC
 
-Replace static std::once_flag + std::call_once in InterruptRPC() and
-StopRPC() with simple boolean guards that provide the same idempotency
-within a single lifecycle but can be reset between lifecycles.
+Remove static std::once_flag + std::call_once from InterruptRPC() and
+StopRPC(). Both functions are naturally idempotent without them:
 
-std::once_flag is permanently one-shot per C++ spec. This prevents
-projects embedding Bitcoin Core as a library from restarting the daemon
-within the same process — the second lifecycle's InterruptRPC() and
-StopRPC() silently skip their bodies, causing shutdown to hang.
+- InterruptRPC() sets g_rpc_running (atomic bool) to false; a second
+  call is a no-op. An explicit if-guard makes this clear.
+- StopRPC() calls DeleteAuthCookie() which handles missing files.
 
-The existing race condition in #31289 (assert(!g_rpc_running) fires if
-InterruptRPC runs before StartRPC completes) is also addressed, since
-the new InterruptRPC() guard checks g_rpc_running directly rather than
-relying on a separate once_flag.
+std::once_flag was stronger than needed — the requirement is per-
+lifecycle idempotency, not permanent one-shot-per-process. Removing
+it also fixes the race in #31289 where the once_flag is consumed
+before StartRPC() completes.
 
-Add ResetRPC() to restore all RPC server module state to initial values,
-intended to be called at the end of Shutdown().
+Add ResetRPC() to restore fRPCInWarmup and rpcWarmupStatus to their
+initial values, enabling callers to prepare for a new RPC lifecycle.
 ```
 
 ## Files Changed
 
-**`src/rpc/server.cpp`** — Replace `std::once_flag` pattern, add `ResetRPC()`
+**`src/rpc/server.cpp`** — Remove `std::once_flag`, remove `#include <mutex>`, add `ResetRPC()`
 **`src/rpc/server.h`** — Declare `ResetRPC()`
 
 ### Diff (against current `master`)
@@ -100,7 +103,15 @@ intended to be called at the end of Shutdown().
 diff --git a/src/rpc/server.cpp b/src/rpc/server.cpp
 --- a/src/rpc/server.cpp
 +++ b/src/rpc/server.cpp
-@@ -279,23 +279,32 @@ void StartRPC()
+@@ -27,7 +27,6 @@
+ #include <cassert>
+ #include <chrono>
+ #include <memory>
+-#include <mutex>
+ #include <string_view>
+ #include <unordered_map>
+
+@@ -279,22 +278,26 @@ void StartRPC()
 
  void InterruptRPC()
  {
@@ -118,8 +129,6 @@ diff --git a/src/rpc/server.cpp b/src/rpc/server.cpp
 +    g_rpc_running = false;
  }
 
-+static bool g_rpc_stopped{false};
-+
  void StopRPC()
  {
 -    static std::once_flag g_rpc_stop_flag;
@@ -131,8 +140,6 @@ diff --git a/src/rpc/server.cpp b/src/rpc/server.cpp
 -        DeleteAuthCookie();
 -        LogDebug(BCLog::RPC, "RPC stopped.\n");
 -    });
-+    if (g_rpc_stopped) return;
-+    g_rpc_stopped = true;
 +    LogDebug(BCLog::RPC, "Stopping RPC\n");
 +    DeleteAuthCookie();
 +    LogDebug(BCLog::RPC, "RPC stopped.\n");
@@ -143,8 +150,6 @@ diff --git a/src/rpc/server.cpp b/src/rpc/server.cpp
 +    LOCK(g_rpc_warmup_mutex);
 +    fRPCInWarmup = true;
 +    rpcWarmupStatus = "RPC server started";
-+    g_rpc_running = false;
-+    g_rpc_stopped = false;
  }
 
 diff --git a/src/rpc/server.h b/src/rpc/server.h
@@ -187,20 +192,15 @@ required.
 needed**. The actual requirement is idempotency within a single daemon lifecycle,
 not permanent one-shot-per-process.
 
-### Why boolean guards are sufficient
+### Why `std::once_flag` removal is safe
 
-| Property | `std::once_flag` | Boolean guard |
+| Property | `std::once_flag` | Natural idempotency |
 |---|---|---|
-| Idempotent within lifecycle | Yes | Yes |
-| Thread-safe | Yes (built-in) | Yes — `g_rpc_running` is `std::atomic<bool>`; `g_rpc_stopped` is only accessed from the shutdown thread after all RPC threads are joined |
+| Idempotent within lifecycle | Yes | Yes — `InterruptRPC()` checks `g_rpc_running`; `StopRPC()` body is idempotent |
+| Thread-safe | Yes (built-in) | Yes — `g_rpc_running` is `std::atomic<bool>`; `StopRPC()` runs on shutdown thread after all RPC threads are joined |
 | Resettable between lifecycles | **No** | Yes |
 | Immune to #31289 race | No — once_flag consumed before StartRPC completes | Yes — checks `g_rpc_running` directly |
-
-### The `InterruptRPC()` simplification
-
-The new `InterruptRPC()` doesn't need a separate guard variable at all. Its body
-sets `g_rpc_running = false`, so a second call sees `!g_rpc_running` and returns
-immediately — natural idempotency.
+| New variables introduced | N/A | None — no `g_rpc_stopped` needed |
 
 ### Related Issues & PRs
 
@@ -217,13 +217,12 @@ immediately — natural idempotency.
 Shutdown sequence (single-threaded after thread joins):
 
   Interrupt(node)          ← calls InterruptRPC()  [g_rpc_running = false]
-  Shutdown(node)           ← calls StopRPC()       [g_rpc_stopped = true]
-                             calls ResetRPC()       [all flags reset]
+  Shutdown(node)           ← calls StopRPC()       [logs + DeleteAuthCookie]
+                             calls ResetRPC()       [warmup flags reset]
 
 Second lifecycle:
 
   AppInit(node)            ← calls StartRPC()      [g_rpc_running = true]
-  SetRPCWarmupStarting()   ←                        [fRPCInWarmup = true]
   ...normal operation...
   SetRPCWarmupFinished()   ←                        [fRPCInWarmup = false] ← assert passes
 ```
@@ -231,7 +230,7 @@ Second lifecycle:
 `InterruptRPC()` is called from signal handler context or the main thread.
 `g_rpc_running` is `std::atomic<bool>`, so the early-return check is safe.
 `StopRPC()` and `ResetRPC()` run sequentially on the shutdown thread after
-all RPC worker threads have been joined — no concurrent access to `g_rpc_stopped`.
+all RPC worker threads have been joined.
 
 ## Labels to Request
 

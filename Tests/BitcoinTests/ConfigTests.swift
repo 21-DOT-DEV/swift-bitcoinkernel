@@ -1267,3 +1267,34 @@ struct MisconfiguredValueTests {
         #expect(args.contains("-checklevel=4"))
     }
 }
+
+// MARK: - LogLevel Comparable
+
+@Suite("LogLevel Ordering")
+struct LogLevelOrderingTests {
+
+    @Test("LogLevel rawValue ordering mirrors btck_LogLevel: trace(0) < debug(1) < info(2)")
+    func logLevelComparable() {
+        // The Comparable conformance compares rawValues, mirroring the
+        // C enum `btck_LogLevel`. In verbosity terms, trace is the most
+        // verbose (lowest threshold); info is the least. Note this is the
+        // OPPOSITE of POSIX syslog, where higher numeric severities are
+        // more verbose (DEBUG=7 > INFO=6 > …).
+        #expect(LogLevel.trace < .debug)
+        #expect(LogLevel.debug < .info)
+        #expect(!(LogLevel.info < .trace))
+    }
+}
+
+// MARK: - ConfigError LocalizedError
+
+@Suite("ConfigError LocalizedError")
+struct ConfigErrorLocalizedErrorTests {
+
+    @Test("errorDescription matches description")
+    func errorDescriptionMatchesDescription() {
+        for error in ConfigError.allCases {
+            #expect(error.errorDescription == error.description)
+        }
+    }
+}

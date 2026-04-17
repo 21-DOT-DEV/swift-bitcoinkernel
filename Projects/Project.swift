@@ -8,7 +8,8 @@ let deploymentTargets = ProjectDescription.DeploymentTargets.multiplatform(
 let project = Project(
     name: "Bitcoin",
     packages: [
-        .package(path: "..")
+        .package(path: ".."),
+        .package(path: "../../swift-tor"),
     ],
     settings: .settings(
         configurations: [
@@ -25,14 +26,15 @@ let project = Project(
             product: .app,
             bundleId: "dev.21.NodeApp",
             deploymentTargets: deploymentTargets,
-            sources: ["Sources/NodeApp/**"],
+            sources: ["Sources/NodeApp/**", "Sources/Shared/**"],
             resources: [
                 "Resources/NodeApp/Assets.xcassets/**",
                 "Resources/NodeApp/Preview Content/**"
             ],
             entitlements: "Resources/NodeApp/NodeApp.entitlements",
             dependencies: [
-                .package(product: "Bitcoin")
+                .package(product: "Bitcoin"),
+                .package(product: "Tor"),
             ],
             settings: .settings(
                 base: [
@@ -53,14 +55,15 @@ let project = Project(
             product: .app,
             bundleId: "dev.21.KernelApp",
             deploymentTargets: deploymentTargets,
-            sources: ["Sources/KernelApp/**"],
+            sources: ["Sources/KernelApp/**", "Sources/Shared/**"],
             resources: [
                 "Resources/KernelApp/Assets.xcassets/**",
                 "Resources/KernelApp/Preview Content/**"
             ],
             entitlements: "Resources/KernelApp/KernelApp.entitlements",
             dependencies: [
-                .package(product: "BitcoinKernel")
+                .package(product: "BitcoinKernel"),
+                .package(product: "Tor"),
             ],
             settings: .settings(
                 base: [
@@ -84,6 +87,9 @@ let project = Project(
             sources: ["Sources/NodeAppTests/**"],
             dependencies: [.target(name: "NodeApp")],
             settings: .settings(
+                base: [
+                    "SWIFT_OBJC_INTEROP_MODE": "objcxx",
+                ],
                 configurations: [
                     .debug(name: "Debug", xcconfig: "Resources/NodeAppTests/Debug.xcconfig"),
                     .release(name: "Release", xcconfig: "Resources/NodeAppTests/Release.xcconfig")
