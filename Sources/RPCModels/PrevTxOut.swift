@@ -13,7 +13,7 @@
 /// Encodable request type — not decoded from responses.
 ///
 /// - Note: Targets Bitcoin Core v31.x.
-public struct PrevTxOut: Encodable, Sendable {
+public struct PrevTxOut: Encodable, Sendable, Equatable {
     /// The transaction id.
     public let txid: String
     /// The output number.

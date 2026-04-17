@@ -17,7 +17,7 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/csjones/lefthook-plugin.git", exact: "1.6.15"),
         .package(url: "https://github.com/21-DOT-DEV/swift-boost", branch: "subtree-1.81.0"),
-        .package(url: "https://github.com/21-DOT-DEV/swift-libevent", branch: "main"),
+        .package(url: "https://github.com/21-DOT-DEV/swift-event", branch: "main"),
         .package(url: "https://github.com/21-DOT-DEV/swift-plugin-tuist.git", exact: "4.20.0"),
         .package(url: "https://github.com/21-DOT-DEV/swift-plugin-subtree.git", exact: "0.0.13"),
     ],
@@ -45,6 +45,7 @@ let package = Package(
         .target(
             name: "bitcoind",
             dependencies: Target.Dependency.bitcoinDeps,
+            exclude: ["src/bridge/README.md"],
             publicHeadersPath: "include",
             cxxSettings: CXXSetting.bitcoinSettings,
             linkerSettings: [
@@ -127,7 +128,7 @@ extension Target.Dependency {
     /// Dependencies for the bitcoind target.
     static let bitcoinDeps: [Self] =
         kernelDeps + [
-            .product(name: "libevent", package: "swift-libevent"),
+            .product(name: "libevent", package: "swift-event"),
             .target(name: "minisketch"),
             .target(name: "libbitcoinkernel"),
         ]

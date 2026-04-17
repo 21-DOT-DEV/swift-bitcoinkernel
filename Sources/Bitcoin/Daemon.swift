@@ -72,6 +72,15 @@ public enum Daemon {
         let allArguments: [String] = ["bitcoind"] + arguments
 
         Thread.detachNewThread {
+            // Clear the sticky g_socks5_interrupt flag left over from the
+            // previous shutdown. Upstream Bitcoin Core never resets it
+            // because in the normal OS-process model the process exits
+            // immediately after shutdown, destroying the global. In our
+            // in-process model the flag persists across invocations and
+            // causes every SOCKS5 handshake on the second run to fast-fail
+            // with "InterruptibleRecv() timeout or other failure".
+            bitcoin_socks_reset()
+
             // Register the hidden "_bridge_init" RPC BEFORE bitcoind_main() starts
             // the RPC server. appendCommand aborts if called while RPC is running.
             bitcoin_rpc_register()

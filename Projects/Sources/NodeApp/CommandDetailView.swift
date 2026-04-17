@@ -50,6 +50,15 @@ struct CommandDetailView: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(!nodeViewModel.isRunning || viewModel.isExecuting(command))
 
+                if nodeViewModel.isSyncing && command.isHeavyDuringIBD {
+                    Label(
+                        "May be slow during initial sync — can temporarily pause block processing",
+                        systemImage: "tortoise"
+                    )
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+                }
+
                 if !nodeViewModel.isRunning {
                     Label("Start the node to execute commands", systemImage: "power.circle")
                         .font(.callout)

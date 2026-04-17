@@ -8,11 +8,13 @@
 //  See the accompanying file LICENSE for information
 //
 
+import Foundation
+
 // MARK: - ConfigError
 
 /// A fatal conflict in a `BitcoinConfig` that prevents the daemon from
 /// starting correctly.
-public enum ConfigError: Error, Sendable, CustomStringConvertible {
+public enum ConfigError: Error, Sendable, CustomStringConvertible, LocalizedError, CaseIterable, Equatable {
     /// `txindex=1` and `prune=<size>` are mutually exclusive.
     case txIndexWithPrune
 
@@ -32,12 +34,14 @@ public enum ConfigError: Error, Sendable, CustomStringConvertible {
             return "peerblockfilters=1 requires blockfilterindex=1: add .blockFilterIndex(.all)."
         }
     }
+
+    public var errorDescription: String? { description }
 }
 
 // MARK: - ConfigWarning
 
 /// A non-fatal issue in a `BitcoinConfig` that may indicate misconfiguration.
-public enum ConfigWarning: Sendable, CustomStringConvertible {
+public enum ConfigWarning: Sendable, CustomStringConvertible, CaseIterable, Equatable, Hashable {
     /// `rpcbind` is set but `rpcallowip` is not — Bitcoin Core ignores rpcbind
     /// unless at least one allowed IP is specified.
     case rpcBindWithoutAllowIP

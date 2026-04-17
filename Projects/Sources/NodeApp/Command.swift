@@ -37,6 +37,10 @@ struct RPCCommand: Identifiable, Hashable {
     let description: String
     let category: RPCCategory
 
+    /// When `true`, this RPC acquires `cs_main` for an extended period and
+    /// should display a warning during initial block download.
+    var isHeavyDuringIBD: Bool = false
+
     static let parameterFreeCommands: [RPCCommand] = [
         // MARK: - Blockchain
         RPCCommand(
@@ -57,7 +61,8 @@ struct RPCCommand: Identifiable, Hashable {
         RPCCommand(
             id: "getchaintips", name: "getChainTips", methodName: "getchaintips",
             description: "Return information about all known tips in the block tree.",
-            category: .blockchain
+            category: .blockchain,
+            isHeavyDuringIBD: true
         ),
         RPCCommand(
             id: "getdifficulty", name: "getDifficulty", methodName: "getdifficulty",
@@ -121,7 +126,8 @@ struct RPCCommand: Identifiable, Hashable {
         RPCCommand(
             id: "getmininginfo", name: "getMiningInfo", methodName: "getmininginfo",
             description: "Returns a json object containing mining-related information.",
-            category: .mining
+            category: .mining,
+            isHeavyDuringIBD: true
         ),
         RPCCommand(
             id: "getprioritisedtransactions", name: "getPrioritisedTransactions",
