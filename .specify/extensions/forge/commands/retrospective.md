@@ -1,11 +1,7 @@
 ---
-description: Analyze a completed feature or session against its spec, capture lessons
-  learned, and propose actionable improvements
+description: "Analyze a completed feature or session against its spec, capture lessons learned, and propose actionable improvements"
 ---
 
-
-<!-- Extension: forge -->
-<!-- Config: .specify/extensions/forge/ -->
 ## User Input
 
 ```text

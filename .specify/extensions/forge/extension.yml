@@ -1,0 +1,62 @@
+schema_version: "1.0"
+
+extension:
+  id: "forge"
+  name: "Forge"
+  version: "0.5.0"
+  description: "SDLC workflows for roadmaps, retrospectives, reviews, and design"
+  author: "21-DOT-DEV"
+  repository: "https://github.com/21-DOT-DEV/spec-kit-extensions"
+  license: "MIT"
+  homepage: "https://github.com/21-DOT-DEV/spec-kit-extensions"
+
+requires:
+  speckit_version: ">=0.1.0"
+
+provides:
+  commands:
+    - name: "speckit.forge.roadmap"
+      file: "commands/roadmap.md"
+      description: "Create or update a multi-file product roadmap"
+      aliases: ["speckit.roadmap"]
+    - name: "speckit.forge.retrospective"
+      file: "commands/retrospective.md"
+      description: "Analyze a completed feature or session against its spec, capture lessons learned, and propose actionable improvements"
+      aliases: ["speckit.retrospective"]
+    - name: "speckit.forge.review-code"
+      file: "commands/review-code.md"
+      description: "Review changed code for quality, correctness, security, and project guideline compliance"
+      aliases: ["speckit.review-code"]
+    - name: "speckit.forge.review-design"
+      file: "commands/review-design.md"
+      description: "Review UI code for design system compliance (Apple HIG, Material Design 3, or Web standards)"
+      aliases: ["speckit.review-design"]
+    - name: "speckit.forge.review-ux"
+      file: "commands/review-ux.md"
+      description: "Evaluate UI code against Nielsen's 10 usability heuristics"
+      aliases: ["speckit.review-ux"]
+    - name: "speckit.forge.design-system"
+      file: "commands/design-system.md"
+      description: "Initialize or update a project design system specification"
+      aliases: ["speckit.design-system"]
+    - name: "speckit.forge.component"
+      file: "commands/component.md"
+      description: "Design and spec a reusable component for web and/or mobile"
+      aliases: ["speckit.component"]
+    - name: "speckit.forge.design-tokens"
+      file: "commands/design-tokens.md"
+      description: "Manage design tokens (colors, spacing, typography)"
+      aliases: ["speckit.design-tokens"]
+
+tags:
+  - "roadmap"
+  - "planning"
+  - "lifecycle"
+  - "product-management"
+  - "retrospective"
+  - "code-review"
+  - "design-review"
+  - "ux-review"
+  - "design-system"
+  - "component"
+  - "design-tokens"
