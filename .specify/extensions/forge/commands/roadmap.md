@@ -1,10 +1,7 @@
 ---
-description: Create or update a multi-file product roadmap
+description: "Create or update a multi-file product roadmap"
 ---
 
-
-<!-- Extension: forge -->
-<!-- Config: .specify/extensions/forge/ -->
 ## User Input
 
 ```text
