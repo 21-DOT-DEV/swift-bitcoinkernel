@@ -1,10 +1,20 @@
 internal import libbitcoinkernel
 import Foundation
 
-/// A 32-byte transaction identifier.
+/// A 32-byte transaction identifier — double-SHA256 of a transaction's
+/// non-witness serialization.
 ///
-/// Wraps the opaque `btck_Txid` type. ARC via `deinit` calls
-/// `btck_txid_destroy` when the last reference drops.
+/// TXID (this type) is stable across witness malleation and is what
+/// `prevout.hash` fields reference. WTXID (not exposed on this type)
+/// additionally includes witness data. Like block hashes, TXIDs are
+/// stored internally in kernel byte order — reverse for the display-order
+/// hex used by block explorers.
+///
+/// Obtained via ``Transaction/txid`` or ``TransactionOutPoint/txid``;
+/// there is no public `create` initializer.
+///
+/// Wraps the opaque `btck_Txid` type; `deinit` calls `btck_txid_destroy`
+/// when the last Swift reference drops.
 public final class Txid: @unchecked Sendable {
     let pointer: OpaquePointer
 
@@ -13,7 +23,8 @@ public final class Txid: @unchecked Sendable {
         self.pointer = pointer
     }
 
-    /// The raw 32-byte txid data.
+    /// The raw 32-byte TXID in internal (kernel) byte order. Reverse the
+    /// byte order before hex-encoding for display in a block explorer.
     public var data: Data {
         var output = [UInt8](repeating: 0, count: 32)
         output.withUnsafeMutableBufferPointer { buf in
@@ -23,7 +34,8 @@ public final class Txid: @unchecked Sendable {
         return Data(output)
     }
 
-    /// Whether this txid equals another.
+    /// Whether two TXIDs are byte-for-byte equal. Delegates to the
+    /// kernel's `btck_txid_equals` for the canonical comparison.
     public func equals(_ other: Txid) -> Bool {
         btck_txid_equals(pointer, other.pointer) != 0
     }

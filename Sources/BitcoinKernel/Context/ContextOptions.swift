@@ -1,46 +1,65 @@
 internal import libbitcoinkernel
 
-/// Options for creating a kernel context.
+/// Builder for constructing a ``Context`` — configure, then pass to
+/// ``Context/init(options:)``.
 ///
-/// A builder object — configure it, then pass to ``Context/init(options:)``.
-/// Not thread-safe; use from a single thread before creating the context.
+/// A one-shot builder: each setter replaces the previous value for that
+/// property. Defaults produce a mainnet context with no callbacks (see
+/// ``Context/init(options:)`` for the implications). Set the chain type
+/// first, attach callbacks, then build the context.
 ///
-/// Wraps the opaque `btck_ContextOptions` type. ARC via `deinit` calls
-/// `btck_context_options_destroy` when the last reference drops.
+/// - Warning: Not thread-safe. Configure on a single thread before creating
+///   the context; the resulting ``Context`` is thread-safe but building
+///   `ContextOptions` concurrently is undefined.
+///
+/// Wraps the opaque `btck_ContextOptions` type; `deinit` calls
+/// `btck_context_options_destroy` when the last Swift reference drops.
 public final class ContextOptions {
     let pointer: OpaquePointer
 
-    /// Creates empty context options with default values.
+    /// Creates empty context options with default values — mainnet chain,
+    /// no notification callbacks, no validation interface callbacks.
     public init() {
         self.pointer = btck_context_options_create()
     }
 
-    /// Sets the chain parameters for the context to be created.
+    /// Sets the chain parameters — determines which Bitcoin network the
+    /// resulting ``Context`` validates against.
     ///
-    /// The C API copies the parameters internally — `params` may be
-    /// deallocated after this call returns.
+    /// The C API copies the parameters internally, so `params` may be
+    /// deallocated after this call returns. Calling this replaces any
+    /// previously-set chain parameters on the same options object.
     ///
-    /// - Parameter params: The chain parameters to use.
+    /// - Parameter params: Chain parameters, typically constructed via
+    ///   ``ChainParameters/init(_:)`` from a ``ChainType``.
     public func setChainParams(_ params: ChainParameters) {
         btck_context_options_set_chainparams(pointer, params.pointer)
     }
 
-    /// Sets the notification callbacks for the context.
+    /// Attaches notification callbacks — tip updates, header tips, progress
+    /// reports, warnings, and fatal errors.
     ///
-    /// The kernel takes ownership of the callback state. You may release
-    /// your reference to `notifications` after this call.
+    /// The kernel takes ownership of the callback state; you may release
+    /// your Swift reference to `notifications` after this call returns.
+    /// All callbacks are dispatched on kernel-internal threads — see
+    /// ``NotificationCallbacks`` for the list and their semantics.
     ///
-    /// - Parameter notifications: The notification callbacks.
+    /// - Parameter notifications: Preconfigured ``NotificationCallbacks``
+    ///   with the closures you want invoked populated.
     public func setNotifications(_ notifications: NotificationCallbacks) {
         btck_context_options_set_notifications(pointer, notifications.makeCCallbacks())
     }
 
-    /// Sets the validation interface callbacks for the context.
+    /// Attaches validation interface callbacks — per-block validation,
+    /// PoW confirmation, chain connect / disconnect events.
     ///
-    /// The kernel takes ownership of the callback state. You may release
-    /// your reference to `callbacks` after this call.
+    /// The kernel takes ownership of the callback state. Validation
+    /// callbacks fire on kernel-internal threads and **block further
+    /// validation while executing**, so keep handlers fast and avoid
+    /// synchronous I/O or long-running work inside them.
     ///
-    /// - Parameter callbacks: The validation interface callbacks.
+    /// - Parameter callbacks: Preconfigured ``ValidationInterfaceCallbacks``
+    ///   with the closures you want invoked populated.
     public func setValidationInterface(_ callbacks: ValidationInterfaceCallbacks) {
         btck_context_options_set_validation_interface(pointer, callbacks.makeCCallbacks())
     }

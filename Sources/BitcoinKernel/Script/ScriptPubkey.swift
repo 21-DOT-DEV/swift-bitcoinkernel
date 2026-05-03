@@ -1,16 +1,30 @@
 internal import libbitcoinkernel
 import Foundation
 
-/// A script pubkey (locking script) for a transaction output.
+/// A script pubkey — the locking script attached to a transaction
+/// output, defining the conditions under which that output can be spent.
 ///
-/// Wraps the opaque `btck_ScriptPubkey` type. ARC via `deinit` calls
-/// `btck_script_pubkey_destroy` when the last reference drops.
+/// In Bitcoin, every output carries a scriptPubkey and a satoshi amount.
+/// Common scriptPubkey patterns: P2PKH, P2SH, P2WPKH, P2WSH, P2TR. The
+/// kernel treats the script as opaque bytes here — the semantic meaning
+/// emerges at ``verify(amount:transaction:precomputedData:inputIndex:flags:)``
+/// time, when script-interpreter flags (see ``ScriptVerificationFlags``)
+/// determine which BIP-governed rules apply.
+///
+/// Wraps the opaque `btck_ScriptPubkey` type; `deinit` calls
+/// `btck_script_pubkey_destroy` when the last Swift reference drops.
 public final class ScriptPubkey: @unchecked Sendable {
     let pointer: OpaquePointer
 
     /// Creates a script pubkey from serialized script data.
     ///
-    /// - Parameter data: The raw script bytes.
+    /// Accepts the raw byte layout used in a transaction output's
+    /// scriptPubkey field — opcodes and pushed data as stored on disk,
+    /// not an ASM-decoded string. No structural validation happens here;
+    /// an empty or malformed script parses but will fail verification.
+    ///
+    /// - Parameter data: Raw script bytes. Empty input traps via
+    ///   `preconditionFailure`.
     public init(_ data: Data) {
         self.pointer = data.withUnsafeBytes { rawBuf in
             guard let baseAddress = rawBuf.baseAddress else {

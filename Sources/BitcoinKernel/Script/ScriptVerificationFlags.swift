@@ -1,6 +1,12 @@
-/// Flags controlling script verification constraints.
+/// Flags controlling which BIP-governed consensus rules apply during
+/// script verification.
 ///
-/// Compose flags using set operations: `[.p2sh, .witness, .taproot]`.
+/// Each flag maps to a specific BIP — see the table in <doc:VerifyingScripts>
+/// for citations. Compose using `OptionSet` syntax:
+/// `[.p2sh, .witness, .taproot]`. Use ``all`` for full mainnet-equivalent
+/// verification; leave flags off to simulate validation under older
+/// consensus rules (useful for testing pre-activation blocks).
+///
 /// Maps to `btck_ScriptVerificationFlags` constants in the kernel C API.
 public struct ScriptVerificationFlags: OptionSet, Sendable {
     public let rawValue: UInt32
