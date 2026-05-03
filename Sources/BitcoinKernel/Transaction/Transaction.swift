@@ -1,10 +1,18 @@
 internal import libbitcoinkernel
 import Foundation
 
-/// A Bitcoin transaction.
+/// A Bitcoin transaction — the consensus-layer value type that moves
+/// coins from one set of scriptPubKeys to another.
 ///
-/// Wraps the opaque `btck_Transaction` type. ARC via `deinit` calls
-/// `btck_transaction_destroy` when the last reference drops.
+/// Construct from network/disk bytes via ``init(_:)`` for stand-alone
+/// parsing, or obtain from a ``Block`` via ``Block/transaction(at:)``.
+/// The kernel parses, structurally validates, and produces an opaque
+/// handle; full consensus validation (witness checks, signature
+/// verification, script execution) happens through script verification
+/// APIs and ``ChainstateManager/processBlock(_:)``.
+///
+/// Wraps the opaque `btck_Transaction` type; `deinit` calls
+/// `btck_transaction_destroy` when the last Swift reference drops.
 public final class Transaction: @unchecked Sendable {
     let pointer: OpaquePointer
 
@@ -27,12 +35,14 @@ public final class Transaction: @unchecked Sendable {
         self.pointer = pointer
     }
 
-    /// The number of outputs in this transaction.
+    /// The number of outputs in this transaction — the destinations
+    /// and amounts being paid. Always ≥ 1.
     public var outputCount: Int {
         btck_transaction_count_outputs(pointer)
     }
 
-    /// The number of inputs in this transaction.
+    /// The number of inputs in this transaction — the previous-outputs
+    /// being spent. `0` for a coinbase transaction; otherwise ≥ 1.
     public var inputCount: Int {
         btck_transaction_count_inputs(pointer)
     }
@@ -55,13 +65,23 @@ public final class Transaction: @unchecked Sendable {
         return TransactionInput(pointer: btck_transaction_input_copy(viewPtr))
     }
 
-    /// The transaction ID (owned copy).
+    /// The transaction ID — double-SHA256 of the transaction's
+    /// non-witness bytes. Returns an owned copy that outlives this
+    /// transaction.
+    ///
+    /// TXID vs. WTXID distinction: this is the TXID (excludes witness
+    /// data), the stable identifier used by `prevout.hash` references.
+    /// Witness transactions additionally have a WTXID that includes
+    /// witness data — the kernel does not currently expose WTXID on this
+    /// type.
     public var txid: Txid {
         let viewPtr = btck_transaction_get_txid(pointer)
         return Txid(pointer: btck_txid_copy(viewPtr))
     }
 
-    /// The consensus-serialized transaction bytes.
+    /// The consensus-serialized transaction bytes — the round-trip of
+    /// ``init(_:)``. Always succeeds for a valid transaction;
+    /// serialization failures indicate a kernel bug.
     public var data: Data {
         guard let result = serializeToData({ writer, userData in
             btck_transaction_to_bytes(pointer, writer, userData)

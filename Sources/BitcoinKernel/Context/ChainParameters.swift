@@ -1,15 +1,26 @@
 internal import libbitcoinkernel
 
-/// Chain parameters describing the properties of a Bitcoin network.
+/// Chain parameters describing the consensus rules, genesis block, subsidy
+/// schedule, and soft-fork activation heights of a specific Bitcoin network.
 ///
-/// Wraps the opaque `btck_ChainParameters` type. ARC via `deinit` calls
-/// `btck_chain_parameters_destroy` when the last reference drops.
+/// Wraps Bitcoin Core's [`CChainParams`](https://github.com/bitcoin/bitcoin/blob/master/src/kernel/chainparams.h).
+/// Each ``ChainType`` selects a distinct set of parameters — mainnet's
+/// consensus differs from regtest's by activation heights, subsidy halving
+/// interval, and PoW difficulty floor, among many other fields.
+///
+/// Construct once per ``Context``; attach via
+/// ``ContextOptions/setChainParams(_:)``. The kernel copies parameters
+/// internally on that call, so this object can be released afterward.
+///
+/// Wraps the opaque `btck_ChainParameters` type; `deinit` calls
+/// `btck_chain_parameters_destroy` when the last Swift reference drops.
 public final class ChainParameters: @unchecked Sendable {
     let pointer: OpaquePointer
 
     /// Creates chain parameters for the given chain type.
     ///
-    /// - Parameter chainType: The Bitcoin network to configure for.
+    /// - Parameter chainType: Which Bitcoin network to configure for —
+    ///   mainnet, testnet3, testnet4, signet, or regtest. See ``ChainType``.
     public init(_ chainType: ChainType) {
         self.pointer = btck_chain_parameters_create(chainType.rawValue)
     }

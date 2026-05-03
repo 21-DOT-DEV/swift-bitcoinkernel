@@ -46,3 +46,55 @@ public final class BlockHash: @unchecked Sendable {
         btck_block_hash_destroy(pointer)
     }
 }
+
+// MARK: - Swift-value ergonomics
+//
+// `BlockHash` is a reference type (it owns a `btck_BlockHash` C pointer),
+// but semantically it represents a 32-byte hash value. These conformances
+// let it be used like any other Swift value — compared with `==`, stored
+// in `Set`/`Dictionary`, constructed via `RawRepresentable`, and printed
+// as human-readable display-order hex.
+
+extension BlockHash: Equatable {
+    /// Two block hashes are equal iff their 32 raw bytes are identical.
+    /// Delegates to the C-side `btck_block_hash_equals` for the canonical
+    /// comparison.
+    public static func == (lhs: BlockHash, rhs: BlockHash) -> Bool {
+        lhs.equals(rhs)
+    }
+}
+
+extension BlockHash: Hashable {
+    /// Hashes the 32 raw bytes. Consistent with `Equatable`: equal hashes
+    /// produce equal hash values.
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(self.data)
+    }
+}
+
+extension BlockHash: RawRepresentable {
+    public typealias RawValue = Data
+
+    /// The 32-byte raw hash data in internal (kernel) byte order.
+    public var rawValue: Data { self.data }
+
+    /// Creates a ``BlockHash`` from raw bytes, returning `nil` if the input
+    /// is not exactly 32 bytes.
+    ///
+    /// - Parameter rawValue: Raw hash data in internal byte order.
+    public convenience init?(rawValue: Data) {
+        guard rawValue.count == 32 else { return nil }
+        self.init(rawValue)
+    }
+}
+
+extension BlockHash: CustomStringConvertible {
+    /// 64-character lowercase hex string in **display order** — the same
+    /// convention Bitcoin block explorers use. Note that `data` returns the
+    /// bytes in **internal (kernel) order** (reversed from display). For
+    /// example, the mainnet genesis block's display hash is
+    /// `000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f`.
+    public var description: String {
+        Data(self.data.reversed()).map { String(format: "%02x", $0) }.joined()
+    }
+}

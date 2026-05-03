@@ -4,7 +4,7 @@
     @TitleHeading("How-to Guide")
 }
 
-Verify that a transaction input correctly spends a previous output's script.
+Verify that a transaction input correctly spends a previous output's ``ScriptPubkey`` using the BIP-governed consensus rules wrapped around Bitcoin Core's [`script/interpreter.h`](https://github.com/bitcoin/bitcoin/blob/master/src/script/interpreter.h).
 
 ## Running Script Verification
 
@@ -31,13 +31,13 @@ if valid {
 
 | Flag | BIP | Description |
 |------|-----|-------------|
-| ``ScriptVerificationFlags/p2sh`` | BIP 16 | Pay-to-script-hash evaluation |
-| ``ScriptVerificationFlags/derSig`` | BIP 66 | Strict DER signature encoding |
-| ``ScriptVerificationFlags/nullDummy`` | BIP 147 | Null dummy element for `CHECKMULTISIG` |
-| ``ScriptVerificationFlags/checkLockTimeVerify`` | BIP 65 | `OP_CHECKLOCKTIMEVERIFY` |
-| ``ScriptVerificationFlags/checkSequenceVerify`` | BIP 112 | `OP_CHECKSEQUENCEVERIFY` |
-| ``ScriptVerificationFlags/witness`` | BIP 141 | Segregated Witness |
-| ``ScriptVerificationFlags/taproot`` | BIP 341/342 | Taproot and Tapscript |
+| ``ScriptVerificationFlags/p2sh`` | [BIP 16](https://github.com/bitcoin/bips/blob/master/bip-0016.mediawiki) | Pay-to-script-hash evaluation |
+| ``ScriptVerificationFlags/derSig`` | [BIP 66](https://github.com/bitcoin/bips/blob/master/bip-0066.mediawiki) | Strict DER signature encoding |
+| ``ScriptVerificationFlags/nullDummy`` | [BIP 147](https://github.com/bitcoin/bips/blob/master/bip-0147.mediawiki) | Null dummy element for `CHECKMULTISIG` |
+| ``ScriptVerificationFlags/checkLockTimeVerify`` | [BIP 65](https://github.com/bitcoin/bips/blob/master/bip-0065.mediawiki) | `OP_CHECKLOCKTIMEVERIFY` |
+| ``ScriptVerificationFlags/checkSequenceVerify`` | [BIP 112](https://github.com/bitcoin/bips/blob/master/bip-0112.mediawiki) | `OP_CHECKSEQUENCEVERIFY` |
+| ``ScriptVerificationFlags/witness`` | [BIP 141](https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki) | Segregated Witness |
+| ``ScriptVerificationFlags/taproot`` | [BIP 341](https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki) / [BIP 342](https://github.com/bitcoin/bips/blob/master/bip-0342.mediawiki) | Taproot and Tapscript |
 
 Combine flags using set operations:
 
@@ -47,7 +47,7 @@ let flags: ScriptVerificationFlags = [.p2sh, .witness, .taproot]
 
 ## Taproot Verification
 
-Taproot inputs require pre-computed transaction data for efficiency:
+Taproot inputs require pre-computed transaction data for efficiency. The pre-computation caches BIP-341 sighash components (`hashPrevouts`, `hashAmounts`, `hashSequences`, `hashOutputs`) that would otherwise be recomputed per input — see [BIP 341 § Signature validation](https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki#signature-validation) for the hashing algorithm.
 
 ```swift
 let precomputed = try PrecomputedTransactionData(
@@ -71,3 +71,10 @@ let (valid, status) = script.verify(
 - ``ScriptVerifyStatus/ok`` -- Verification passed (or failed due to script logic).
 - ``ScriptVerifyStatus/errorInvalidFlagsCombination`` -- The flags combination is not valid.
 - ``ScriptVerifyStatus/errorSpentOutputsRequired`` -- Witness or taproot flags require spent outputs data.
+
+## See Also
+
+- <doc:GettingStarted>
+- <doc:ValidatingBlocks>
+- ``ScriptPubkey``
+- ``ScriptVerificationFlags``

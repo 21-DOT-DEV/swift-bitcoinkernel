@@ -2,6 +2,22 @@ internal import libbitcoinkernel
 
 /// A connection to the kernel's internal logging system.
 ///
+/// ### Opt-in by construction
+///
+/// Kernel logging is dormant until you explicitly create a
+/// ``LoggingConnection``: there is no default, always-on destination. An
+/// application that does not want kernel log output simply never instantiates
+/// one — no build flag required. This replaces the `DISABLE_KERNEL_LOGGING`
+/// build-flag pattern some downstream projects have used; the equivalent
+/// opt-out here is just to skip construction.
+///
+/// For belt-and-suspenders silence (skip the internal logger entirely),
+/// call ``disableLogging()`` once at program startup before any connection
+/// is created. After ``disableLogging()`` has been called, no further
+/// connections can be created and kernel log writes become no-ops.
+///
+/// ### Buffering
+///
 /// Messages logged before a connection is created are buffered (up to 1 MB)
 /// and delivered immediately when the first connection is established.
 ///
@@ -56,7 +72,13 @@ public func disableLogging() {
 
 /// Sets formatting options for the global internal logger.
 ///
-/// - Parameter options: The logging format options.
+/// - Parameters:
+///   - timestamps: Prefix each log line with a timestamp.
+///   - timeMicros: Include microseconds in the timestamp.
+///   - threadNames: Include the originating thread's name.
+///   - sourceLocations: Append the source-file location that emitted the line.
+///   - alwaysPrintCategoryLevels: Always print the log category and level,
+///     even for lines that wouldn't normally include them.
 public func setLoggingOptions(
     timestamps: Bool = false,
     timeMicros: Bool = false,

@@ -1,9 +1,16 @@
 internal import libbitcoinkernel
 
-/// The validation state of a block after processing.
+/// The validation state of a block after processing — a (mode, result)
+/// pair describing whether the kernel accepted the block and, if not, why.
 ///
-/// Wraps the opaque `btck_BlockValidationState` type. ARC via `deinit` calls
-/// `btck_block_validation_state_destroy` when the last reference drops.
+/// Pass to ``ChainstateManager/processBlockHeader(_:state:)`` as an
+/// out-parameter; the kernel populates it with the verdict. Read
+/// ``validationMode`` for the high-level status and
+/// ``blockValidationResult`` for the granular reason on rejection.
+///
+/// Wraps the opaque `btck_BlockValidationState` type; `deinit` calls
+/// `btck_block_validation_state_destroy` when the last Swift reference
+/// drops.
 public final class BlockValidationState: @unchecked Sendable {
     let pointer: OpaquePointer
 
