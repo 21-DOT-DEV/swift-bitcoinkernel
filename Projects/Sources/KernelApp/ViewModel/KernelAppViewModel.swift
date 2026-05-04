@@ -12,6 +12,7 @@ import BitcoinKernel
 import Foundation
 import Observation
 import OSLog
+import Tor
 
 // MARK: - KernelAppViewModel
 
@@ -79,14 +80,26 @@ final class KernelAppViewModel {
         _ reindex: ReindexMode?
     ) async throws -> ResidentKernel
 
-    /// Builds a ``BlockSource`` from a configured endpoint URL.
-    typealias BlockSourceFactory = @Sendable (URL) -> any BlockSource
+    /// Builds a ``BlockSource`` from a configured endpoint URL and an
+    /// optional SOCKS5 proxy endpoint. Production wiring builds an
+    /// ``EsploraBlockSource`` whose underlying ``URLSession`` is either
+    /// the shared default (no proxy) or one constructed via
+    /// ``URLSessionConfiguration/ephemeralProxyConfigurationForTor(socksEndpoint:)``.
+    /// Tests inject a closure that records the ``HostPort`` argument to
+    /// verify proxy wiring without standing up a live SOCKS listener.
+    typealias BlockSourceFactory = @Sendable (_ endpoint: URL, _ socks: HostPort?) -> any BlockSource
 
     @ObservationIgnored let settings: KernelAppSettings
+    @ObservationIgnored let tor: TorViewModel
     @ObservationIgnored private let kernelFactory: KernelFactory
     @ObservationIgnored private let blockSourceFactory: BlockSourceFactory
 
     @ObservationIgnored private var currentSync: BlockchainSync?
+
+    /// Observer task that waits for Tor to finish bootstrapping when
+    /// the user has requested a Tor-routed sync. `nil` outside of the
+    /// ``SyncSnapshot/Phase/waitingForTor`` window.
+    @ObservationIgnored private var torWaitTask: Task<Void, Never>?
 
     @ObservationIgnored private static let logger = Logger(
         subsystem: "dev.21.KernelApp",
@@ -97,10 +110,12 @@ final class KernelAppViewModel {
 
     init(
         settings: KernelAppSettings,
+        tor: TorViewModel,
         kernelFactory: @escaping KernelFactory = KernelAppViewModel.defaultKernelFactory,
         blockSourceFactory: @escaping BlockSourceFactory = KernelAppViewModel.defaultBlockSourceFactory
     ) {
         self.settings = settings
+        self.tor = tor
         self.kernelFactory = kernelFactory
         self.blockSourceFactory = blockSourceFactory
     }
@@ -113,21 +128,6 @@ final class KernelAppViewModel {
     /// invoked from a button tap or from a future
     /// `BGContinuedProcessingTask` resumption.
     func start() async {
-        // Privacy guard — until the SOCKS5 proxy is wired onto the
-        // block source, refuse to leak traffic the user expects to be
-        // private.
-        if settings.routeDownloadsThroughTor {
-            snapshot = SyncSnapshot(
-                phase: .failed("Tor routing requested but not yet supported in this build"),
-                statusText: "Tor routing not yet supported",
-                localHeight: 0,
-                remoteHeight: 0,
-                tipHash: Data(),
-                verificationProgress: 0
-            )
-            return
-        }
-
         guard let endpoint = settings.blockSourceEndpoint else {
             snapshot = SyncSnapshot(
                 phase: .failed("No block source selected"),
@@ -140,33 +140,19 @@ final class KernelAppViewModel {
             return
         }
 
-        // No-op if already running.
-        if syncTask != nil { return }
+        // No-op if already running or waiting for Tor.
+        if syncTask != nil || torWaitTask != nil { return }
 
-        if residentKernel == nil {
-            do {
-                residentKernel = try await kernelFactory(
-                    settings.chainType,
-                    settings.effectiveDataDirectory,
-                    settings.workerThreadCount,
-                    nil
-                )
-            } catch {
-                Self.logger.error("kernel open failed: \(String(describing: error), privacy: .public)")
-                snapshot = SyncSnapshot(
-                    phase: .failed(error.localizedDescription),
-                    statusText: "Kernel open failed",
-                    localHeight: 0,
-                    remoteHeight: 0,
-                    tipHash: Data(),
-                    verificationProgress: 0
-                )
-                return
-            }
+        // If the user wants Tor routing but Tor isn't ready yet, enter
+        // the waitingForTor state and kick the sync automatically once
+        // bootstrap completes. The observer also forwards terminal
+        // Tor failures into the snapshot so the user isn't left hanging.
+        if settings.routeDownloadsThroughTor && !tor.isReady {
+            enterWaitingForTor(endpoint: endpoint)
+            return
         }
 
-        spawnSyncTask(endpoint: endpoint)
-        lastAppliedSnapshot = KernelAppSettingsSnapshot(settings: settings)
+        await openKernelAndSpawn(endpoint: endpoint, reindex: nil)
     }
 
     /// Tear down the resident kernel and rebuild it with the requested
@@ -194,28 +180,14 @@ final class KernelAppViewModel {
             return
         }
 
-        do {
-            residentKernel = try await kernelFactory(
-                settings.chainType,
-                settings.effectiveDataDirectory,
-                settings.workerThreadCount,
-                mode
-            )
-        } catch {
-            Self.logger.error("reindex kernel open failed: \(String(describing: error), privacy: .public)")
-            snapshot = SyncSnapshot(
-                phase: .failed(error.localizedDescription),
-                statusText: "Reindex kernel open failed",
-                localHeight: 0,
-                remoteHeight: 0,
-                tipHash: Data(),
-                verificationProgress: 0
-            )
+        // Symmetry with start(): a reindex requested while Tor isn't
+        // ready waits for bootstrap before rebuilding the kernel.
+        if settings.routeDownloadsThroughTor && !tor.isReady {
+            enterWaitingForTor(endpoint: endpoint, reindex: mode)
             return
         }
 
-        spawnSyncTask(endpoint: endpoint)
-        lastAppliedSnapshot = KernelAppSettingsSnapshot(settings: settings)
+        await openKernelAndSpawn(endpoint: endpoint, reindex: mode)
     }
 
     /// Reconcile the running kernel + sync with any changes to
@@ -243,22 +215,11 @@ final class KernelAppViewModel {
 
         case .restartSync:
             // Preserve the kernel; just respawn sync against the new
-            // source. Mirrors the privacy guard + endpoint precondition
+            // source. Mirrors the endpoint precondition + Tor gating
             // in `start()`.
-            if settings.routeDownloadsThroughTor {
-                await cancelSyncTask()
-                snapshot = SyncSnapshot(
-                    phase: .failed("Tor routing requested but not yet supported in this build"),
-                    statusText: "Tor routing not yet supported",
-                    localHeight: 0,
-                    remoteHeight: 0,
-                    tipHash: Data(),
-                    verificationProgress: 0
-                )
-                return
-            }
             guard let endpoint = settings.blockSourceEndpoint else {
                 await cancelSyncTask()
+                cancelTorWait()
                 snapshot = SyncSnapshot(
                     phase: .failed("No block source selected"),
                     statusText: "Select a block source to begin syncing",
@@ -270,7 +231,12 @@ final class KernelAppViewModel {
                 return
             }
             await cancelSyncTask()
-            spawnSyncTask(endpoint: endpoint)
+            cancelTorWait()
+            if settings.routeDownloadsThroughTor && !tor.isReady {
+                enterWaitingForTor(endpoint: endpoint)
+                return
+            }
+            spawnSyncTask(endpoint: endpoint, socks: currentSocksIfRouting())
             lastAppliedSnapshot = current
 
         case .restartKernel:
@@ -289,6 +255,7 @@ final class KernelAppViewModel {
     /// transitions, and explicit user actions. Awaits the sync task so
     /// caller is guaranteed clean shutdown semantics.
     func stop() async {
+        cancelTorWait()
         await cancelSyncTask()
         residentKernel = nil
         snapshot = .idle
@@ -308,9 +275,57 @@ final class KernelAppViewModel {
         currentSync = nil
     }
 
-    private func spawnSyncTask(endpoint: URL) {
+    /// Cancel any in-flight wait-for-Tor observer. Idempotent.
+    private func cancelTorWait() {
+        torWaitTask?.cancel()
+        torWaitTask = nil
+    }
+
+    /// Build the kernel (if needed) and spawn the sync task against
+    /// `endpoint`. Shared fast path between ``start()``,
+    /// ``requestReindex(_:)``, and the Tor-wait observer's
+    /// post-bootstrap callback.
+    private func openKernelAndSpawn(endpoint: URL, reindex: ReindexMode?) async {
+        // Reindex always rebuilds; plain start reuses the resident kernel
+        // when present.
+        let needsBuild = reindex != nil || residentKernel == nil
+        if needsBuild {
+            do {
+                residentKernel = try await kernelFactory(
+                    settings.chainType,
+                    settings.effectiveDataDirectory,
+                    settings.workerThreadCount,
+                    reindex
+                )
+            } catch {
+                Self.logger.error("kernel open failed: \(String(describing: error), privacy: .public)")
+                snapshot = SyncSnapshot(
+                    phase: .failed(error.localizedDescription),
+                    statusText: reindex == nil ? "Kernel open failed" : "Reindex kernel open failed",
+                    localHeight: 0,
+                    remoteHeight: 0,
+                    tipHash: Data(),
+                    verificationProgress: 0
+                )
+                return
+            }
+        }
+
+        spawnSyncTask(endpoint: endpoint, socks: currentSocksIfRouting())
+        lastAppliedSnapshot = KernelAppSettingsSnapshot(settings: settings)
+    }
+
+    /// The live Tor SOCKS endpoint iff the user has opted into routing
+    /// and Tor is ready. Otherwise `nil` — tells the block-source
+    /// factory to build a direct-HTTPS session.
+    private func currentSocksIfRouting() -> HostPort? {
+        guard settings.routeDownloadsThroughTor, tor.isReady else { return nil }
+        return tor.socksEndpoint
+    }
+
+    private func spawnSyncTask(endpoint: URL, socks: HostPort?) {
         guard let kernel = residentKernel else { return }
-        let source = blockSourceFactory(endpoint)
+        let source = blockSourceFactory(endpoint, socks)
         let sync = kernel.makeSync(source: source)
         currentSync = sync
 
@@ -327,6 +342,80 @@ final class KernelAppViewModel {
 
     private func apply(update: BlockchainSync.Update) {
         snapshot = SyncSnapshot(from: update)
+    }
+
+    // MARK: - Wait-for-Tor
+
+    /// Enter the ``SyncSnapshot/Phase/waitingForTor`` state and park an
+    /// observer on the shared ``TorViewModel``. When Tor reports
+    /// ``TorViewModel/isReady`` the observer spawns the sync with the
+    /// fresh SOCKS endpoint. When Tor lands in
+    /// ``TorDisplayState/failed`` without a scheduled retry, the
+    /// observer surfaces a terminal ``SyncSnapshot/Phase/failed(_:)``
+    /// so the UI doesn't wait forever.
+    ///
+    /// Pre-condition: the caller has already validated
+    /// `settings.blockSourceEndpoint != nil` and
+    /// `settings.routeDownloadsThroughTor == true`.
+    private func enterWaitingForTor(endpoint: URL, reindex: ReindexMode? = nil) {
+        cancelTorWait()
+        snapshot = SyncSnapshot(
+            phase: .waitingForTor,
+            statusText: torStatusText(),
+            localHeight: 0,
+            remoteHeight: 0,
+            tipHash: Data(),
+            verificationProgress: 0
+        )
+
+        torWaitTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                if self.tor.isReady {
+                    await self.openKernelAndSpawn(endpoint: endpoint, reindex: reindex)
+                    self.torWaitTask = nil
+                    return
+                }
+                if self.tor.displayState == .failed && self.tor.nextRetryAt == nil {
+                    self.snapshot = SyncSnapshot(
+                        phase: .failed("Tor bootstrap failed"),
+                        statusText: "Tor could not start — tap retry in Settings or disable Tor routing",
+                        localHeight: 0,
+                        remoteHeight: 0,
+                        tipHash: Data(),
+                        verificationProgress: 0
+                    )
+                    self.torWaitTask = nil
+                    return
+                }
+                // Refresh the statusText so the bootstrap percentage in
+                // the UI stays in sync. TorViewModel publishes these
+                // changes on the main actor; a short sleep is cheaper
+                // and more portable than an Observation subscription
+                // from a non-View context.
+                self.snapshot.statusText = self.torStatusText()
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+        }
+    }
+
+    /// Human-readable status string for the ``waitingForTor`` snapshot.
+    private func torStatusText() -> String {
+        switch tor.displayState {
+        case .disabled:
+            return "Starting Tor…"
+        case .starting:
+            if tor.bootstrapProgress > 0 {
+                return "Bootstrapping Tor… \(tor.bootstrapProgress)%"
+            }
+            return "Bootstrapping Tor…"
+        case .running:
+            return "Connecting through Tor…"
+        case .stopping:
+            return "Tor stopping — waiting to restart…"
+        case .failed:
+            return "Tor failed — retrying…"
+        }
     }
 
     // MARK: - Default factories (production)
@@ -348,7 +437,11 @@ final class KernelAppViewModel {
     }
 
     @Sendable
-    static func defaultBlockSourceFactory(endpoint: URL) -> any BlockSource {
-        EsploraBlockSource(endpoint: endpoint)
+    static func defaultBlockSourceFactory(endpoint: URL, socks: HostPort?) -> any BlockSource {
+        if let socks {
+            let config = URLSessionConfiguration.ephemeralProxyConfigurationForTor(socksEndpoint: socks)
+            return EsploraBlockSource(endpoint: endpoint, urlSession: URLSession(configuration: config))
+        }
+        return EsploraBlockSource(endpoint: endpoint)
     }
 }

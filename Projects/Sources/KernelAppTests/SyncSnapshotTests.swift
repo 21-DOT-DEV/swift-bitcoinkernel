@@ -102,9 +102,10 @@ struct SyncSnapshotTests {
 
     // MARK: - Phase.isActive
 
-    @Test("Phase.isActive is true only for preparing and syncing")
+    @Test("Phase.isActive is true for waitingForTor, preparing, and syncing")
     func phaseIsActiveOnlyDuringActiveStates() {
         #expect(!SyncSnapshot.Phase.idle.isActive)
+        #expect(SyncSnapshot.Phase.waitingForTor.isActive)
         #expect(SyncSnapshot.Phase.preparing.isActive)
         #expect(SyncSnapshot.Phase.syncing.isActive)
         #expect(!SyncSnapshot.Phase.finished.isActive)

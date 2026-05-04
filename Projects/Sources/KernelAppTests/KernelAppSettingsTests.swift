@@ -53,10 +53,9 @@ struct KernelAppSettingsTests {
         #expect(settings.dataDirectoryOverride == nil)
     }
 
-    @Test("Tor off by default")
+    @Test("Tor routing off by default")
     func torOffByDefault() {
         let settings = KernelAppSettings(defaults: makeVolatileDefaults())
-        #expect(!settings.torEnabled)
         #expect(!settings.routeDownloadsThroughTor)
     }
 
@@ -121,7 +120,6 @@ struct KernelAppSettingsTests {
             let settings = KernelAppSettings(defaults: defaults)
             settings.chainType = .testnet4
             settings.blockSourceEndpoint = URL(string: "https://blockstream.info/testnet/api")
-            settings.torEnabled = true
             settings.routeDownloadsThroughTor = true
             settings.workerThreadCount = 2
             settings.logLevel = .debug
@@ -131,7 +129,6 @@ struct KernelAppSettingsTests {
         let reloaded = KernelAppSettings(defaults: defaults)
         #expect(reloaded.chainType == .testnet4)
         #expect(reloaded.blockSourceEndpoint?.absoluteString == "https://blockstream.info/testnet/api")
-        #expect(reloaded.torEnabled)
         #expect(reloaded.routeDownloadsThroughTor)
         #expect(reloaded.workerThreadCount == 2)
         #expect(reloaded.logLevel == .debug)
@@ -233,6 +230,42 @@ struct BlockSourcePresetTests {
     @Test("presets(for:) is empty for regtest")
     func presetsForRegtestIsEmpty() {
         #expect(BlockSourcePreset.presets(for: .regtest).isEmpty)
+    }
+
+    @Test("requiresTor is true for .onion presets and false for clearnet presets")
+    func requiresTorReflectsHost() {
+        for preset in BlockSourcePreset.allCases {
+            let hostIsOnion = preset.url.host?.hasSuffix(".onion") ?? false
+            #expect(preset.requiresTor == hostIsOnion)
+        }
+        // Spot-check: at least one onion and one clearnet exist.
+        #expect(BlockSourcePreset.allCases.contains { $0.requiresTor })
+        #expect(BlockSourcePreset.allCases.contains { !$0.requiresTor })
+    }
+
+    @Test("presets(for:torRouting:) hides onion presets when routing is off")
+    func presetsTorRoutingOffHidesOnion() {
+        let mainnet = BlockSourcePreset.presets(for: .mainnet, torRouting: false)
+        #expect(!mainnet.isEmpty, "at least one clearnet mainnet preset must exist")
+        #expect(mainnet.allSatisfy { !$0.requiresTor })
+    }
+
+    @Test("presets(for:torRouting:) includes onion presets when routing is on")
+    func presetsTorRoutingOnIncludesOnion() {
+        let mainnet = BlockSourcePreset.presets(for: .mainnet, torRouting: true)
+        #expect(mainnet.contains { $0.requiresTor },
+                "at least one onion mainnet preset must show when Tor routing is on")
+    }
+
+    @Test("Every onion preset URL host is a v3 .onion (56-char base32 + .onion)")
+    func onionPresetsUseV3Addresses() {
+        // v3 onion service = 56 base32 chars + ".onion" = 62-char host.
+        for preset in BlockSourcePreset.allCases where preset.requiresTor {
+            let host = preset.url.host ?? ""
+            #expect(host.hasSuffix(".onion"))
+            #expect(host.count == 62,
+                    "\(preset) host \(host) is not a v3 onion (expected 62 chars, got \(host.count))")
+        }
     }
 
     @Test("All presets carry the same chain-type in both URL and metadata")

@@ -85,7 +85,7 @@ let project = Project(
             product: .unitTests,
             bundleId: "dev.21.NodeAppTests",
             deploymentTargets: deploymentTargets,
-            sources: ["Sources/NodeAppTests/**"],
+            sources: ["Sources/NodeAppTests/**", "Sources/SharedTests/**"],
             dependencies: [.target(name: "NodeApp")],
             settings: .settings(
                 base: [
@@ -103,7 +103,7 @@ let project = Project(
             product: .unitTests,
             bundleId: "dev.21.KernelAppTests",
             deploymentTargets: deploymentTargets,
-            sources: ["Sources/KernelAppTests/**"],
+            sources: ["Sources/KernelAppTests/**", "Sources/SharedTests/**"],
             dependencies: [.target(name: "KernelApp")],
             settings: .settings(
                 configurations: [

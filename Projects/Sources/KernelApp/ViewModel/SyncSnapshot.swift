@@ -31,6 +31,12 @@ struct SyncSnapshot: Sendable, Equatable {
     /// for the stopped state outside any sync run.
     enum Phase: Sendable, Equatable {
         case idle
+        /// Waiting for the Tor client to bootstrap before a sync can
+        /// start. The kernel has not been built yet — there is nothing
+        /// to tear down on cancel besides the `TorViewModel` observer.
+        /// Transitions to ``preparing`` once Tor reports `isReady`, or
+        /// to ``failed(_:)`` if Tor gives up.
+        case waitingForTor
         case preparing
         case syncing
         case finished
@@ -38,9 +44,11 @@ struct SyncSnapshot: Sendable, Equatable {
 
         /// `true` when sync is in flight — used by ``KernelAppViewModel``
         /// to gate destructive settings changes (chain switch, reindex).
+        /// ``waitingForTor`` counts as active because the user asked to
+        /// start and we're holding their request open.
         var isActive: Bool {
             switch self {
-            case .preparing, .syncing: return true
+            case .waitingForTor, .preparing, .syncing: return true
             case .idle, .finished, .failed: return false
             }
         }
