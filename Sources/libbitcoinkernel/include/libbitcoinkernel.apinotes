@@ -429,7 +429,7 @@ Functions:
     - Position: 0
       Nullability: N
   - Name: btck_chainstate_manager_get_best_entry
-    ResultType: "const btck_BlockTreeEntry * _Nonnull"
+    ResultType: "const btck_BlockTreeEntry * _Nullable"
     Parameters:
     - Position: 0
       Nullability: N

@@ -41,8 +41,29 @@ public final class ChainstateManager: @unchecked Sendable {
     /// manager alive while you hold the returned ``BlockTreeEntry``, or
     /// promote to an owned ``BlockTreeEntrySnapshot`` for safe storage.
     /// Reads ``bestEntry`` repeatedly during a sync run to track progress.
+    ///
+    /// Traps with `preconditionFailure` if the chainstate manager has no
+    /// best header — currently observable only after a `(true, true)` wipe
+    /// before genesis is re-loaded. See
+    /// `upstream-issues/bitcoin/chainstate-get-best-entry-null-after-wipe.md`
+    /// in the swift-bitcoin repo. The trap converts what would otherwise
+    /// be a SIGSEGV inside `btck_block_tree_entry_get_height` into a
+    /// diagnosable Swift fatal error.
     public var bestEntry: BlockTreeEntry {
-        BlockTreeEntry(pointer: btck_chainstate_manager_get_best_entry(pointer), owner: self)
+        guard let ptr = btck_chainstate_manager_get_best_entry(pointer) else {
+            preconditionFailure(
+                """
+                ChainstateManager.bestEntry is nil. This happens after \
+                ChainstateManagerOptions.setWipeDBs(blockTreeDB: true, \
+                chainstateDB: true) reopen, before genesis has been \
+                re-loaded by processing at least one block. Process a \
+                block before reading bestEntry, or check the lifecycle \
+                policy in upstream-issues/bitcoin/\
+                chainstate-get-best-entry-null-after-wipe.md.
+                """
+            )
+        }
+        return BlockTreeEntry(pointer: ptr, owner: self)
     }
 
     /// The active chain — the sequence of blocks from genesis to
