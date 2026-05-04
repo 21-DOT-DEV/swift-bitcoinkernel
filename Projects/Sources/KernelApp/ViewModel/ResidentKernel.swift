@@ -14,7 +14,7 @@ import Foundation
 // MARK: - ReindexMode
 
 /// Reindex variants matching Bitcoin Core's user-facing CLI vocabulary
-/// (`-reindex-chainstate` vs. `-reindex`). See Q4 of the B2 design.
+/// (`-reindex-chainstate` vs. `-reindex`).
 enum ReindexMode: Sendable, Equatable {
     /// Wipe chainstate (UTXO db) only; keep the block index. Replays
     /// validation against existing block files. Maps to Core's

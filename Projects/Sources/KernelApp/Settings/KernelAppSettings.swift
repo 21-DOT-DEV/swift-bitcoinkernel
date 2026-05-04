@@ -107,7 +107,7 @@ final class KernelAppSettings {
     }
 
     /// Include swift-bitcoin's own internal log lines alongside kernel
-    /// output. Mirrors kernel-i-node's "internal logs" toggle.
+    /// output.
     var loggingInternal: Bool {
         didSet { defaults.set(loggingInternal, forKey: Key.loggingInternal) }
     }

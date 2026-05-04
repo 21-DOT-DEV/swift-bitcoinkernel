@@ -2,9 +2,9 @@
 //  SettingsChangeKind.swift
 //  21-DOT-DEV/Bitcoin
 //
-//  Phase B2 / T6.1: classifies a diff between two ``KernelAppSettings``
-//  snapshots into the action ``KernelAppViewModel`` must take — none,
-//  respawn the sync, or teardown+rebuild the kernel.
+//  Classifies a diff between two ``KernelAppSettings`` snapshots into
+//  the action ``KernelAppViewModel`` must take — none, respawn the
+//  sync, or teardown+rebuild the kernel.
 //
 //  Copyright (c) 2022 21 Development Innovations LLC
 //  Distributed under the MIT software license

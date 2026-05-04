@@ -2,8 +2,8 @@
 //  SyncSnapshotTests.swift
 //  21-DOT-DEV/Bitcoin
 //
-//  Phase 1 (TDD): drives the design of SyncSnapshot — the @Observable
-//  view-model state struct used by KernelAppViewModel.
+//  Drives the design of SyncSnapshot — the @Observable view-model
+//  state struct used by KernelAppViewModel.
 //
 //  Copyright (c) 2022 21 Development Innovations LLC
 //  Distributed under the MIT software license
@@ -19,7 +19,7 @@ import Testing
 @Suite("SyncSnapshot")
 struct SyncSnapshotTests {
 
-    // MARK: T1.1 — idle factory
+    // MARK: - Idle factory
 
     @Test("idle has phase .idle, zero heights, and the canonical status text")
     func idleFactoryDefaults() {
@@ -33,7 +33,7 @@ struct SyncSnapshotTests {
         #expect(snapshot.verificationProgress == 0.0)
     }
 
-    // MARK: T1.2 — Update → Snapshot translation
+    // MARK: - Update → Snapshot translation
 
     @Test("init(from:) translates .preparing")
     func initFromPreparingUpdate() {
@@ -100,7 +100,7 @@ struct SyncSnapshotTests {
         #expect(snapshot.remoteHeight == 100)
     }
 
-    // MARK: T1.3 — Phase.isActive
+    // MARK: - Phase.isActive
 
     @Test("Phase.isActive is true only for preparing and syncing")
     func phaseIsActiveOnlyDuringActiveStates() {
