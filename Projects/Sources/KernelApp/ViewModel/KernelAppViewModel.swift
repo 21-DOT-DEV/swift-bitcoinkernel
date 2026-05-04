@@ -20,13 +20,13 @@ import OSLog
 ///
 /// ### Responsibilities
 ///
-/// - Owns the resident kernel (Q1: hybrid resident — see ``ResidentKernel``).
+/// - Owns the resident kernel via ``ResidentKernel``.
 /// - Iterates ``BlockchainSync/updates()`` and translates each ``Update``
-///   into ``snapshot`` (Q3: snapshot + Progress).
-/// - Mediates settings changes that require kernel teardown (Q6:
-///   per-setting policy).
-/// - Stays foreground/background-agnostic; B4 binds ``progress`` to the
-///   `BGContinuedProcessingTask` (Q7).
+///   into ``snapshot``.
+/// - Mediates settings changes that require kernel teardown via the
+///   per-setting classifier in ``SettingsChangeKind``.
+/// - Stays foreground/background-agnostic; ``progress`` is exposed for
+///   later wiring to a system `BGContinuedProcessingTask`.
 ///
 /// ### Test seams
 ///
@@ -45,9 +45,10 @@ final class KernelAppViewModel {
     private(set) var snapshot: SyncSnapshot = .idle
 
     /// Forwarded persistent ``Foundation/Progress`` from the active
-    /// sync. Used by Phase B4 to bind the system
-    /// `BGContinuedProcessingTask.progress`. Falls back to a fresh
-    /// empty `Progress` when no run is active.
+    /// sync. Suitable for binding a system
+    /// `BGContinuedProcessingTask.progress` once background-task support
+    /// is wired in. Falls back to a fresh empty `Progress` when no run is
+    /// active.
     var progress: Foundation.Progress {
         currentSync?.progress ?? Foundation.Progress()
     }
@@ -108,11 +109,11 @@ final class KernelAppViewModel {
 
     /// Open the kernel (if not already resident) and spawn the sync run.
     ///
-    /// Foreground/background-agnostic per Q7 — same path is taken whether
-    /// invoked from a button tap or from a `BGContinuedProcessingTask`
-    /// resumption (B4).
+    /// Foreground/background-agnostic — same path is taken whether
+    /// invoked from a button tap or from a future
+    /// `BGContinuedProcessingTask` resumption.
     func start() async {
-        // Q5 privacy guard — until B5 wires the SOCKS5 proxy onto the
+        // Privacy guard — until the SOCKS5 proxy is wired onto the
         // block source, refuse to leak traffic the user expects to be
         // private.
         if settings.routeDownloadsThroughTor {
@@ -171,8 +172,8 @@ final class KernelAppViewModel {
     /// Tear down the resident kernel and rebuild it with the requested
     /// wipe flags, then resume sync.
     ///
-    /// Q4 + Q1: per-mode wipe flags pass through ``ResidentKernel/make``
-    /// → ``ChainstateManagerOptions/setWipeDBs(blockTreeDB:chainstateDB:)``.
+    /// Per-mode wipe flags pass through ``ResidentKernel/make`` →
+    /// ``ChainstateManagerOptions/setWipeDBs(blockTreeDB:chainstateDB:)``.
     /// The kernel must be torn down because the wipe options are only
     /// consulted at construction time.
     func requestReindex(_ mode: ReindexMode) async {

@@ -2,9 +2,8 @@
 //  ResidentKernelTests.swift
 //  21-DOT-DEV/Bitcoin
 //
-//  Phase 2 (TDD): drives the design of ResidentKernel — the bundle that
-//  pairs Context + ChainstateManager and lives across sync-task lifecycles
-//  per Q1 (hybrid resident).
+//  Drives the design of ResidentKernel — the bundle that pairs Context
+//  + ChainstateManager and lives across sync-task lifecycles.
 //
 //  Copyright (c) 2022 21 Development Innovations LLC
 //  Distributed under the MIT software license
@@ -21,7 +20,7 @@ import Testing
 @MainActor
 struct ResidentKernelTests {
 
-    // MARK: T2.1 — basic construction
+    // MARK: - Basic construction
 
     @Test("make(chainType:dataDirectory:inMemoryDatabases:) produces a working kernel at genesis")
     func makeProducesWorkingKernelAtGenesis() async throws {
@@ -40,7 +39,7 @@ struct ResidentKernelTests {
         #expect(kernel.manager.bestEntry.height == 0)
     }
 
-    // MARK: T2.2 — makeSync wires the kernel to a BlockSource
+    // MARK: - makeSync wires the kernel to a BlockSource
 
     @Test("makeSync(source:) yields a BlockchainSync that drives this kernel to a tip from a mock source")
     func makeSyncDrivesKernelFromMockSource() async throws {

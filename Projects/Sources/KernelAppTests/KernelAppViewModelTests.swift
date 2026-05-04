@@ -2,8 +2,8 @@
 //  KernelAppViewModelTests.swift
 //  21-DOT-DEV/Bitcoin
 //
-//  Phase 3+ (TDD): drives the design of KernelAppViewModel — start/stop
-//  lifecycle, snapshot translation, settings-change policies.
+//  Drives the design of KernelAppViewModel — start/stop lifecycle,
+//  snapshot translation, reindex paths, and settings-change policies.
 //
 //  Copyright (c) 2022 21 Development Innovations LLC
 //  Distributed under the MIT software license
@@ -43,7 +43,8 @@ private func makeViewModel(
 
     // Resolved later — at view-model start time, the manager has been
     // built and we can read its actual genesis hash. For now use a
-    // placeholder; T3.2 overrides via `mock.setBestTip(...)` after start.
+    // placeholder; tests that exercise the happy path override via
+    // `mock.setBestTip(...)` after start.
     let placeholderHash = bestTipHash ?? Data(repeating: 0xAA, count: 32)
     let mock = MockBlockSource(bestTip: BlockTip(hash: placeholderHash, height: bestTipHeight))
 
@@ -62,8 +63,6 @@ private func makeViewModel(
     )
     return (vm, settings, mock, tmpDir)
 }
-
-// MARK: - Phase 3 tests
 
 // MARK: - Factory spy
 
@@ -112,7 +111,7 @@ private final class KernelFactorySpy {
 @MainActor
 struct KernelAppViewModelLifecycleTests {
 
-    // MARK: T3.1 — endpoint precondition
+    // MARK: - Endpoint precondition
 
     @Test("start() with no block-source endpoint fails fast and never opens a kernel")
     func startWithoutEndpointFailsFast() async {
@@ -129,7 +128,7 @@ struct KernelAppViewModelLifecycleTests {
         #expect(parts.vm.residentKernel == nil)
     }
 
-    // MARK: T3.2 — happy path: start → finished
+    // MARK: - Happy path: start → finished
 
     @Test("start() with mock claiming the local genesis as remote tip reaches .finished")
     func startReachesFinishedAtGenesis() async {
@@ -152,7 +151,7 @@ struct KernelAppViewModelLifecycleTests {
         #expect(parts.vm.residentKernel != nil)  // resident across run end
     }
 
-    // MARK: T3.3 — stop teardown
+    // MARK: - Stop teardown
 
     @Test("stop() while sync is mid-flight cancels the run and tears down the kernel")
     func stopMidSyncTearsDownKernel() async {
@@ -175,7 +174,7 @@ struct KernelAppViewModelLifecycleTests {
     }
 }
 
-// MARK: - Phase 5 — Reindex
+// MARK: - Reindex
 
 @Suite("KernelAppViewModel — Reindex", .serialized)
 @MainActor
@@ -216,7 +215,7 @@ struct KernelAppViewModelReindexTests {
         return (vm, spy, mock, tmpDir)
     }
 
-    // MARK: T5.1 — chainstate-only reindex
+    // MARK: - Chainstate-only reindex
 
     @Test("requestReindex(.chainstate) tears down and rebuilds the kernel with the chainstate wipe flag")
     func requestReindexChainstateInvokesFactoryWithCorrectFlag() async {
@@ -252,7 +251,7 @@ struct KernelAppViewModelReindexTests {
         try? FileManager.default.removeItem(at: parts.tmpDir)
     }
 
-    // MARK: T5.2 — full reindex
+    // MARK: - Full reindex
 
     /// Test that `requestReindex(.full)` invokes the factory with the
     /// expected `reindex` argument. Uses a recording-but-throwing factory
@@ -299,7 +298,7 @@ struct KernelAppViewModelReindexTests {
     }
 }
 
-// MARK: - Phase 6 — Settings-change policy
+// MARK: - Settings-change policy
 
 @Suite("KernelAppViewModel — Settings-change policy", .serialized)
 @MainActor
@@ -354,7 +353,7 @@ struct KernelAppViewModelSettingsChangeTests {
         await parts.vm.syncTask?.value
     }
 
-    // MARK: T6.2 — no baseline
+    // MARK: - No baseline
 
     @Test("applySettingsChange() before start() is a no-op and does not open a kernel")
     func beforeStartNoOp() async {
@@ -369,7 +368,7 @@ struct KernelAppViewModelSettingsChangeTests {
         #expect(parts.vm.lastAppliedSnapshot == nil)
     }
 
-    // MARK: T6.2 — .none
+    // MARK: - .none
 
     @Test("applySettingsChange() with no effective change is a no-op")
     func identicalSettingsNoOp() async {
@@ -387,7 +386,7 @@ struct KernelAppViewModelSettingsChangeTests {
         try? FileManager.default.removeItem(at: parts.tmpDir)
     }
 
-    // MARK: T6.2 — .restartKernel
+    // MARK: - .restartKernel
 
     @Test("workerThreadCount change triggers kernel rebuild via applySettingsChange()")
     func workerThreadChangeRestartsKernel() async {
@@ -414,7 +413,7 @@ struct KernelAppViewModelSettingsChangeTests {
         try? FileManager.default.removeItem(at: parts.tmpDir)
     }
 
-    // MARK: T6.2 — .restartSync
+    // MARK: - .restartSync
 
     @Test("blockSourceEndpoint change respawns sync without rebuilding the kernel")
     func endpointChangeRestartsSyncOnly() async {
@@ -440,7 +439,7 @@ struct KernelAppViewModelSettingsChangeTests {
         try? FileManager.default.removeItem(at: parts.tmpDir)
     }
 
-    // MARK: T6.2 — .restartSync — Tor guard
+    // MARK: - .restartSync — Tor guard
 
     @Test("enabling Tor routing mid-run trips the privacy guard and reports .failed")
     func torEnableDuringRunTripsPrivacyGuard() async {
@@ -464,7 +463,7 @@ struct KernelAppViewModelSettingsChangeTests {
         try? FileManager.default.removeItem(at: parts.tmpDir)
     }
 
-    // MARK: T6.3 — data-directory isolation across chain switches
+    // MARK: - Data-directory isolation across chain switches
 
     @Test("chainType switch opens a different data directory and leaves the old chain's state intact")
     func chainSwitchIsolatesDataDirectories() async {

@@ -2,9 +2,9 @@
 //  SettingsChangeKindTests.swift
 //  21-DOT-DEV/Bitcoin
 //
-//  Phase B2 / T6.1: unit tests driving the design of the settings-change
-//  classifier. Pure tests — no kernel, no filesystem (save for one
-//  integration test against KernelAppSettings for the convenience init).
+//  Unit tests driving the design of the settings-change classifier.
+//  Pure tests — no kernel, no filesystem (save for one integration
+//  test against KernelAppSettings for the convenience init).
 //
 //  Copyright (c) 2022 21 Development Innovations LLC
 //  Distributed under the MIT software license
@@ -38,7 +38,7 @@ struct SettingsChangeKindTests {
         )
     }
 
-    // MARK: T6.1 — classifier matrix
+    // MARK: - Classifier matrix
 
     @Test("identical snapshots classify as .none")
     func identicalSnapshotsClassifyAsNone() {
