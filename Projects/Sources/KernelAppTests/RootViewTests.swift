@@ -19,6 +19,7 @@ import BitcoinKernel
 import Foundation
 import SwiftUI
 import Testing
+import Tor
 @testable import KernelApp
 
 @Suite("RootView")
@@ -27,13 +28,14 @@ struct RootViewTests {
 
     // MARK: - Helpers
 
-    private func makeParts() -> (vm: KernelAppViewModel, settings: KernelAppSettings) {
+    private func makeParts() -> (vm: KernelAppViewModel, settings: KernelAppSettings, tor: TorViewModel) {
         let suite = "dev.21.RootViewTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
         let settings = KernelAppSettings(defaults: defaults)
-        let vm = KernelAppViewModel(settings: settings)
-        return (vm, settings)
+        let tor = TorViewModel(subsystem: "test.RootViewTests")
+        let vm = KernelAppViewModel(settings: settings, tor: tor)
+        return (vm, settings, tor)
     }
 
     // MARK: - Structural smoke
@@ -41,7 +43,7 @@ struct RootViewTests {
     @Test("RootView initializes with the required dependencies and evaluates body")
     func constructsAndEvaluatesBody() {
         let parts = makeParts()
-        let root = RootView(viewModel: parts.vm, settings: parts.settings)
+        let root = RootView(viewModel: parts.vm, settings: parts.settings, tor: parts.tor)
         // Force body evaluation; if any binding / environment wiring is
         // mis-shaped, this traps at runtime.
         _ = root.body

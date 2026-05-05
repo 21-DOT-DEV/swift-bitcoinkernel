@@ -32,6 +32,7 @@ import SwiftUI
 struct SettingsView: View {
     @Bindable var viewModel: KernelAppViewModel
     @Bindable var settings: KernelAppSettings
+    @Bindable var tor: TorViewModel
 
     /// Staged kernel-restart changes. Empty → banner hidden.
     @State private var draft = PendingKernelChanges()
@@ -94,7 +95,13 @@ struct SettingsView: View {
     private var networkSection: some View {
         Section {
             Picker("Block Source", selection: endpointSelectionBinding) {
-                ForEach(BlockSourcePreset.presets(for: effectiveChainType), id: \.self) { preset in
+                ForEach(
+                    BlockSourcePreset.presets(
+                        for: effectiveChainType,
+                        torRouting: settings.routeDownloadsThroughTor
+                    ),
+                    id: \.self
+                ) { preset in
                     Text(preset.displayName).tag(EndpointSelection.preset(preset))
                 }
                 Text("Custom URL").tag(EndpointSelection.custom)
@@ -116,13 +123,25 @@ struct SettingsView: View {
                     .disabled(draft.chainType != nil || customEndpointText.isEmpty)
             }
 
-            Toggle("Route downloads through Tor", isOn: Binding(
+            Toggle("Route block downloads through Tor", isOn: Binding(
                 get: { settings.routeDownloadsThroughTor },
                 set: { newValue in
                     settings.routeDownloadsThroughTor = newValue
+                    // Mirror the toggle onto the Tor client's lifecycle
+                    // so we don't pay the battery/CPU cost of Tor when
+                    // the user isn't routing through it.
+                    if newValue {
+                        tor.start()
+                    } else {
+                        tor.stop()
+                    }
                     Task { await viewModel.applySettingsChange() }
                 }
             ))
+
+            if settings.routeDownloadsThroughTor {
+                TorStatusView(viewModel: tor)
+            }
         } header: {
             Text("Network")
         } footer: {
@@ -131,9 +150,9 @@ struct SettingsView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } else if settings.routeDownloadsThroughTor {
-                Text("Tor routing trips the privacy guard until full Tor support ships. The sync will halt when enabled.")
+                Text("Block-source requests will wait for Tor to finish bootstrapping before syncing.")
                     .font(.footnote)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.secondary)
             }
         }
     }

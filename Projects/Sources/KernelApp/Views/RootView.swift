@@ -21,6 +21,7 @@ import SwiftUI
 struct RootView: View {
     @Bindable var viewModel: KernelAppViewModel
     @Bindable var settings: KernelAppSettings
+    @Bindable var tor: TorViewModel
 
     @State private var selection: Tab = .sync
 
@@ -31,7 +32,7 @@ struct RootView: View {
             }
 
             SwiftUI.Tab(Tab.settings.title, systemImage: Tab.settings.systemImage, value: Tab.settings) {
-                SettingsView(viewModel: viewModel, settings: settings)
+                SettingsView(viewModel: viewModel, settings: settings, tor: tor)
             }
         }
     }

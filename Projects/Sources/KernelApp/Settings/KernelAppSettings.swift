@@ -64,14 +64,16 @@ final class KernelAppSettings {
 
     // MARK: - Privacy
 
-    /// Master toggle for the in-process Tor client (swift-tor).
-    var torEnabled: Bool {
-        didSet { defaults.set(torEnabled, forKey: Key.torEnabled) }
-    }
-
-    /// When `true` and Tor is ready, the sync engine's ``URLSession`` is
-    /// configured with the Tor SOCKS5 proxy. When `false`, block fetches go
-    /// direct — even if Tor is running.
+    /// When `true`, the sync engine's ``URLSession`` is configured with
+    /// the Tor SOCKS5 proxy, and `KernelApp` auto-manages the lifecycle
+    /// of the in-process Tor client accordingly. When `false`, block
+    /// fetches go direct over HTTPS and the Tor client stays stopped.
+    ///
+    /// `KernelApp` exposes this as the single user-facing Tor control
+    /// — unlike `NodeApp`, which keeps master-switch and routing
+    /// settings independent because Tor there has independent utility
+    /// (onion peers, private broadcast). `KernelApp` has no such
+    /// orthogonal use case.
     var routeDownloadsThroughTor: Bool {
         didSet { defaults.set(routeDownloadsThroughTor, forKey: Key.routeDownloadsThroughTor) }
     }
@@ -181,7 +183,6 @@ final class KernelAppSettings {
         }
 
         // Privacy
-        self.torEnabled = defaults.bool(forKey: Key.torEnabled)
         self.routeDownloadsThroughTor = defaults.bool(forKey: Key.routeDownloadsThroughTor)
 
         // Advanced
@@ -309,7 +310,6 @@ final class KernelAppSettings {
         static let chainType = "kernel_chain_type"
         static let blockSourceEndpoint = "kernel_block_source_endpoint"
         static let dataDirectoryOverride = "kernel_data_directory_override"
-        static let torEnabled = "kernel_tor_enabled"
         static let routeDownloadsThroughTor = "kernel_route_downloads_through_tor"
         static let workerThreadCount = "kernel_worker_thread_count"
         static let loggingEnabled = "kernel_logging_enabled"

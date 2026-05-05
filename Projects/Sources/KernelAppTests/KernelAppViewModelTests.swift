@@ -14,6 +14,7 @@
 import BitcoinKernel
 import Foundation
 import Testing
+import Tor
 @testable import KernelApp
 
 // MARK: - Test factory
@@ -50,6 +51,7 @@ private func makeViewModel(
 
     let vm = KernelAppViewModel(
         settings: settings,
+        tor: TorViewModel(subsystem: "test.KernelAppViewModelTests"),
         kernelFactory: { chainType, dir, threads, reindex in
             try await ResidentKernel.make(
                 chainType: chainType,
@@ -59,7 +61,7 @@ private func makeViewModel(
                 inMemoryDatabases: true
             )
         },
-        blockSourceFactory: { _ in mock }
+        blockSourceFactory: { _, _ in mock }
     )
     return (vm, settings, mock, tmpDir)
 }
@@ -209,8 +211,9 @@ struct KernelAppViewModelReindexTests {
 
         let vm = KernelAppViewModel(
             settings: settings,
+            tor: TorViewModel(subsystem: "test.KernelAppViewModelReindexTests"),
             kernelFactory: spy.factory(),
-            blockSourceFactory: { _ in mock }
+            blockSourceFactory: { _, _ in mock }
         )
         return (vm, spy, mock, tmpDir)
     }
@@ -282,8 +285,9 @@ struct KernelAppViewModelReindexTests {
 
         let vm = KernelAppViewModel(
             settings: settings,
+            tor: TorViewModel(subsystem: "test.KernelAppViewModelReindexTests.full"),
             kernelFactory: factory,
-            blockSourceFactory: { _ in mock }
+            blockSourceFactory: { _, _ in mock }
         )
 
         // First start fails (factory throws) — but records the call.
@@ -334,8 +338,9 @@ struct KernelAppViewModelSettingsChangeTests {
 
         let vm = KernelAppViewModel(
             settings: settings,
+            tor: TorViewModel(subsystem: "test.KernelAppViewModelSettingsChangeTests"),
             kernelFactory: spy.factory(),
-            blockSourceFactory: { _ in mock }
+            blockSourceFactory: { _, _ in mock }
         )
         return (vm, settings, spy, mock, tmpDir)
     }
@@ -439,25 +444,26 @@ struct KernelAppViewModelSettingsChangeTests {
         try? FileManager.default.removeItem(at: parts.tmpDir)
     }
 
-    // MARK: - .restartSync — Tor guard
+    // MARK: - .restartSync — Tor routing flip mid-run
 
-    @Test("enabling Tor routing mid-run trips the privacy guard and reports .failed")
-    func torEnableDuringRunTripsPrivacyGuard() async {
+    @Test("enabling Tor routing mid-run enters .waitingForTor without rebuilding the kernel")
+    func torEnableDuringRunEntersWaitingForTor() async {
         let parts = makeWithSpy()
         await bringUpAndFinish(parts)
         #expect(parts.spy.calls.count == 1)
 
+        // The TorViewModel in this suite is a plain, never-started
+        // instance (displayState == .disabled, isReady == false), so
+        // flipping the routing setting should park the VM in
+        // .waitingForTor — not .failed.
         parts.settings.routeDownloadsThroughTor = true
 
         await parts.vm.applySettingsChange()
 
-        if case .failed(let reason) = parts.vm.snapshot.phase {
-            #expect(reason.lowercased().contains("tor"))
-        } else {
-            Issue.record("expected .failed phase, got \(parts.vm.snapshot.phase)")
-        }
+        #expect(parts.vm.snapshot.phase == .waitingForTor,
+                "expected .waitingForTor, got \(parts.vm.snapshot.phase)")
         #expect(parts.spy.calls.count == 1, "no kernel rebuild on sync-only change")
-        #expect(parts.vm.syncTask == nil, "sync task should be cancelled")
+        #expect(parts.vm.syncTask == nil, "sync task should be cancelled while waiting")
 
         await parts.vm.stop()
         try? FileManager.default.removeItem(at: parts.tmpDir)
@@ -496,8 +502,9 @@ struct KernelAppViewModelSettingsChangeTests {
         let spy = KernelFactorySpy()
         let vm = KernelAppViewModel(
             settings: settings,
+            tor: TorViewModel(subsystem: "test.KernelAppViewModelSettingsChangeTests.chainSwitch"),
             kernelFactory: spy.factory(),
-            blockSourceFactory: { _ in mock }
+            blockSourceFactory: { _, _ in mock }
         )
 
         // Start on regtest.
