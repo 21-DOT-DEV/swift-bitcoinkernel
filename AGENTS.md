@@ -28,7 +28,7 @@ A Swift 6.3 package wrapping Bitcoin Core for embedded use: daemon lifecycle (`B
 
 - **Never**: emit private keys or sensitive material; weaken constant-time code in vendored C sources; edit files under `Vendor/bitcoin/` or extracted `Sources/{bitcoind,libbitcoinkernel,secp256k1,...}/` directly; add runtime dependencies outside the allowlist (`swift-boost`, `swift-event`, system `sqlite3`) without a constitutional amendment; reimplement Bitcoin consensus rules, validation logic, or P2P protocol behavior in Swift; expose raw C++ pointers or types through public Swift API.
 - **Ask first**: add new third-party dependencies; broaden CI permissions; add runtime dependencies outside the allowlist; change the pinned Bitcoin Core version in `subtree.yaml`.
-- See the [21-DOT-DEV contributing guidelines](https://github.com/21-DOT-DEV/.github/blob/main/CONTRIBUTING.md) for branching and commit guidelines. See `SECURITY.md` for vulnerability reporting (if present).
+- See the [21-DOT-DEV contributing guidelines](https://github.com/21-DOT-DEV/.github/blob/main/CONTRIBUTING.md) for branching and commit guidelines.
 
 ## Scoped guidance
 
