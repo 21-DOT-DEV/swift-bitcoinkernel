@@ -1,9 +1,11 @@
-# Phase 4: Wallet Support
+# Phase 4: Wallet Support (SUPERSEDED)
 
-**Goal**: Implement the `BitcoinWalletSupport` library with BerkeleyDB integration and typed wallet RPC methods.
+> **SUPERSEDED** (2026-05-07): This phase has been absorbed into [Phase 3: RPC Client + Wallet RPC](phase-3-rpc-client.md). Wallet functionality is RPC-only — there is no separate Swift wallet library. `BitcoinKernel` is a node layer consumed by wallets/SDKs, not a wallet itself. See the [updated roadmap](../roadmap.md) (v2.0.0).
 
-**Status**: 🔜 Planned  
-**Last Updated**: 2025-12-05
+**Goal**: ~~Implement the `BitcoinWalletSupport` library with BerkeleyDB integration and typed wallet RPC methods.~~ (Superseded — see above.)
+
+**Status**: SUPERSEDED  
+**Last Updated**: 2025-12-05 (superseded 2026-05-07)
 
 ---
 

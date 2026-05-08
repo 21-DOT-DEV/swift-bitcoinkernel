@@ -1,9 +1,11 @@
-# Phase 5: Network Client
+# Phase 5: Network Client (SUPERSEDED)
 
-**Goal**: Implement a network-based `BitcoinClient` that connects to remote Bitcoin Core nodes via HTTP JSON-RPC.
+> **SUPERSEDED** (2026-05-07): This phase has been replaced by [Phase 4: P2P Networking](phase-4-p2p-networking.md), [Phase 5: Compact Block Filters](phase-5-compact-filters.md), and [Phase 6: Advanced P2P](phase-6-advanced-p2p.md). HTTP-based network client functionality (HTTPTransport) was delivered in Phase 3. P2P networking replaces the remote-node connection model. See the [updated roadmap](../roadmap.md) (v2.0.0).
 
-**Status**: 🔜 Planned  
-**Last Updated**: 2025-12-05
+**Goal**: ~~Implement a network-based `BitcoinClient` that connects to remote Bitcoin Core nodes via HTTP JSON-RPC.~~ (Superseded — see above.)
+
+**Status**: SUPERSEDED  
+**Last Updated**: 2025-12-05 (superseded 2026-05-07)
 
 ---
 

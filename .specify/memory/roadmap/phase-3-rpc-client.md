@@ -1,182 +1,119 @@
-# Phase 3: RPC Client
+# Phase 3: RPC Client + Wallet RPC
 
-**Goal**: Create a type-safe RPC client protocol with a direct (in-process) implementation using Bitcoin Core's `executeRpc()` method.
+**Goal**: Create a type-safe RPC client protocol with pluggable transports (direct, HTTP, cookie, auto-detection) and comprehensive typed wrappers for all Bitcoin Core RPC methods, including wallet.
 
-**Status**: 🔜 Planned  
-**Last Updated**: 2025-12-05
-
----
-
-## Features
-
-### 3.1 BitcoinClient Protocol
-
-**Purpose & User Value**: Define a protocol for RPC access that abstracts the underlying transport, enabling future network implementations without API changes.
-
-**Success Metrics**:
-- `BitcoinClient` protocol defined with:
-  - `func execute<T: Decodable>(_ method: String, params: [Any]) async throws -> T`
-  - Typed methods for core RPCs
-- `Bitcoin.Error` enum for RPC errors
-- Protocol is transport-agnostic
-- Documentation with usage examples
-
-**Dependencies**: Phase 2 complete (Daemon must be running for RPC)
-
-**Notes**:
-- Design for testability (mock implementations)
-- Consider generic JSON passthrough for untyped methods
+**Status**: COMPLETE  
+**Last Updated**: 2026-05-07
 
 ---
 
-### 3.2 DirectClient Implementation
+## Goal
 
-**Purpose & User Value**: Implement `BitcoinClient` using Bitcoin Core's in-process `executeRpc()` method for fast, zero-latency RPC access.
+Provide a complete, type-safe Swift RPC client covering all Bitcoin Core v31.x RPC methods. The transport abstraction enables in-process (zero-latency), HTTP, cookie-based, and auto-detecting connections. Wallet functionality is exposed exclusively through RPC — `BitcoinKernel` is a node layer, not a wallet.
 
-**Success Metrics**:
-- `DirectClient` class implements `BitcoinClient`
-- Uses `interfaces::Node::executeRpc()` internally
-- No network overhead (in-process call)
-- Proper error mapping from Bitcoin Core error codes
-- Thread-safe for concurrent calls
-
-**Dependencies**: 3.1 BitcoinClient Protocol, 2.1 Node Interface Wrapper
-
-**Notes**:
-- DirectClient requires embedded node to be running
-- Consider lazy initialization pattern
+> **Architecture note**: Old Phase 4 (Wallet Support) from roadmap v1.0.0 is absorbed here. Wallet operations are RPC-only. There is no separate Swift wallet library. Wallets and SDKs (BDK, LDK, fltrWallet) consume `BitcoinKernel` as their node layer for block delivery and transaction broadcast.
 
 ---
 
-### 3.3 Blockchain RPC Methods
+## Key Features
 
-**Purpose & User Value**: Provide fully-typed Swift wrappers for blockchain query RPCs, enabling type-safe access to chain state.
+### 3.1 RPCTransport Protocol & Implementations
+
+**Purpose & User Value**: Define a pluggable transport abstraction that decouples RPC method definitions from the underlying connection mechanism, enabling in-process, HTTP, and cookie-based connections interchangeably.
 
 **Success Metrics**:
-- Typed methods implemented:
-  - `getBlockchainInfo() async throws -> BlockchainInfo`
-  - `getBlock(hash: String, verbosity: BlockVerbosity) async throws -> Block`
-  - `getBlockHash(height: Int) async throws -> String`
-  - `getBlockCount() async throws -> Int`
-  - `getBestBlockHash() async throws -> String`
-  - `getBlockHeader(hash: String) async throws -> BlockHeader`
-  - `getDifficulty() async throws -> Double`
-  - `getChainTips() async throws -> [ChainTip]`
-- Response types are `Codable` and documented
-- Unit tests with regtest validation
+- `RPCTransport` protocol defined with `send(_:)` method
+- `DirectTransport` — in-process C bridge via `bitcoin_rpc()` (zero-latency)
+- `HTTPTransport` — HTTP/HTTPS with Basic authentication
+- `CookieTransport` — reads `.cookie` file for credential-free auth
+- `AutoTransport` — auto-detects best transport per call (direct for non-wallet, HTTP for wallet)
+- `JSONRPCService` — request/response envelope handling
 
-**Dependencies**: 3.2 DirectClient Implementation
+**Dependencies**: Phase 2 complete (Daemon must be running for DirectTransport)
 
-**Notes**:
-- `BlockVerbosity` enum: `.hashOnly`, `.json`, `.jsonWithTransactions`
-- Consider pagination for large responses
+**Status**: COMPLETE (`Sources/Bitcoin/RPC/JSONRPC/`)
 
 ---
 
-### 3.4 Transaction RPC Methods
+### 3.2 RPCClient — Typed Methods (171 total)
 
-**Purpose & User Value**: Provide typed wrappers for transaction-related RPCs, enabling raw transaction handling and broadcasting.
+**Purpose & User Value**: Provide fully-typed Swift wrappers for all Bitcoin Core RPC methods, eliminating string-based JSON manipulation and enabling compile-time safety.
 
 **Success Metrics**:
-- Typed methods implemented:
-  - `getRawTransaction(txid: String, verbose: Bool) async throws -> Transaction`
-  - `sendRawTransaction(hex: String, maxFeeRate: Double?) async throws -> String`
-  - `decodeRawTransaction(hex: String) async throws -> DecodedTransaction`
-  - `testMempoolAccept(txHexes: [String]) async throws -> [MempoolAcceptResult]`
-  - `getTxOut(txid: String, vout: Int) async throws -> TxOut?`
-- Response types are `Codable`
-- Error handling for invalid transactions
+- 171 typed methods across 8 categories:
+  - Blockchain (51) — blocks, headers, mempool, UTXO, chainstate, proofs, filters
+  - Wallet (55) — balance, send, PSBT, descriptors, encryption, labels, transactions
+  - Raw Transactions (21) — create, sign, send, decode, PSBT lifecycle, mempool acceptance
+  - Network (19) — peers, banning, ZMQ, addrman, connection counts
+  - Util (9) — fee estimation, address validation, descriptor parsing
+  - Mining (7) — block templates, hashrate, priority, submission
+  - Control (6) — memory, RPC info, logging, stop, uptime
+  - Generating (3) — generate to address/descriptor/block
+- All response types are `Codable`, `Sendable`, and documented
+- Generic `send<T>(_ method:params:)` for untyped passthrough
 
-**Dependencies**: 3.2 DirectClient Implementation
+**Dependencies**: 3.1 RPCTransport Protocol
 
-**Notes**:
-- Transaction hex validation before sending
-- Consider convenience methods for common patterns
+**Status**: COMPLETE (`Sources/Bitcoin/RPC/RPCClient*.swift`)
 
 ---
 
-### 3.5 Network RPC Methods
+### 3.3 RPCModels — Response Types (95 models)
 
-**Purpose & User Value**: Provide typed wrappers for network and peer information RPCs.
+**Purpose & User Value**: Provide strongly-typed, Codable model types for all RPC responses, with satoshi-precision arithmetic and proper timestamp handling.
 
 **Success Metrics**:
-- Typed methods implemented:
-  - `getNetworkInfo() async throws -> NetworkInfo`
-  - `getPeerInfo() async throws -> [PeerInfo]`
-  - `getConnectionCount() async throws -> Int`
-  - `getNodeAddresses() async throws -> [NodeAddress]`
-  - `addNode(address: String, command: AddNodeCommand) async throws`
-  - `disconnectNode(address: String) async throws`
-- Response types are `Codable`
+- 95 Codable model types covering all RPC response schemas
+- `BTCAmount` — satoshi-precision arithmetic (Int64 sats, Decimal BTC)
+- `UnixTimestamp` — epoch seconds with `Date` conversion
+- `RPCError` — server-originated JSON-RPC errors
+- `BlockFilter` — compact block filter data from `getblockfilter`
+- `LastProcessedBlock` — block hash + height from wallet RPCs
+- 177 decode tests with Bitcoin Core test vectors
 
-**Dependencies**: 3.2 DirectClient Implementation
+**Dependencies**: None (pure models)
 
-**Notes**:
-- `AddNodeCommand` enum: `.add`, `.remove`, `.oneTry`
+**Status**: COMPLETE (`Sources/RPCModels/`)
 
 ---
 
-### 3.6 Mempool RPC Methods
+### 3.4 Wallet RPC Coverage
 
-**Purpose & User Value**: Provide typed wrappers for mempool query RPCs.
-
-**Success Metrics**:
-- Typed methods implemented:
-  - `getMempoolInfo() async throws -> MempoolInfo`
-  - `getRawMempool(verbose: Bool) async throws -> [String]` or `[MempoolEntry]`
-  - `getMempoolEntry(txid: String) async throws -> MempoolEntry`
-  - `getMempoolAncestors(txid: String) async throws -> [String]`
-  - `getMempoolDescendants(txid: String) async throws -> [String]`
-- Response types are `Codable`
-
-**Dependencies**: 3.2 DirectClient Implementation
-
----
-
-### 3.7 Raw RPC Passthrough
-
-**Purpose & User Value**: Provide a generic method to call any RPC method, ensuring users are never blocked by missing typed wrappers.
+**Purpose & User Value**: Expose all Bitcoin Core wallet functionality through typed RPC methods. This is the full extent of wallet support — there is no separate Swift wallet API.
 
 **Success Metrics**:
-- Generic method: `func call(_ method: String, params: [Any]) async throws -> JSONValue`
-- Works with any valid Bitcoin Core RPC method
-- Returns decoded JSON (dictionary, array, or primitive)
-- Documented as escape hatch for advanced users
+- 55 typed wallet RPC methods: `getBalance`, `getBalances`, `listWallets`, `createWallet`, `loadWallet`, `unloadWallet`, `getNewAddress`, `sendToAddress`, `listTransactions`, `listUnspent`, `createRawTransaction`, `signRawTransactionWithWallet`, `sendRawTransaction`, `listDescriptors`, `importDescriptors`, `walletCreateFundedPSBT`, `walletProcessPSBT`, `finalizePSBT`, `bumpFee`, `abandonTransaction`, `backupWallet`, `encryptWallet`, `walletPassphrase`, etc.
+- `BTCAmount` used for all satoshi-denominated values
+- `LastProcessedBlock` returned for scanprogress-aware methods
 
-**Dependencies**: 3.2 DirectClient Implementation
+**Dependencies**: 3.1 RPCTransport Protocol
 
-**Notes**:
-- Use `JSONValue` type or `Any` with proper decoding
-- Document that this bypasses type safety
+**Status**: COMPLETE (`Sources/Bitcoin/RPC/RPCClient+Wallet.swift`)
 
 ---
 
 ## Phase Dependencies & Sequencing
 
 ```
-3.1 BitcoinClient Protocol
-    └── 3.2 DirectClient Implementation
-            ├── 3.3 Blockchain RPC Methods
-            ├── 3.4 Transaction RPC Methods
-            ├── 3.5 Network RPC Methods
-            ├── 3.6 Mempool RPC Methods
-            └── 3.7 Raw RPC Passthrough
+3.1 RPCTransport Protocol ✅
+    └── 3.2 RPCClient (171 methods) ✅
+            ├── 3.3 RPCModels (95 types) ✅
+            └── 3.4 Wallet RPC Coverage ✅
 ```
-
-RPC method groups (3.3-3.7) can be developed in parallel.
 
 ---
 
 ## Phase-Level Metrics
 
-| Metric | Target |
-|--------|--------|
-| Build success | All Tier 1 platforms |
-| Test coverage | ≥80% of RPC client API |
-| RPC coverage | 25+ typed methods |
-| RPC latency | p50 < 10ms for DirectClient |
-| Documentation | All public types documented |
-| Examples | ≥2 working examples (query block, send tx) |
+| Metric | Target | Result |
+|--------|--------|--------|
+| Build success | All Tier 1 platforms | ✅ |
+| Test coverage | ≥80% of RPC client API | ✅ |
+| RPC coverage | 171 typed methods | ✅ |
+| RPC models | 95 Codable types | ✅ |
+| Model decode tests | 177 tests with Bitcoin Core vectors | ✅ |
+| Documentation | All public types documented (DocC) | ✅ |
+| Example apps | NodeApp (daemon + RPC browser), KernelApp (kernel sync) | ✅ |
 
 ---
 
@@ -184,6 +121,13 @@ RPC method groups (3.3-3.7) can be developed in parallel.
 
 | Risk | Mitigation |
 |------|------------|
-| Response types drift from Bitcoin Core | Generate types from RPC help, test against regtest |
-| Error code mapping incomplete | Start with common errors, expand as discovered |
-| JSON decoding edge cases | Comprehensive test vectors |
+| Response types drift from Bitcoin Core | 177 decode tests against upstream vectors; CI catches regressions |
+| Error code mapping incomplete | `RPCError` captures server-originated errors; transport errors surfaced distinctly |
+| Wallet methods require running daemon | Documented; `AutoTransport` routes wallet RPCs over HTTP transparently |
+
+---
+
+## Phase Notes / Change Log
+
+- 2026-05-07: Marked COMPLETE. Absorbed old Phase 4 (Wallet Support) — wallet is RPC-only, `BitcoinKernel` is node layer. 171 typed RPC methods, 95 Codable models, 5 transport types, 177 decode tests. NodeApp and KernelApp examples operational.
+- 2025-12-05: Initial creation (as Phase 3: RPC Client).
