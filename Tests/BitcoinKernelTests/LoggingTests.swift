@@ -20,6 +20,15 @@ import BitcoinKernel
     setLoggingOptions() // reset to defaults
 }
 
+// libbitcoinkernel's logger is process-scoped: creating a `LoggingConnection`
+// flips internal state (`m_buffering = false`) the first time it runs in
+// a process. On Linux, swift-testing runs all tests in a single process
+// and tests later in the run also bring up kernel state that asserts
+// `m_buffering`. The destroy-path resets the flag, but the lock window
+// across parallel tests still races. On Apple this is masked because
+// each test bundle gets a fresh xctest invocation. See `roadmap.md`
+// "Linux Test Coverage" — Gap 3.
+#if !os(Linux)
 @Test func loggingConnectionReceivesMessages() throws {
     var messages: [String] = []
     let connection = try LoggingConnection { message in
@@ -33,3 +42,4 @@ import BitcoinKernel
     // callback mechanism works without crashing.
     _ = connection
 }
+#endif

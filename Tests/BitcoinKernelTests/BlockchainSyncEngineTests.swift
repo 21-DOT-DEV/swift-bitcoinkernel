@@ -8,6 +8,11 @@
 //  See the accompanying file LICENSE for information
 //
 
+// Depends on `RegtestChainBuilder`, which is gated on CryptoKit. See the
+// note in `Support/RegtestChainBuilder.swift` and `roadmap.md`
+// "Linux Test Coverage".
+#if canImport(CryptoKit)
+
 import Testing
 import BitcoinKernel
 import Foundation
@@ -299,3 +304,5 @@ private func registerChain(
     }
     #expect(!reason.isEmpty, "failure reason should be informative")
 }
+
+#endif // canImport(CryptoKit)
