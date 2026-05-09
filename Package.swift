@@ -166,11 +166,13 @@ extension CXXSetting {
             .define("MAIN_FUNCTION", to: "int bitcoind_main(int argc, char* argv[])"),
             .define("G_TRANSLATION_FUN", to: "G_TRANSLATION_FUN_LOCAL"),
             .define("ENABLE_WALLET", to: "1", .when(traits: ["wallet"])),
+            .define("HAVE_SYSTEM", to: "1", .when(platforms: [.linux])),
         ]
 
     /// C++ settings for the libbitcoinkernel target.
     static let kernelSettings: [Self] =
         shared + [
-            .define("BITCOINKERNEL_BUILD", to: "1")
+            .define("BITCOINKERNEL_BUILD", to: "1"),
+            .define("HAVE_SYSTEM", to: "1", .when(platforms: [.linux])),
         ]
 }
