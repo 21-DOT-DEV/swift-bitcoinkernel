@@ -305,7 +305,7 @@ public enum DebugCategory: String, Sendable, CaseIterable, Codable, Equatable, H
 /// The verbosity level for Bitcoin Core's structured logging (`-loglevel=`).
 ///
 /// Ordering follows the POSIX / syslog(3) convention (shared with
-/// ``BitcoinKernel/LogLevel``): **lower rank = more verbose**. A filter of
+/// `BitcoinKernel.LogLevel`): **lower rank = more verbose**. A filter of
 /// `level >= .info` suppresses everything below info.
 public enum LogLevel: String, Sendable, CaseIterable, Codable, Equatable, Hashable, Comparable {
     /// Most verbose level; logs everything.

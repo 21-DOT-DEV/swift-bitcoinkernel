@@ -107,8 +107,9 @@ public enum Daemon {
     ///
     /// Polls until the RPC server is ready, then calls the hidden
     /// `_bridge_init` RPC via HTTP to capture the `NodeContext` for direct
-    /// dispatch. After this method returns, ``AutoTransport`` routes
-    /// non-wallet RPCs through ``DirectTransport`` automatically.
+    /// dispatch. After this method returns, the auto-detecting transport
+    /// inside `RPCClient(url:username:password:)` routes non-wallet RPCs
+    /// through ``DirectTransport`` automatically.
     ///
     /// - Parameters:
     ///   - url: The RPC endpoint URL (e.g., `http://127.0.0.1:8332`).

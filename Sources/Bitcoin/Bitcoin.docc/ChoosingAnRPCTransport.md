@@ -6,11 +6,13 @@
 
 Select the right transport for your RPC calls: in-process direct bridge or HTTP.
 
-## Transport Options
+## Overview
+
+### Transport Options
 
 The Bitcoin module provides two transport implementations:
 
-### Direct Transport
+#### Direct Transport
 
 ``DirectTransport`` sends JSON-RPC requests directly to the in-process Bitcoin Core dispatch table via a C bridge function, bypassing HTTP entirely. This provides the lowest latency for embedded daemon scenarios.
 
@@ -20,7 +22,7 @@ let client = RPCClient(transport: DirectTransport())
 
 **Limitation:** Direct transport does not support wallet-scoped RPC calls. Calling a wallet RPC (e.g., `getWalletInfo(wallet: "mywallet")`) throws ``RPCClientError/walletPathNotSupported``.
 
-### HTTP Transport
+#### HTTP Transport
 
 ``HTTPTransport`` sends requests over HTTP with Basic authentication. It supports wallet-scoped calls by appending `/wallet/<name>` to the URL path.
 
@@ -33,7 +35,7 @@ let transport = HTTPTransport(
 let client = RPCClient(transport: transport)
 ```
 
-## Auto-Detection
+### Auto-Detection
 
 The recommended initializer auto-detects the best transport per call:
 
@@ -49,7 +51,7 @@ The auto-detection logic:
 1. **Wallet RPCs** (non-nil wallet path) always use HTTP, because the direct transport cannot route to specific wallets.
 2. **Non-wallet RPCs** check if the in-process daemon is ready. If so, the direct bridge is used; otherwise, HTTP.
 
-## Wallet-Scoped Calls
+### Wallet-Scoped Calls
 
 Bitcoin Core routes wallet RPCs to a specific wallet via the URL path `/wallet/<name>`. The typed wallet methods handle this automatically:
 
@@ -61,7 +63,7 @@ let info = try await client.getWalletInfo(wallet: "mywallet")
 let balance = try await client.getBalance(wallet: "default")
 ```
 
-## Choosing the Right Approach
+### Choosing the Right Approach
 
 | Scenario | Recommended Transport |
 |----------|----------------------|

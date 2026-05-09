@@ -94,6 +94,6 @@ print("Chain: \(info.chain), Height: \(info.blocks)")
 - ``ConfigError``
 - ``ConfigWarning``
 
-### Architecture
+### Architecture Reference
 
 - <doc:Architecture>

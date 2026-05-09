@@ -6,7 +6,9 @@
 
 Build type-safe, validated Bitcoin Core configurations using the fluent ``BitcoinConfig`` builder.
 
-## Choosing a Network
+## Overview
+
+### Choosing a Network
 
 Start every configuration with a network factory method, then chain ``RPCAuth`` credentials:
 
@@ -21,7 +23,7 @@ let signet  = BitcoinConfig.signet().rpcAuth(auth)
 
 The return type carries the network as a phantom type parameter (e.g., `BitcoinConfig<Regtest>`), which enables network-specific methods at compile time.
 
-## Chaining Options
+### Chaining Options
 
 Use the fluent builder pattern to add options. Each method returns a new config value:
 
@@ -37,7 +39,7 @@ let config = BitcoinConfig
     .debug(.rpc)
 ```
 
-## Using Presets
+### Using Presets
 
 For common scenarios, use a preset that bundles recommended options:
 
@@ -58,7 +60,7 @@ let tor = BitcoinConfig.torNode(rpcAuth: auth)
 let lightning = BitcoinConfig.lightningEclair(rpcAuth: auth)
 ```
 
-## Validation
+### Validation
 
 Call `validate()` before starting the daemon to catch configuration conflicts:
 
@@ -78,7 +80,7 @@ do {
 
 ``Daemon/start(with:)`` calls `validate()` automatically.
 
-## The Raw Escape Hatch
+### The Raw Escape Hatch
 
 For options not covered by the builder, use `raw()`:
 
@@ -91,7 +93,7 @@ let config = BitcoinConfig
 
 > Warning: `raw()` bypasses the builder's validation tracking. Options set this way are not checked by `validate()`.
 
-## Network-Specific Options
+### Network-Specific Options
 
 Some options are only available on certain networks:
 
