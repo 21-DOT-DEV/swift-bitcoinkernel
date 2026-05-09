@@ -252,9 +252,12 @@ private func registerChain(
     var updates: [BlockchainSync.Update] = []
     for await update in sync.updates() {
         updates.append(update)
-        // When local reaches 3, bump remote tip so the sync keeps going past 5.
-        if update.state == .syncing, update.tip.height == 3 {
+        // Bump early (height 1) so the remote-tip change is visible
+        // before the sync loop re-polls at height 5. Yield to let the
+        // sync task process the mutation before this consumer continues.
+        if update.state == .syncing, update.tip.height == 1 {
             mock.setBestTip(BlockTip(hash: chain.last!.hash, height: 10))
+            await Task.yield()
         }
     }
 
