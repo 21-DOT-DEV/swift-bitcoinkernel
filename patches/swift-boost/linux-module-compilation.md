@@ -1,20 +1,12 @@
 # swift-boost: Linux Module Compilation Fix
 
 **Date**: 2026-05-08
-**Status**: Workaround applied (see Solution)
+**Status**: Under investigation (workaround in progress)
 **Repo**: https://github.com/21-DOT-DEV/swift-boost
 
 ## Problem
 
-swift-boost provides each Boost module as a header-only SPM target with an empty `.cpp` source file for automatic module generation. On macOS, Clang builds these modules implicitly via `-fmodules`. On Linux (Docker `swift:6.3`), `-fno-implicit-modules` is the default, and the pre-built `.pcm` files are not generated during dependency resolution.
-
-When a consumer like swift-bitcoin's vendored Bitcoin Core C++ code does:
-
-```cpp
-#include <boost/multi_index/hashed_index.hpp>
-```
-
-Clang attempts to use the `multi_index` module but fails:
+swift-boost provides each Boost module as a header-only SPM target. SPM auto-generates Clang module maps for each target. On macOS, `-fmodules` allows implicit module building and compilation succeeds. On Linux (Docker `swift:6.3`), `-fno-implicit-modules` is the default, causing:
 
 ```
 fatal error: module 'multi_index' is needed but has not been provided,
@@ -23,47 +15,55 @@ and implicit use of module files is disabled
 
 This affects all 37 boost modules transitively included by Bitcoin Core.
 
+## What doesn't work
+
+| Approach | Result | Why |
+|----------|--------|-----|
+| `-Xcc -fimplicit-modules` | Fails | Boost headers use preprocessor metaprogramming (`# include BOOST_PP_FILENAME_4`) that breaks when compiled as Clang modules in isolation |
+| `-Xcc -fno-modules` | Fails | C++ interop mode forces `-fmodules`, overriding user flags |
+| `-Xcc -fno-implicit-module-maps` | Fails | Same override by C++ interop |
+| Delete module maps before build | Fails | SPM re-generates them during `swift build` |
+| Add explicit `-I` paths | Fails | Clang prefers module resolution over `-I` include paths |
+
+## Root cause
+
+Boost headers are NOT designed to be compiled as Clang modules. They rely on caller-defined macros (e.g., `BOOST_PP_FILENAME_4` must be set before including `forward4.hpp`). When Clang builds a module, it preprocesses all umbrella headers in isolation — no caller context, no pre-defined macros — and fails.
+
 ## Solution
-
-### Current workaround (swift-bitcoin)
-
-Add `-Xcc -fimplicit-modules` to the `swift build` invocation in the Dockerfile:
-
-```dockerfile
-RUN swift build -Xcc -fimplicit-modules
-```
-
-This tells Clang to build missing modules on-the-fly, matching macOS behavior. The flag is scoped to the Docker build only — it does not affect Package.swift or downstream consumers.
 
 ### Long-term fix (swift-boost)
 
-Add explicit `module.modulemap` files to each boost target. This eliminates the need for implicit module building entirely:
+The module-based approach is fundamentally incompatible with Boost's preprocessor metaprogramming on Linux. Options:
+
+**A) Textual headers** — mark all headers as `textual` in module maps so Clang skips module compilation and treats them as regular includes:
 
 ```
-Sources/multi_index/include/module.modulemap:
 module multi_index {
-    umbrella "boost/multi_index"
+    textual umbrella "boost/multi_index"
     export *
 }
 ```
 
-A generation script for all 37 modules:
+**B) Abandon modules** — restructure swift-boost as a single header-only target with traditional include paths, no module maps. This avoids the entire module compilation problem and matches how Boost is used in every other build system (CMake, Bazel, etc.).
 
-```bash
-for dir in Sources/*/; do
-  name=$(basename "$dir")
-  cat > "$dir/include/module.modulemap" <<EOF
-module $name {
-    umbrella "boost/$name"
-    export *
-}
-EOF
-done
+Option B is simpler and more reliable. Boost is header-only; there's no benefit to compiling it as Clang modules.
+
+### Current workaround (swift-bitcoin Dockerfile)
+
+Aggregate all boost headers into a module-free include directory after dependency resolution:
+
+```dockerfile
+RUN swift package resolve && \
+    mkdir -p .build/boost-include/boost && \
+    for dir in .build/checkouts/swift-boost/Sources/*/include/boost/*; do \
+        cp -r "$dir" .build/boost-include/boost/; \
+    done && \
+    swift build -Xcc -I.build/boost-include
 ```
 
-With explicit module maps, SPM builds the `.pcm` files during dependency resolution, and `-fimplicit-modules` is no longer needed.
+This bypasses the module system entirely for boost headers by providing them via a plain `-I` path with no module map.
 
 ## Related
 
 - `inter-target-deps.md` — addresses the flat target dependency issue in swift-boost
-- The module map fix can be applied independently of the inter-target dependency fix
+- Both fixes should be applied together when restructuring swift-boost
