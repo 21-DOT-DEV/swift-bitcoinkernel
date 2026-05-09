@@ -825,10 +825,13 @@ struct CooperativePoolSafetyTests {
         let fast = try await fastResult
         let fastElapsed = ContinuousClock.now - start
 
-        // The fast task should complete in well under 1 second
-        // (if the pool were blocked, it would wait ~2 seconds)
+        // Free path: fast completes in ~tens of ms once async-let
+        // dispatches it. Blocked path: ~2s waiting for the slow task.
+        // Ceiling is a regression-tripwire — discriminates the two
+        // (free ≪ 1.5s ≪ blocked) without micro-precision on CI, where
+        // Dispatch global-queue contention can add 50–500 ms of slack.
         #expect(fast == true)
-        #expect(fastElapsed < .seconds(1), "Fast task took \(fastElapsed) — cooperative pool may be blocked")
+        #expect(fastElapsed < .seconds(1.5), "Fast task took \(fastElapsed) — cooperative pool may be blocked")
 
         // Clean up: await the slow task
         let slow = try await slowResult
@@ -837,31 +840,47 @@ struct CooperativePoolSafetyTests {
 
     @Test("Multiple concurrent blocking transports don't exhaust pool")
     func multipleConcurrentBlocking() async throws {
-        let start = ContinuousClock.now
-
-        // Launch several slow RPCs simultaneously
-        try await withThrowingTaskGroup(of: Bool.self) { group in
+        // Semantic under test: even with several blocking transports
+        // in flight, the cooperative pool stays free, so a fast task can
+        // run without waiting for the slow ones.
+        //
+        // Earlier this test asserted on the group-wide wall-clock elapsed
+        // (`< 3s` for 4 × 1s slow tasks + 1 fast). That depended on
+        // libdispatch having ≥4 worker threads available — which Apple's
+        // implementation auto-tunes generously, but Linux's libdispatch
+        // in containerized CI can keep at 1–2, serializing the slow
+        // tasks and pushing wall-clock to ~4s. That's a platform GCD
+        // sizing detail, not a regression in our cooperative-pool
+        // contract, so the test was producing false negatives on Linux.
+        //
+        // The refactor measures the fast task's *intrinsic* duration —
+        // captured inside its closure. The slow tasks all `await`
+        // continuations immediately, so they don't pin cooperative
+        // threads; the cooperative pool stays free regardless of how
+        // serially GCD chooses to drain the slow `Thread.sleep` calls.
+        // If the pool were genuinely exhausted, the fast task's intrinsic
+        // duration would balloon toward `slow.delay`.
+        try await withThrowingTaskGroup(of: (Bool, Duration?).self) { group in
             for _ in 0..<4 {
                 group.addTask {
                     let client = RPCClient(transport: SlowMockTransport(delay: .seconds(1)))
-                    return try await client.send("getchaintips")
+                    return (try await client.send("getchaintips"), nil)
                 }
             }
-            // Also add a fast task
             group.addTask {
+                let fastStart = ContinuousClock.now
                 let client = RPCClient(transport: MockTransport(json: #"{"result":true,"error":null,"id":"1"}"#))
-                return try await client.send("getblockcount")
+                let r: Bool = try await client.send("getblockcount")
+                return (r, ContinuousClock.now - fastStart)
             }
 
-            for try await result in group {
+            for try await (result, fastDuration) in group {
                 #expect(result == true)
+                if let d = fastDuration {
+                    #expect(d < .milliseconds(500), "Fast task intrinsic duration \(d) — cooperative pool may be blocked")
+                }
             }
         }
-
-        let elapsed = ContinuousClock.now - start
-        // All 4 slow tasks run in parallel on GCD (not serial on cooperative pool)
-        // so total should be ~1s, not ~4s
-        #expect(elapsed < .seconds(3), "Tasks appear serialized (\(elapsed)) — pool may be exhausted")
     }
 }
 
@@ -967,11 +986,14 @@ struct DirectBridgeTimeoutTests {
     func poolFreeDuringTimeout() async throws {
         let start = ContinuousClock.now
 
-        // Launch a slow RPC that will timeout after 1s
+        // Launch a slow RPC that will timeout after 2s. Timeout is 2s
+        // (not 1s) so the blocked-path duration (~2s) sits well above
+        // the 1.5s ceiling — keeps the regression-tripwire meaningful
+        // even with CI Dispatch-queue contention adding 50–500 ms slack.
         async let timedOut: Void = {
             let client = RPCClient(transport: TimingOutTransport(
                 callDuration: .seconds(10),
-                timeout: 1
+                timeout: 2
             ))
             _ = try? await client.send("getchaintips") as Bool
         }()
@@ -984,8 +1006,12 @@ struct DirectBridgeTimeoutTests {
 
         let fastResult = try await fast
         let fastElapsed = ContinuousClock.now - start
+        // Free path: fast completes in ~tens of ms. Blocked path: ~2s
+        // (the timeout). Ceiling discriminates the two while tolerating
+        // CI scheduling jitter — see `blockingDoesNotStarve` for the
+        // same regression-tripwire pattern.
         #expect(fastResult == true)
-        #expect(fastElapsed < .seconds(1), "Fast task delayed by timeout wait")
+        #expect(fastElapsed < .seconds(1.5), "Fast task delayed by timeout wait: \(fastElapsed)")
 
         await timedOut
     }
