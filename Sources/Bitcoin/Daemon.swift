@@ -8,10 +8,9 @@
 //  See the accompanying file LICENSE for information
 //
 
-import bitcoind
 import Foundation
-import os.log
 import Synchronization
+import bitcoind
 
 private let daemonLogger = Logger(subsystem: "Bitcoin", category: "Daemon")
 
@@ -107,8 +106,9 @@ public enum Daemon {
     ///
     /// Polls until the RPC server is ready, then calls the hidden
     /// `_bridge_init` RPC via HTTP to capture the `NodeContext` for direct
-    /// dispatch. After this method returns, ``AutoTransport`` routes
-    /// non-wallet RPCs through ``DirectTransport`` automatically.
+    /// dispatch. After this method returns, the auto-detecting transport
+    /// inside `RPCClient(url:username:password:)` routes non-wallet RPCs
+    /// through ``DirectTransport`` automatically.
     ///
     /// - Parameters:
     ///   - url: The RPC endpoint URL (e.g., `http://127.0.0.1:8332`).
@@ -202,8 +202,13 @@ public enum Daemon {
     }
 
     /// Retries `attempt` with exponential back-off until it succeeds or the deadline expires.
+    ///
+    /// - Parameter onWillSleep: Test-only hook fired with the planned delay
+    ///   immediately before each `Task.sleep`. Lets tests assert on the delay
+    ///   schedule deterministically without wall-clock measurement.
     static func poll(
         timeout: Duration,
+        onWillSleep: (@Sendable (Duration) -> Void)? = nil,
         attempt: @Sendable () async throws -> Void
     ) async throws {
         let deadline = ContinuousClock.now + timeout
@@ -218,6 +223,7 @@ public enum Daemon {
                 return
             } catch {
                 lastError = error
+                onWillSleep?(delay)
                 try? await Task.sleep(for: delay)
                 delay = min(delay * 2, maxDelay)
             }

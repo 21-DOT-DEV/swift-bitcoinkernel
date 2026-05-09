@@ -9,6 +9,9 @@
 //
 
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// HTTP transport that reads credentials from a Bitcoin Core `.cookie` file
 /// on each call, enabling lazy authentication without hardcoded credentials.

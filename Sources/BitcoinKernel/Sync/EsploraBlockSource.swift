@@ -9,6 +9,9 @@
 //
 
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// A ``BlockSource`` backed by any Esplora-compatible HTTP endpoint —
 /// mempool.space, blockstream.info, or a self-hosted Esplora instance.
@@ -236,7 +239,13 @@ public struct EsploraBlockSource: BlockSource {
         guard let urlError = error as? URLError else { return false }
         switch urlError.code {
         case .timedOut, .networkConnectionLost, .cannotConnectToHost,
-             .cannotFindHost, .dnsLookupFailed, .resourceUnavailable:
+             .cannotFindHost, .dnsLookupFailed, .resourceUnavailable,
+             .badURL, .secureConnectionFailed:
+            // `.badURL` and `.secureConnectionFailed` are retryable here
+            // because CFNetwork maps SOCKS5 proxy failures (e.g. a Tor
+            // circuit dying after the system clock jumps) onto these codes
+            // even when the URL itself is well-formed and TLS is fine.
+            // Relevant to the Tor-routing path documented in `Sync.md`.
             return true
         default:
             return false

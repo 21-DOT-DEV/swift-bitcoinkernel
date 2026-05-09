@@ -47,9 +47,11 @@
 
 /* Define this symbol if the BSD getentropy system call is available with
    sys/random.h (macOS only; iOS does not ship sys/random.h) */
+#ifdef __APPLE__
 #include <TargetConditionals.h>
 #if TARGET_OS_OSX
 #define HAVE_GETENTROPY_RAND 1
+#endif
 #endif
 
 /* Define to 1 if O_CLOEXEC flag is available. */
@@ -58,13 +60,18 @@
 /* Define this symbol if platform supports unix domain sockets */
 #define HAVE_SOCKADDR_UN 1
 
-/* Define this symbol if the BSD sysctl() is available */
+/* Define this symbol if the BSD sysctl() is available.
+   Available on Apple platforms (macOS/iOS) and BSD; not on Linux. */
+#ifdef __APPLE__
 #define HAVE_SYSCTL 1
+#endif
 
 /* Define to 1 if std::system or ::wsystem is available.
    system() is unavailable on iOS. */
+#ifdef __APPLE__
 #if TARGET_OS_OSX
 #define HAVE_SYSTEM 1
+#endif
 #endif
 
 /* Define to the address where bug reports for this package should be sent. */

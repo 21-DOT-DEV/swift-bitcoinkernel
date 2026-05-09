@@ -368,7 +368,6 @@ extension RPCClient {
     /// - Parameters:
     ///   - descriptors: Descriptors to check.
     ///   - blockHashes: Block hashes to scan (optional).
-    ///   - scanObjects: Additional scan objects (optional).
     /// - Returns: Raw JSON with descriptor activity.
     public func getDescriptorActivity(descriptors: [String], blockHashes: [String]? = nil) async throws -> Data {
         var params: [RPCParam] = [.encodable(descriptors)]

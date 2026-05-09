@@ -9,9 +9,8 @@
 //
 
 import Foundation
-import os.log
-import bitcoind
 import RPCModels
+import bitcoind
 
 let rpcLogger = Logger(subsystem: "Bitcoin", category: "RPC")
 
@@ -110,7 +109,8 @@ public final class RPCClient: Sendable {
         do {
             response = try decoder.decode(JSONRPCResponse<T>.self, from: data)
         } catch {
-            throw RPCClientError.decodingFailed(method: method, responseData: data, underlying: error)
+            throw RPCClientError.decodingFailed(
+                method: method, responseData: data, underlying: error)
         }
         if let error = response.error { throw error }
         guard let result = response.result else {
@@ -124,7 +124,8 @@ public final class RPCClient: Sendable {
         do {
             response = try decoder.decode(JSONRPCResponse<T>.self, from: data)
         } catch {
-            throw RPCClientError.decodingFailed(method: method, responseData: data, underlying: error)
+            throw RPCClientError.decodingFailed(
+                method: method, responseData: data, underlying: error)
         }
         if let error = response.error { throw error }
         return response.result
@@ -148,8 +149,10 @@ public final class RPCClient: Sendable {
     ///   - method: The RPC method name (e.g., `"getblockcount"`).
     ///   - params: The parameters to pass to the RPC method.
     /// - Returns: The decoded result.
-    /// - Throws: ``RPCError`` (server), ``RPCClientError`` (client), or transport errors.
-    public func send<T: Decodable & Sendable>(_ method: String, params: [RPCParam] = []) async throws -> T {
+    /// - Throws: `RPCError` (server), ``RPCClientError`` (client), or transport errors.
+    public func send<T: Decodable & Sendable>(_ method: String, params: [RPCParam] = [])
+        async throws -> T
+    {
         let data = try await transport.send(buildRequest(method, params: params), path: nil)
         return try decode(data, method: method)
     }
@@ -162,8 +165,10 @@ public final class RPCClient: Sendable {
     ///   - method: The RPC method name.
     ///   - params: The parameters to pass to the RPC method.
     /// - Returns: The decoded result, or `nil` if the server returned null.
-    /// - Throws: ``RPCError`` (server), ``RPCClientError`` (client), or transport errors.
-    public func sendNullable<T: Decodable & Sendable>(_ method: String, params: [RPCParam] = []) async throws -> T? {
+    /// - Throws: `RPCError` (server), ``RPCClientError`` (client), or transport errors.
+    public func sendNullable<T: Decodable & Sendable>(_ method: String, params: [RPCParam] = [])
+        async throws -> T?
+    {
         let data = try await transport.send(buildRequest(method, params: params), path: nil)
         return try decodeNullable(data, method: method)
     }
@@ -176,18 +181,20 @@ public final class RPCClient: Sendable {
     /// - Parameters:
     ///   - method: The RPC method name.
     ///   - params: The parameters to pass to the RPC method.
-    /// - Throws: ``RPCError`` (server) or transport errors.
+    /// - Throws: `RPCError` (server) or transport errors.
     public func sendVoid(_ method: String, params: [RPCParam] = []) async throws {
         let data = try await transport.send(buildRequest(method, params: params), path: nil)
         let response: JSONRPCResponse<String?>
         do {
             response = try decoder.decode(JSONRPCResponse<String?>.self, from: data)
         } catch {
-            throw RPCClientError.decodingFailed(method: method, responseData: data, underlying: error)
+            throw RPCClientError.decodingFailed(
+                method: method, responseData: data, underlying: error)
         }
         if let error = response.error { throw error }
         if let value = response.result, let str = value, !str.isEmpty {
-            rpcLogger.warning("\(method): expected null, got '\(str)' — possible RPC semantics change")
+            rpcLogger.warning(
+                "\(method): expected null, got '\(str)' — possible RPC semantics change")
         }
     }
 
@@ -200,29 +207,37 @@ public final class RPCClient: Sendable {
     }
 
     /// Sends a wallet-scoped RPC and decodes the result into `T`.
-    func send<T: Decodable & Sendable>(_ method: String, wallet: String, params: [RPCParam] = []) async throws -> T {
-        let data = try await transport.send(buildRequest(method, params: params), path: walletPath(wallet))
+    func send<T: Decodable & Sendable>(_ method: String, wallet: String, params: [RPCParam] = [])
+        async throws -> T
+    {
+        let data = try await transport.send(
+            buildRequest(method, params: params), path: walletPath(wallet))
         return try decode(data, method: method)
     }
 
     /// Sends a wallet-scoped RPC expected to return null.
     func sendVoid(_ method: String, wallet: String, params: [RPCParam] = []) async throws {
-        let data = try await transport.send(buildRequest(method, params: params), path: walletPath(wallet))
+        let data = try await transport.send(
+            buildRequest(method, params: params), path: walletPath(wallet))
         let response: JSONRPCResponse<String?>
         do {
             response = try decoder.decode(JSONRPCResponse<String?>.self, from: data)
         } catch {
-            throw RPCClientError.decodingFailed(method: method, responseData: data, underlying: error)
+            throw RPCClientError.decodingFailed(
+                method: method, responseData: data, underlying: error)
         }
         if let error = response.error { throw error }
         if let value = response.result, let str = value, !str.isEmpty {
-            rpcLogger.warning("\(method): expected null, got '\(str)' — possible RPC semantics change")
+            rpcLogger.warning(
+                "\(method): expected null, got '\(str)' — possible RPC semantics change")
         }
     }
 
     /// Sends a wallet-scoped RPC and returns raw response data.
-    func callWallet(_ method: String, wallet: String, params: [RPCParam] = []) async throws -> Data {
-        let data = try await transport.send(buildRequest(method, params: params), path: walletPath(wallet))
+    func callWallet(_ method: String, wallet: String, params: [RPCParam] = []) async throws -> Data
+    {
+        let data = try await transport.send(
+            buildRequest(method, params: params), path: walletPath(wallet))
         try throwIfRPCError(data)
         return data
     }
@@ -235,7 +250,7 @@ public final class RPCClient: Sendable {
     ///   - method: The RPC method name.
     ///   - params: The parameters to pass to the RPC method.
     /// - Returns: The raw response `Data`.
-    /// - Throws: ``RPCError`` if the response contains a JSON-RPC error,
+    /// - Throws: `RPCError` if the response contains a JSON-RPC error,
     ///   or transport errors.
     public func call(_ method: String, params: [RPCParam] = []) async throws -> Data {
         let data = try await transport.send(buildRequest(method, params: params), path: nil)
@@ -249,6 +264,9 @@ public final class RPCClient: Sendable {
     private func throwIfRPCError(_ data: Data) throws {
         struct ErrorEnvelope: Decodable { let error: RPCError? }
         if let envelope = try? decoder.decode(ErrorEnvelope.self, from: data),
-           let error = envelope.error { throw error }
+            let error = envelope.error
+        {
+            throw error
+        }
     }
 }

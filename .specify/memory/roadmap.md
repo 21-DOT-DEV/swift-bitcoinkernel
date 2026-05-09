@@ -15,7 +15,7 @@
 2. **Kernel-as-Node-Layer**: Expose `libbitcoinkernel` consensus validation as a reusable node layer that any wallet SDK can consume (`BitcoinKernel` target)
 3. **Swift-Native P2P**: Deliver blocks and broadcast transactions directly from Swift peers — no Rust FFI, no external runtime dependencies
 4. **Compact Filter Light Client**: Implement BIP 157/158 compact block filters in Swift for privacy-preserving wallet sync
-5. **Cross-Platform**: Support macOS 15+ and iOS 18+ (Tier 1); Linux, tvOS, visionOS (Tier 2 aspirational)
+5. **Cross-Platform**: Support macOS 15+ and iOS 18+ (Tier 1); Linux, visionOS (Tier 2); tvOS BitcoinKernel-only (planned)
 6. **Developer Experience**: Type-safe RPC client, async/await throughout, comprehensive DocC documentation
 
 **Target Audience**:
@@ -49,7 +49,7 @@
 
 | Metric | Target | Measurement |
 |--------|--------|-------------|
-| **Build Success** | 100% Tier 1 platforms | CI green on macOS, iOS |
+| **Build Success** | 100% Tier 1+2 platforms | CI green on macOS, iOS, visionOS, Linux |
 | **Test Coverage** | ≥80% public API | Swift coverage tools |
 | **RPC Coverage** | 171 typed methods (done) | All Bitcoin Core v31.x RPCs covered |
 | **Documentation Coverage** | 100% public types | DocC coverage report |
@@ -129,6 +129,50 @@ These are not committed phases — they're areas to monitor and potentially inco
 - **Swift-native path**: Would require a Swift implementation of the Utreexo accumulator (reference `libutreexo` C99 code and `rustreexo` Rust crate).
 - **Integration challenge**: Requires changes to how `libbitcoinkernel` resolves UTXOs — replacing `CCoinsViewDB` with accumulator proofs.
 - **Monitor**: Floresta's Utreexo adoption, any Bitcoin Core Utreexo integration proposals.
+
+### tvOS BitcoinKernel Support
+
+**Status**: Planned — BitcoinKernel compiles for tvOS (libbitcoinkernel target succeeds), but full bitcoind is blocked by `fork`/`execvp` which Apple marks unavailable on tvOS. Requires conditional compilation guards in vendored C++ sources (`subprocess.h`, `exec.cpp`) to exclude daemon-only features from tvOS builds. watchOS is blocked for both targets (same primitives unavailable).
+
+- **BitcoinKernel path**: Add `#if !TARGET_OS_TV` guards (requires `#include <TargetConditionals.h>`) around `fork`/`execvp` usage in `Sources/libbitcoinkernel/src/util/subprocess.h`. The subprocess facility is only needed for external signer support, not core consensus validation.
+- **bitcoind path**: Not feasible — daemonization (`fork_daemon`), system command execution, and interactive stdin all require unavailable POSIX primitives.
+- **CI**: Add tvOS build job for BitcoinKernel-only scheme once source guards are in place.
+- **Dependencies**: None — independent of all roadmap phases.
+
+### Linux Test Coverage Gaps
+
+**Status**: A handful of test files are gated to Apple platforms only; the rest of the suite runs on Linux CI. Each gap has a clean follow-up path.
+
+**Gap 1 — `RegtestChainBuilder` (CryptoKit)**
+
+- Files: `Tests/BitcoinKernelTests/Support/RegtestChainBuilder.swift`, `RegtestChainBuilderTests.swift`, `BlockchainSyncEngineTests.swift` — guarded by `#if canImport(CryptoKit)`.
+- Cause: The synthetic block miner uses `CryptoKit.SHA256` for `sha256d`. CryptoKit is Apple-only.
+- Recommended fix: Add an Apache-2.0 dep on [`apple/swift-crypto`](https://github.com/apple/swift-crypto) (Linux-only via `.product(name: "Crypto", package: "swift-crypto", condition: .when(platforms: [.linux]))`) and `import Crypto` under `#else`. swift-crypto provides drop-in CryptoKit equivalents on Linux. Requires a constitutional amendment per `AGENTS.md` ("Ask first: add new third-party dependencies").
+- Alternative: expose libbitcoinkernel's internal `CSHA256` via a new C bridge target (precedent: [`swift-secp256k1`'s `Utility.h`](https://github.com/21-DOT-DEV/swift-secp256k1/blob/main/Sources/libsecp256k1/include/Utility.h)). Avoids the dep but adds C++→C wrapper scaffolding for one test helper.
+- Impact: ~12 integration tests skipped on Linux. Unit coverage of `BlockchainSync` itself remains via mocks; what's lost is end-to-end validation through `processBlock`.
+
+**Gap 2 — `HTTPStub` (URLProtocol stubbing on Linux)**
+
+- Files: `Tests/BitcoinKernelTests/BlockSourceTests.swift` — guarded by `#if !os(Linux)` (helpers + tests, except the literal-URL accessor test which has no network dependency).
+- Cause: `HTTPStub` relies on `URLProtocol.registerClass` to intercept HTTP traffic. Apple's URLSession honors registered URLProtocols; Linux's FoundationNetworking does not, so stubbed requests escape to real DNS and fail.
+- Recommended fix: refactor `EsploraBlockSource` to inject an HTTP client protocol (`func get(URLRequest) async throws -> (Data, HTTPURLResponse)`) instead of holding a `URLSession` directly. Tests substitute a Sendable mock conforming to the protocol; production code passes `URLSession.shared` wrapped in a thin adapter. Removes the URLProtocol intercept entirely and makes the suite cross-platform without third-party deps.
+- Impact: ~12 tests skipped on Linux covering retry, pacing, and Retry-After honoring of the Esplora HTTP layer. The production retry-policy logic is the most complex part of `EsploraBlockSource` — losing Linux coverage here is the most material gap of the three.
+
+**Gap 3 — `LoggingConnection` (libbitcoinkernel process-singleton logger on Linux)**
+
+- File: `Tests/BitcoinKernelTests/LoggingTests.swift` — `loggingConnectionReceivesMessages()` is guarded by `#if !os(Linux)`.
+- Cause: libbitcoinkernel's `BCLog::Logger::StartLogging()` asserts `m_buffering == true`. The first connection succeeds (sets `m_buffering = false`); on Apple, `swift test` invocations that exercise the logger run in fresh xctest processes so the global state is reset. On Linux all tests share one process, so the assertion fires when a later test causes the kernel to call into logging while another test's connection lifecycle has already flipped the flag.
+- Recommended fix: make Swift's `LoggingConnection` a process-wide singleton (`static let shared`) instead of one-instance-per-test, and remove the destroy/recreate path from tests. Aligns with Bitcoin Core's process-scoped intent for the C-API.
+- Impact: 1 test skipped on Linux. Functional coverage of the `LoggingConnection` public API stays on Apple. The production code paths that emit kernel log lines run on Linux as part of every other kernel test in the suite, so the logging callback contract is exercised indirectly.
+
+### Test-Time Clock Injection (`swift-clocks`)
+
+**Status**: Future enhancement — current timing-sensitive tests use a per-call `onWillSleep:` hook on `Daemon.poll` to capture intended sleep durations deterministically, plus widened wall-clock ceilings as regression tripwires. This works at small scale but doesn't generalize.
+
+- **Trigger**: Adopt [Point-Free's `swift-clocks`](https://github.com/pointfreeco/swift-clocks) (`TestClock`) once we have ≥5 timing-sensitive tests where the per-call hook pattern feels repetitive, OR when Apple ships a stdlib `TestClock` (whichever comes first).
+- **Apple's stance**: The Swift team has indicated they're [open to a built-in `TestClock`](https://forums.swift.org/t/controllable-clock-support-in-swift-testing/81246) but it isn't currently a priority; community is invited to draft an evolution proposal. Point-Free has stated they would retire `swift-clocks` if a built-in arrives.
+- **Migration path**: Parameterize timed-sleep callsites (`Daemon.poll`, `EsploraBlockSource` retry path, `DirectTransport` timeout) on a `Clock` parameter defaulting to `ContinuousClock()`. Tests inject `TestClock` for virtual-time advancement.
+- **Dependencies**: Adds one Apache-2.0 third-party dep (Point-Free `swift-clocks`) — requires explicit approval per `AGENTS.md` policy on new third-party deps.
 
 ### Great Consensus Cleanup
 

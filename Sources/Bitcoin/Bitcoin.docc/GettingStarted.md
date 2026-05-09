@@ -6,7 +6,9 @@
 
 Learn how to start an embedded Bitcoin Core daemon, connect an RPC client, and make your first call.
 
-## Adding Bitcoin to Your Project
+## Overview
+
+### Adding Bitcoin to Your Project
 
 Add `swift-bitcoin` as a Swift Package Manager dependency in your `Package.swift`:
 
@@ -30,7 +32,7 @@ Then import the module:
 import Bitcoin
 ```
 
-## Building a Configuration
+### Building a Configuration
 
 Use ``BitcoinConfig`` to create a type-safe, validated configuration. Start with a network factory method:
 
@@ -47,7 +49,7 @@ let config = BitcoinConfig
 
 The builder uses phantom types to enforce network-specific options at compile time. For example, `.fastPrune()` is only available on `Regtest` configs.
 
-## Starting the Daemon
+### Starting the Daemon
 
 Pass the config to ``Daemon/start(with:)`` to validate it and launch the daemon:
 
@@ -57,7 +59,7 @@ try Daemon.start(with: config)
 
 This validates the configuration (throwing ``ConfigError`` on fatal conflicts), prints any warnings, and starts `bitcoind` on a background thread. The method returns immediately.
 
-## Connecting an RPC Client
+### Connecting an RPC Client
 
 Create an ``RPCClient`` that auto-detects the best transport:
 
@@ -71,7 +73,7 @@ let client = RPCClient(
 
 When the embedded daemon is running, calls are routed through an in-process bridge for minimal latency. When connecting to a remote node, HTTP is used automatically.
 
-## Making Your First Call
+### Making Your First Call
 
 Use the typed RPC methods to query the blockchain:
 
@@ -88,7 +90,7 @@ Or use the generic `send` method for any RPC:
 let blockCount: Int = try await client.send("getblockcount")
 ```
 
-## Generating Blocks (Regtest)
+### Generating Blocks (Regtest)
 
 On regtest, generate blocks for testing:
 
@@ -98,22 +100,18 @@ let hashes = try await client.generateToAddress(nBlocks: 101, address: address)
 print("Generated \(hashes.count) blocks")
 ```
 
-## Stopping the Daemon
+### Stopping the Daemon
 
-Stop the daemon and wait for clean shutdown:
-
-```swift
-await Daemon.stopAndWait()
-```
-
-Or signal shutdown and wait separately:
+Send the `stop` RPC to signal Bitcoin Core to begin shutdown, then block until the daemon thread has exited:
 
 ```swift
-Daemon.stop()
+_ = try await client.stop()
 Daemon.waitUntilStopped()
 ```
 
-## Next Steps
+``Daemon/waitUntilStopped()`` blocks the calling thread until `bitcoind_main` returns. Pair it with the `stop` RPC (or any other shutdown trigger Bitcoin Core honors) to ensure clean teardown before your process exits.
+
+### Next Steps
 
 - <doc:ConfiguringBitcoinCore> -- Explore the full configuration builder API.
 - <doc:ChoosingAnRPCTransport> -- Understand transport selection and wallet routing.

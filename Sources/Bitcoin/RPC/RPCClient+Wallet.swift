@@ -177,7 +177,9 @@ extension RPCClient {
 
     /// Returns all labels in the wallet.
     ///
-    /// - Parameter purpose: Filter by address purpose ("send" or "receive").
+    /// - Parameters:
+    ///   - wallet: The wallet name.
+    ///   - purpose: Filter by address purpose ("send" or "receive").
     public func listLabels(wallet: String, purpose: String? = nil) async throws -> [String] {
         var params: [RPCParam] = []
         if let purpose { params.append(.string(purpose)) }
@@ -186,7 +188,9 @@ extension RPCClient {
 
     /// Refills the keypool.
     ///
-    /// - Parameter newSize: The new keypool size (default 100).
+    /// - Parameters:
+    ///   - wallet: The wallet name.
+    ///   - newSize: The new keypool size (default 100).
     public func keypoolRefill(wallet: String, newSize: Int = 100) async throws {
         try await sendVoid("keypoolrefill", wallet: wallet, params: [.int(newSize)])
     }
@@ -568,7 +572,9 @@ extension RPCClient {
 
     /// Imports output descriptors (descriptor wallets only).
     ///
-    /// - Parameter requests: Array of descriptor import requests.
+    /// - Parameters:
+    ///   - wallet: The wallet name.
+    ///   - requests: Array of descriptor import requests.
     /// - Returns: Raw JSON with import results per descriptor.
     public func importDescriptors(wallet: String, requests: [[String: RPCParam]]) async throws -> Data {
         try await callWallet("importdescriptors", wallet: wallet, params: [.encodable(requests)])
@@ -576,7 +582,9 @@ extension RPCClient {
 
     /// Lists all descriptors in the wallet.
     ///
-    /// - Parameter showPrivate: Include private keys (default false).
+    /// - Parameters:
+    ///   - wallet: The wallet name.
+    ///   - showPrivate: Include private keys (default false).
     public func listDescriptors(wallet: String, showPrivate: Bool = false) async throws -> Data {
         try await callWallet("listdescriptors", wallet: wallet, params: [.bool(showPrivate)])
     }
@@ -593,7 +601,9 @@ extension RPCClient {
 
     /// Removes imported funds from the wallet (pruned nodes).
     ///
-    /// - Parameter txid: The transaction id to remove.
+    /// - Parameters:
+    ///   - wallet: The wallet name.
+    ///   - txid: The transaction id to remove.
     public func removePrunedFunds(wallet: String, txid: String) async throws {
         try await sendVoid("removeprunedfunds", wallet: wallet, params: [.string(txid)])
     }

@@ -1,0 +1,169 @@
+name: DocC Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing release tag to upload the DocC archive to (e.g. 0.1.0 or 0.1.0-alpha.1). The release must already exist.'
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: docc-release-${{ github.event.inputs.release_tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build package
+    runs-on: macos-26
+    permissions:
+      contents: read
+    env:
+      DEVELOPER_DIR: "/Applications/Xcode_26.4.app/Contents/Developer"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.release_tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Build package
+        run: swift build
+
+  docc:
+    name: ${{ matrix.target }}
+    needs: build
+    runs-on: macos-26
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        target: [Bitcoin, BitcoinKernel]
+    permissions:
+      contents: read
+    env:
+      DEVELOPER_DIR: "/Applications/Xcode_26.4.app/Contents/Developer"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.release_tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Build DocC Archive
+        env:
+          SOURCE_SERVICE_BASE_URL: "https://github.com/${{ github.repository }}/blob/${{ github.event.inputs.release_tag || github.ref_name }}"
+        run: |
+          mkdir -p docs
+          swift package \
+            --allow-writing-to-directory ./docs \
+            generate-documentation \
+            --target ${{ matrix.target }} \
+            --analyze \
+            --warnings-as-errors \
+            --enable-experimental-markdown-output \
+            --transform-for-static-hosting \
+            --experimental-transform-for-static-hosting-with-content \
+            --source-service github \
+            --source-service-base-url "$SOURCE_SERVICE_BASE_URL" \
+            --checkout-path "$GITHUB_WORKSPACE" \
+            --output-path ./docs/${{ matrix.target }}.doccarchive
+
+      - name: Sanity-check archive
+        run: |
+          test -d ./docs/${{ matrix.target }}.doccarchive
+          test -f ./docs/${{ matrix.target }}.doccarchive/metadata.json
+
+          BUNDLE_ID=$(jq -r '.bundleID // empty' ./docs/${{ matrix.target }}.doccarchive/metadata.json)
+          echo "Bundle ID: ${BUNDLE_ID}"
+          [ -n "$BUNDLE_ID" ] || { echo "::error::metadata.json missing bundleID"; exit 1; }
+
+          MD_COUNT=$(find ./docs/${{ matrix.target }}.doccarchive -name '*.md' | wc -l | tr -d ' ')
+          echo "Markdown file count: ${MD_COUNT}"
+          [ "$MD_COUNT" -gt 0 ] || { echo "::error::No .md files found; --enable-experimental-markdown-output may have regressed"; exit 1; }
+
+      - name: Smoke-test merge + static hosting
+        run: |
+          xcrun docc merge ./docs/${{ matrix.target }}.doccarchive \
+            --output-path /tmp/merge-test.doccarchive
+          xcrun docc process-archive transform-for-static-hosting \
+            /tmp/merge-test.doccarchive \
+            --output-path /tmp/merge-test-static
+          test -f /tmp/merge-test-static/index.html
+          test -d /tmp/merge-test-static/documentation/bitcoin \
+            || test -d /tmp/merge-test-static/documentation/bitcoinkernel
+
+      - name: Zip DocC Archive
+        run: |
+          cp LICENSE docs/LICENSE
+          cd docs && 7z a -tzip -mx=9 ${{ matrix.target }}.doccarchive.zip ${{ matrix.target }}.doccarchive LICENSE
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.target }}.doccarchive
+          path: docs/${{ matrix.target }}.doccarchive.zip
+          retention-days: 1
+
+  release:
+    name: Upload to Release
+    needs: [build, docc]
+    runs-on: macos-26
+    permissions:
+      contents: write  # for gh release upload
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_TAG: ${{ github.event.inputs.release_tag || github.ref_name }}
+      DEVELOPER_DIR: "/Applications/Xcode_26.4.app/Contents/Developer"
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Echo toolchain versions
+        run: |
+          {
+            echo "### Toolchain"
+            echo ""
+            echo '```'
+            swift --version
+            xcodebuild -version
+            xcrun docc --version 2>/dev/null || echo "docc --version: unsupported by this docc build"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Download Bitcoin archive
+        uses: actions/download-artifact@v8
+        with:
+          name: Bitcoin.doccarchive
+          path: docs
+
+      - name: Download BitcoinKernel archive
+        uses: actions/download-artifact@v8
+        with:
+          name: BitcoinKernel.doccarchive
+          path: docs
+
+      - name: Upload to Release
+        run: |
+          gh release upload "$RELEASE_TAG" docs/Bitcoin.doccarchive.zip --clobber
+          gh release upload "$RELEASE_TAG" docs/BitcoinKernel.doccarchive.zip --clobber
+
+      - name: Write step summary
+        run: |
+          {
+            echo ""
+            echo "### DocC Release"
+            echo ""
+            echo "- **Release**: \`$RELEASE_TAG\`"
+            for target in Bitcoin BitcoinKernel; do
+              SIZE=$(ls -lh docs/${target}.doccarchive.zip | awk '{print $5}')
+              SHA=$(shasum -a 256 docs/${target}.doccarchive.zip | awk '{print $1}')
+              echo ""
+              echo "#### ${target}"
+              echo "- **Archive**: \`${target}.doccarchive.zip\`"
+              echo "- **Size**: $SIZE"
+              echo "- **SHA-256**: \`$SHA\`"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"

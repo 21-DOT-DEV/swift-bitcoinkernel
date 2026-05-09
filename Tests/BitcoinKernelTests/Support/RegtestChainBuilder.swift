@@ -8,6 +8,14 @@
 //  See the accompanying file LICENSE for information
 //
 
+// RegtestChainBuilder uses CryptoKit's SHA256 for synthetic block mining.
+// CryptoKit is Apple-only; on Linux the same API is provided by
+// swift-crypto, but adding that dependency requires a constitutional
+// amendment per `AGENTS.md`. Until that lands, this support file (and
+// the integration tests that depend on it) compile on Apple platforms
+// only. See `roadmap.md` "Linux Test Coverage".
+#if canImport(CryptoKit)
+
 import Foundation
 import CryptoKit
 import BitcoinKernel
@@ -305,3 +313,5 @@ enum RegtestChainBuilder {
         return true // exactly equal
     }
 }
+
+#endif // canImport(CryptoKit)

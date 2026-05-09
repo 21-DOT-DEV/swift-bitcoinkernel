@@ -23,6 +23,14 @@ import Foundation
     #expect(URL.blockstreamInfoTestnet.absoluteString == "https://blockstream.info/testnet/api")
 }
 
+// All tests below this line use `HTTPStub`, which relies on
+// `URLProtocol.registerClass` to intercept HTTP traffic. That mechanism
+// works on Apple's URLSession but is a no-op on Linux's
+// FoundationNetworking — registered protocols are not consulted, so
+// requests escape to the real network and fail with DNS errors against
+// the synthetic `.test` hostnames. See `roadmap.md` "Linux Test Coverage".
+#if !os(Linux)
+
 // MARK: - Helpers
 
 /// Tip of Signet near height 210k, hex form as Esplora serves it (display order).
@@ -183,9 +191,12 @@ private func makeSource(
     _ = try await source.blockHash(atHeight: 1)
     let elapsed = ContinuousClock.now - start
 
-    // Should wait ~1s per Retry-After, not the ~10ms base delay.
+    // Lower bound: Retry-After (1s) was honored, not base delay (10ms).
+    // Upper bound: regression-tripwire only — Task.sleep precision under
+    // CI load is unbounded, so we allow generous slack rather than
+    // asserting precisely on wall-clock.
     #expect(elapsed >= .milliseconds(900))
-    #expect(elapsed < .seconds(3))
+    #expect(elapsed < .seconds(5))
     #expect(stub.records.count == 2)
 }
 
@@ -257,3 +268,5 @@ private func makeSource(
             "10 concurrent requests finished in \(testElapsed); expected ≥ \(expectedMinimum)")
     #expect(stub.records.count == count)
 }
+
+#endif // !os(Linux)

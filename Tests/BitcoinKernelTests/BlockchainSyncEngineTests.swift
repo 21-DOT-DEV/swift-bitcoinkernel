@@ -8,6 +8,11 @@
 //  See the accompanying file LICENSE for information
 //
 
+// Depends on `RegtestChainBuilder`, which is gated on CryptoKit. See the
+// note in `Support/RegtestChainBuilder.swift` and `roadmap.md`
+// "Linux Test Coverage".
+#if canImport(CryptoKit)
+
 import Testing
 import BitcoinKernel
 import Foundation
@@ -247,15 +252,22 @@ private func registerChain(
     let mock = MockBlockSource(bestTip: BlockTip(hash: chain[4].hash, height: 5))
     try registerChain(chain, in: mock)
 
+    // Bump the remote tip the moment the engine fetches block #3, ensuring
+    // the bump is visible to the engine's re-poll at height 5 regardless
+    // of consumer iteration timing.
+    let bumpHash = chain[2].hash
+    let newTip = BlockTip(hash: chain.last!.hash, height: 10)
+    mock.setOnBlockFetched { [mock] hash in
+        if hash == bumpHash {
+            mock.setBestTip(newTip)
+        }
+    }
+
     let sync = BlockchainSync(manager: manager, source: mock, context: context)
 
     var updates: [BlockchainSync.Update] = []
     for await update in sync.updates() {
         updates.append(update)
-        // When local reaches 3, bump remote tip so the sync keeps going past 5.
-        if update.state == .syncing, update.tip.height == 3 {
-            mock.setBestTip(BlockTip(hash: chain.last!.hash, height: 10))
-        }
     }
 
     #expect(updates.last?.state == .finished)
@@ -292,3 +304,5 @@ private func registerChain(
     }
     #expect(!reason.isEmpty, "failure reason should be informative")
 }
+
+#endif // canImport(CryptoKit)

@@ -41,7 +41,7 @@ public struct DirectTransport: RPCTransport {
 
     /// Timeout for the blocking `bitcoin_rpc()` call. Matches Bitcoin Core's
     /// default `-rpcservertimeout` (30 s). After this interval the continuation
-    /// resumes with ``URLError(.timedOut)``; the GCD thread keeps running (a
+    /// resumes with `URLError(.timedOut)`; the GCD thread keeps running (a
     /// synchronous C call cannot be cancelled) and frees its memory on return.
     public var timeout: TimeInterval
 

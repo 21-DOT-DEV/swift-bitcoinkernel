@@ -13,7 +13,7 @@ import Foundation
 /// Client-side RPC errors.
 ///
 /// These represent errors in the client transport/decoding layer, not
-/// server-originated errors (which are ``RPCError`` from `RPCModels`).
+/// server-originated errors (which are `RPCError` from `RPCModels`).
 public enum RPCClientError: Error, Sendable, CustomStringConvertible, LocalizedError {
     /// The server returned `null` for an RPC that expects a non-null result.
     case unexpectedNullResult(method: String, responseData: Data)

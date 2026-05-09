@@ -62,6 +62,11 @@ let package = Package(
             cxxSettings: [
                 .define("LEVELDB_PLATFORM_POSIX", to: "1"),
                 .define("LEVELDB_IS_BIG_ENDIAN", to: "0"),
+                // `port_config.h` defaults assume Apple (HAVE_FULLFSYNC=1, HAVE_FDATASYNC=0).
+                // The header guards each define with `#if !defined(...)`, so passing the
+                // correct flags for Linux from the build is enough — no source patch needed.
+                .define("HAVE_FDATASYNC", to: "1", .when(platforms: [.linux])),
+                .define("HAVE_FULLFSYNC", to: "0", .when(platforms: [.linux])),
                 .headerSearchPath("."),
             ]
         ),
@@ -166,11 +171,13 @@ extension CXXSetting {
             .define("MAIN_FUNCTION", to: "int bitcoind_main(int argc, char* argv[])"),
             .define("G_TRANSLATION_FUN", to: "G_TRANSLATION_FUN_LOCAL"),
             .define("ENABLE_WALLET", to: "1", .when(traits: ["wallet"])),
+            .define("HAVE_SYSTEM", to: "1", .when(platforms: [.linux])),
         ]
 
     /// C++ settings for the libbitcoinkernel target.
     static let kernelSettings: [Self] =
         shared + [
-            .define("BITCOINKERNEL_BUILD", to: "1")
+            .define("BITCOINKERNEL_BUILD", to: "1"),
+            .define("HAVE_SYSTEM", to: "1", .when(platforms: [.linux])),
         ]
 }

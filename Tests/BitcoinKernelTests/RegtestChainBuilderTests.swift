@@ -8,6 +8,11 @@
 //  See the accompanying file LICENSE for information
 //
 
+// Depends on `RegtestChainBuilder`, which is gated on CryptoKit. See the
+// note in `Support/RegtestChainBuilder.swift` and `roadmap.md`
+// "Linux Test Coverage".
+#if canImport(CryptoKit)
+
 import Testing
 import BitcoinKernel
 import Foundation
@@ -96,3 +101,5 @@ import Foundation
     #expect(RegtestChainBuilder.subsidy(atHeight: 150) == 2_500_000_000)
     #expect(RegtestChainBuilder.subsidy(atHeight: 300) == 1_250_000_000)
 }
+
+#endif // canImport(CryptoKit)

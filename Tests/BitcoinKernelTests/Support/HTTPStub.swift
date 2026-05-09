@@ -9,6 +9,9 @@
 //
 
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Test harness that intercepts HTTP requests via `URLProtocol` and replays
 /// queued mock responses. Designed for per-test isolation: each ``HTTPStub``

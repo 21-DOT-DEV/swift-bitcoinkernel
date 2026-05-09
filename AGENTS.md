@@ -6,8 +6,8 @@ A Swift 6.3 package wrapping Bitcoin Core for embedded use: daemon lifecycle (`B
 
 - Build: `swift build`
 - Test: `swift test`
-- Build with wallet trait: `swift build --trait wallet`
-- Test with wallet trait: `swift test --trait wallet`
+- Build with wallet trait: `swift build --traits wallet`
+- Test with wallet trait: `swift test --traits wallet`
 - Subtree sync: `swift package plugin subtree-sync` (updates vendored Bitcoin Core sources)
 - Tuist generate: `swift package --disable-sandbox tuist generate -p Projects/ --no-open`
 - Tuist build (iOS): `swift package --disable-sandbox tuist build Bitcoin -p Projects/ --platform ios`
