@@ -6,5 +6,5 @@ COPY . .
 RUN swift --version
 RUN swift build -Xcc -fimplicit-modules
 RUN swift test
-RUN swift test --trait wallet
+RUN swift test --traits wallet
 CMD ["swift", "test"]

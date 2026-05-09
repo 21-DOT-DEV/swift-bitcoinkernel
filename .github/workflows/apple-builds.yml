@@ -21,7 +21,7 @@ jobs:
       - name: Build and test
         run: swift test
       - name: Build and test (wallet trait)
-        run: swift test --trait wallet
+        run: swift test --traits wallet
       - name: Validate DocC catalog (Bitcoin)
         run: swift package generate-documentation --target Bitcoin --analyze --warnings-as-errors
       - name: Validate DocC catalog (BitcoinKernel)

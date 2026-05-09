@@ -33,7 +33,7 @@ This directory contains GitHub configuration and CI workflows.
 
 ## Validation
 
-- **macOS**: `swift test && swift test --trait wallet`
+- **macOS**: `swift test && swift test --traits wallet`
 - **Linux**: `docker build .`
 - **iOS cross-compile**: `xcrun xcodebuild -skipMacroValidation -skipPackagePluginValidation build -scheme "Bitcoin-Package" -destination generic/platform=iOS`
 - **visionOS cross-compile**: same as iOS, substitute `generic/platform=visionOS`
