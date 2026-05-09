@@ -62,6 +62,11 @@ let package = Package(
             cxxSettings: [
                 .define("LEVELDB_PLATFORM_POSIX", to: "1"),
                 .define("LEVELDB_IS_BIG_ENDIAN", to: "0"),
+                // `port_config.h` defaults assume Apple (HAVE_FULLFSYNC=1, HAVE_FDATASYNC=0).
+                // The header guards each define with `#if !defined(...)`, so passing the
+                // correct flags for Linux from the build is enough — no source patch needed.
+                .define("HAVE_FDATASYNC", to: "1", .when(platforms: [.linux])),
+                .define("HAVE_FULLFSYNC", to: "0", .when(platforms: [.linux])),
                 .headerSearchPath("."),
             ]
         ),
