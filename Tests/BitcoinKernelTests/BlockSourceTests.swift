@@ -183,9 +183,12 @@ private func makeSource(
     _ = try await source.blockHash(atHeight: 1)
     let elapsed = ContinuousClock.now - start
 
-    // Should wait ~1s per Retry-After, not the ~10ms base delay.
+    // Lower bound: Retry-After (1s) was honored, not base delay (10ms).
+    // Upper bound: regression-tripwire only — Task.sleep precision under
+    // CI load is unbounded, so we allow generous slack rather than
+    // asserting precisely on wall-clock.
     #expect(elapsed >= .milliseconds(900))
-    #expect(elapsed < .seconds(3))
+    #expect(elapsed < .seconds(5))
     #expect(stub.records.count == 2)
 }
 

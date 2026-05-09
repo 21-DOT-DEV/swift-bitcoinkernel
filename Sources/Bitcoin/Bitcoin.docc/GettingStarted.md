@@ -102,18 +102,14 @@ print("Generated \(hashes.count) blocks")
 
 ### Stopping the Daemon
 
-Stop the daemon and wait for clean shutdown:
+Send the `stop` RPC to signal Bitcoin Core to begin shutdown, then block until the daemon thread has exited:
 
 ```swift
-await Daemon.stopAndWait()
-```
-
-Or signal shutdown and wait separately:
-
-```swift
-Daemon.stop()
+_ = try await client.stop()
 Daemon.waitUntilStopped()
 ```
+
+``Daemon/waitUntilStopped()`` blocks the calling thread until `bitcoind_main` returns. Pair it with the `stop` RPC (or any other shutdown trigger Bitcoin Core honors) to ensure clean teardown before your process exits.
 
 ### Next Steps
 

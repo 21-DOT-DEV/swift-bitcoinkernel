@@ -927,9 +927,12 @@ struct DirectBridgeTimeoutTests {
 
     @Test("Timeout fires when RPC exceeds deadline")
     func timeoutFires() async throws {
-        // RPC takes 5s, timeout is 1s → should get URLError(.timedOut)
+        // RPC takes 30s, timeout is 1s → should get URLError(.timedOut).
+        // Wide gap between timeout and call duration gives CI scheduling
+        // headroom while preserving the regression-tripwire: if the timeout
+        // never fires, we'd wait ~30s instead of ~1s.
         let client = RPCClient(transport: TimingOutTransport(
-            callDuration: .seconds(5),
+            callDuration: .seconds(30),
             timeout: 1
         ))
 
@@ -942,8 +945,9 @@ struct DirectBridgeTimeoutTests {
         }
 
         let elapsed = ContinuousClock.now - start
-        // Should complete in ~1s (the timeout), not ~5s (the call duration)
-        #expect(elapsed < .seconds(2), "Took \(elapsed) — timeout didn't fire promptly")
+        // Should complete in ~1s (the timeout), not ~30s (the call duration).
+        // Ceiling is a regression-tripwire, not a precision check.
+        #expect(elapsed < .seconds(5), "Took \(elapsed) — timeout didn't fire promptly")
     }
 
     @Test("Fast RPC completes before timeout")
@@ -1121,22 +1125,17 @@ struct CookieTransportTests {
     }
 
     @Test("Throws when cookie file does not exist")
-    func fileNotFound() async {
+    func fileNotFound() async throws {
         let transport = CookieTransport(
             url: URL(string: "http://127.0.0.1:18443")!,
             cookieFile: URL(fileURLWithPath: "/nonexistent/.cookie")
         )
         let request = JSONRPCRequest(method: "getblockcount")
-        do {
+        // The file-read should fail with CocoaError.fileReadNoSuchFile
+        // before parseCookie runs — surfacing as URLError would mean we
+        // leaked through to the auth path.
+        await #expect(throws: CocoaError.self) {
             _ = try await transport.send(request, path: nil)
-            Issue.record("Expected file-read error")
-        } catch is URLError {
-            // Could be userAuthenticationRequired — but file read should
-            // throw CocoaError.fileReadNoSuchFile before parseCookie runs.
-            Issue.record("Got URLError — expected CocoaError for missing file")
-        } catch {
-            // CocoaError.fileReadNoSuchFile or similar — expected
-            #expect(true)
         }
     }
 
@@ -1218,8 +1217,11 @@ struct PollBackoffTests {
             #expect(error.code == .cannotConnectToHost)
         }
         let elapsed = ContinuousClock.now - start
+        // Lower bound asserts the deadline was approximately respected.
+        // Upper bound is a regression-tripwire (catches "runs forever"),
+        // not a precision check — Task.sleep overruns under CI load.
         #expect(elapsed >= .milliseconds(400), "Timed out too early: \(elapsed)")
-        #expect(elapsed < .seconds(2), "Timed out too late: \(elapsed)")
+        #expect(elapsed < .seconds(5), "Timed out too late: \(elapsed)")
     }
 
     @Test("Respects task cancellation")
@@ -1246,21 +1248,28 @@ struct PollBackoffTests {
 
     @Test("Uses exponential backoff (not fixed delay)")
     func exponentialBackoff() async throws {
-        let timestamps = Mutex([ContinuousClock.Instant]())
+        // Capture intended sleep durations via the test hook rather than
+        // measuring wall-clock gaps; CI scheduling jitter (Task.sleep
+        // overruns under load) makes timestamp-based assertions brittle.
+        let recordedDelays = Mutex([Duration]())
         let attempts = Mutex(0)
 
-        try await Daemon.poll(timeout: .seconds(5)) {
-            timestamps.withLock { $0.append(.now) }
+        try await Daemon.poll(
+            timeout: .seconds(5),
+            onWillSleep: { delay in
+                recordedDelays.withLock { $0.append(delay) }
+            }
+        ) {
             let current = attempts.withLock { $0 += 1; return $0 }
             if current < 4 { throw URLError(.cannotConnectToHost) }
         }
 
         #expect(attempts.withLock { $0 } == 4)
-        // Verify delays increase: gap[1] > gap[0]
-        let ts = timestamps.withLock { $0 }
-        guard ts.count >= 3 else { return }
-        let gap0 = ts[1] - ts[0]
-        let gap1 = ts[2] - ts[1]
-        #expect(gap1 > gap0, "Expected exponential backoff: gap1 (\(gap1)) should be > gap0 (\(gap0))")
+        let delays = recordedDelays.withLock { $0 }
+        try #require(delays.count >= 3)
+        // Doubling: 250ms → 500ms → 1000ms (clamped to 2s on subsequent retries).
+        #expect(delays[0] == .milliseconds(250))
+        #expect(delays[1] == .milliseconds(500))
+        #expect(delays[2] == .seconds(1))
     }
 }

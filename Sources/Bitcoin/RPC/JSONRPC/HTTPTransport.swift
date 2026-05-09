@@ -9,6 +9,9 @@
 //
 
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Sends JSON-RPC requests over HTTP to a Bitcoin node.
 ///

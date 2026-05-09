@@ -60,8 +60,11 @@
 /* Define this symbol if platform supports unix domain sockets */
 #define HAVE_SOCKADDR_UN 1
 
-/* Define this symbol if the BSD sysctl() is available */
+/* Define this symbol if the BSD sysctl() is available.
+   Available on Apple platforms (macOS/iOS) and BSD; not on Linux. */
+#ifdef __APPLE__
 #define HAVE_SYSCTL 1
+#endif
 
 /* Define to 1 if std::system or ::wsystem is available.
    system() is unavailable on iOS. */

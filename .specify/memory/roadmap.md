@@ -49,7 +49,7 @@
 
 | Metric | Target | Measurement |
 |--------|--------|-------------|
-| **Build Success** | 100% Tier 1+2 platforms | CI green on macOS, iOS, visionOS |
+| **Build Success** | 100% Tier 1+2 platforms | CI green on macOS, iOS, visionOS, Linux |
 | **Test Coverage** | ≥80% public API | Swift coverage tools |
 | **RPC Coverage** | 171 typed methods (done) | All Bitcoin Core v31.x RPCs covered |
 | **Documentation Coverage** | 100% public types | DocC coverage report |
@@ -138,6 +138,15 @@ These are not committed phases — they're areas to monitor and potentially inco
 - **bitcoind path**: Not feasible — daemonization (`fork_daemon`), system command execution, and interactive stdin all require unavailable POSIX primitives.
 - **CI**: Add tvOS build job for BitcoinKernel-only scheme once source guards are in place.
 - **Dependencies**: None — independent of all roadmap phases.
+
+### Test-Time Clock Injection (`swift-clocks`)
+
+**Status**: Future enhancement — current timing-sensitive tests use a per-call `onWillSleep:` hook on `Daemon.poll` to capture intended sleep durations deterministically, plus widened wall-clock ceilings as regression tripwires. This works at small scale but doesn't generalize.
+
+- **Trigger**: Adopt [Point-Free's `swift-clocks`](https://github.com/pointfreeco/swift-clocks) (`TestClock`) once we have ≥5 timing-sensitive tests where the per-call hook pattern feels repetitive, OR when Apple ships a stdlib `TestClock` (whichever comes first).
+- **Apple's stance**: The Swift team has indicated they're [open to a built-in `TestClock`](https://forums.swift.org/t/controllable-clock-support-in-swift-testing/81246) but it isn't currently a priority; community is invited to draft an evolution proposal. Point-Free has stated they would retire `swift-clocks` if a built-in arrives.
+- **Migration path**: Parameterize timed-sleep callsites (`Daemon.poll`, `EsploraBlockSource` retry path, `DirectTransport` timeout) on a `Clock` parameter defaulting to `ContinuousClock()`. Tests inject `TestClock` for virtual-time advancement.
+- **Dependencies**: Adds one Apache-2.0 third-party dep (Point-Free `swift-clocks`) — requires explicit approval per `AGENTS.md` policy on new third-party deps.
 
 ### Great Consensus Cleanup
 
