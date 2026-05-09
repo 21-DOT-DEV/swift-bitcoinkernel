@@ -1,0 +1,62 @@
+name: Apple Platforms
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  macos:
+    name: macOS
+    runs-on: macos-26
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build and test
+        run: swift test
+      - name: Build and test (wallet trait)
+        run: swift test --trait wallet
+      - name: Validate DocC catalog (Bitcoin)
+        run: swift package generate-documentation --target Bitcoin --analyze --warnings-as-errors
+      - name: Validate DocC catalog (BitcoinKernel)
+        run: swift package generate-documentation --target BitcoinKernel --analyze --warnings-as-errors
+
+  ios:
+    name: iOS
+    runs-on: macos-26
+    permissions:
+      contents: read
+    env:
+      SCHEME: Bitcoin-Package
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build for iOS
+        run: |
+          xcrun xcodebuild \
+            -skipMacroValidation \
+            -skipPackagePluginValidation \
+            build \
+            -scheme "$SCHEME" \
+            -destination generic/platform=iOS
+
+  visionos:
+    name: visionOS
+    runs-on: macos-26
+    permissions:
+      contents: read
+    env:
+      SCHEME: Bitcoin-Package
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build for visionOS
+        run: |
+          xcrun xcodebuild \
+            -skipMacroValidation \
+            -skipPackagePluginValidation \
+            build \
+            -scheme "$SCHEME" \
+            -destination generic/platform=visionOS

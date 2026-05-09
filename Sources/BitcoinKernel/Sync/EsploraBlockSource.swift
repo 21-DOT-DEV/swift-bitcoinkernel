@@ -236,7 +236,8 @@ public struct EsploraBlockSource: BlockSource {
         guard let urlError = error as? URLError else { return false }
         switch urlError.code {
         case .timedOut, .networkConnectionLost, .cannotConnectToHost,
-             .cannotFindHost, .dnsLookupFailed, .resourceUnavailable:
+             .cannotFindHost, .dnsLookupFailed, .resourceUnavailable,
+             .badURL, .secureConnectionFailed:
             return true
         default:
             return false

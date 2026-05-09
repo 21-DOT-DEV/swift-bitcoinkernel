@@ -15,7 +15,7 @@
 2. **Kernel-as-Node-Layer**: Expose `libbitcoinkernel` consensus validation as a reusable node layer that any wallet SDK can consume (`BitcoinKernel` target)
 3. **Swift-Native P2P**: Deliver blocks and broadcast transactions directly from Swift peers — no Rust FFI, no external runtime dependencies
 4. **Compact Filter Light Client**: Implement BIP 157/158 compact block filters in Swift for privacy-preserving wallet sync
-5. **Cross-Platform**: Support macOS 15+ and iOS 18+ (Tier 1); Linux, tvOS, visionOS (Tier 2 aspirational)
+5. **Cross-Platform**: Support macOS 15+ and iOS 18+ (Tier 1); Linux, visionOS (Tier 2); tvOS BitcoinKernel-only (planned)
 6. **Developer Experience**: Type-safe RPC client, async/await throughout, comprehensive DocC documentation
 
 **Target Audience**:
@@ -49,7 +49,7 @@
 
 | Metric | Target | Measurement |
 |--------|--------|-------------|
-| **Build Success** | 100% Tier 1 platforms | CI green on macOS, iOS |
+| **Build Success** | 100% Tier 1+2 platforms | CI green on macOS, iOS, visionOS |
 | **Test Coverage** | ≥80% public API | Swift coverage tools |
 | **RPC Coverage** | 171 typed methods (done) | All Bitcoin Core v31.x RPCs covered |
 | **Documentation Coverage** | 100% public types | DocC coverage report |
@@ -129,6 +129,15 @@ These are not committed phases — they're areas to monitor and potentially inco
 - **Swift-native path**: Would require a Swift implementation of the Utreexo accumulator (reference `libutreexo` C99 code and `rustreexo` Rust crate).
 - **Integration challenge**: Requires changes to how `libbitcoinkernel` resolves UTXOs — replacing `CCoinsViewDB` with accumulator proofs.
 - **Monitor**: Floresta's Utreexo adoption, any Bitcoin Core Utreexo integration proposals.
+
+### tvOS BitcoinKernel Support
+
+**Status**: Planned — BitcoinKernel compiles for tvOS (libbitcoinkernel target succeeds), but full bitcoind is blocked by `fork`/`execvp` which Apple marks unavailable on tvOS. Requires conditional compilation guards in vendored C++ sources (`subprocess.h`, `exec.cpp`) to exclude daemon-only features from tvOS builds. watchOS is blocked for both targets (same primitives unavailable).
+
+- **BitcoinKernel path**: Add `#if !TARGET_OS_TV` guards (requires `#include <TargetConditionals.h>`) around `fork`/`execvp` usage in `Sources/libbitcoinkernel/src/util/subprocess.h`. The subprocess facility is only needed for external signer support, not core consensus validation.
+- **bitcoind path**: Not feasible — daemonization (`fork_daemon`), system command execution, and interactive stdin all require unavailable POSIX primitives.
+- **CI**: Add tvOS build job for BitcoinKernel-only scheme once source guards are in place.
+- **Dependencies**: None — independent of all roadmap phases.
 
 ### Great Consensus Cleanup
 
