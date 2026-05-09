@@ -4,7 +4,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /workspace
 COPY . .
 RUN swift --version
-RUN swift build
+RUN swift build -Xcc -fimplicit-modules
 RUN swift test
 RUN swift test --trait wallet
 CMD ["swift", "test"]
