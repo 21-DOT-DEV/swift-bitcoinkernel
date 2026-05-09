@@ -247,18 +247,22 @@ private func registerChain(
     let mock = MockBlockSource(bestTip: BlockTip(hash: chain[4].hash, height: 5))
     try registerChain(chain, in: mock)
 
+    // Bump the remote tip the moment the engine fetches block #3, ensuring
+    // the bump is visible to the engine's re-poll at height 5 regardless
+    // of consumer iteration timing.
+    let bumpHash = chain[2].hash
+    let newTip = BlockTip(hash: chain.last!.hash, height: 10)
+    mock.setOnBlockFetched { [mock] hash in
+        if hash == bumpHash {
+            mock.setBestTip(newTip)
+        }
+    }
+
     let sync = BlockchainSync(manager: manager, source: mock, context: context)
 
     var updates: [BlockchainSync.Update] = []
     for await update in sync.updates() {
         updates.append(update)
-        // Bump early (height 1) so the remote-tip change is visible
-        // before the sync loop re-polls at height 5. Yield to let the
-        // sync task process the mutation before this consumer continues.
-        if update.state == .syncing, update.tip.height == 1 {
-            mock.setBestTip(BlockTip(hash: chain.last!.hash, height: 10))
-            await Task.yield()
-        }
     }
 
     #expect(updates.last?.state == .finished)

@@ -43,6 +43,8 @@ final class MockBlockSource: BlockSource, @unchecked Sendable {
         var nextBestTipError: BlockSourceError?
         var nextBlockHashErrorsByHeight: [Int: BlockSourceError] = [:]
         var nextBlockErrorsByHash: [Data: BlockSourceError] = [:]
+
+        var onBlockFetched: (@Sendable (Data) -> Void)?
     }
 
     init(bestTip: BlockTip) {
@@ -89,6 +91,14 @@ final class MockBlockSource: BlockSource, @unchecked Sendable {
         lock.withLock { state.nextBlockErrorsByHash[hash] = error }
     }
 
+    /// Install a hook fired synchronously inside `block(for:)` after the
+    /// block lookup succeeds. Lets a test mutate mock state at a deterministic
+    /// point in the sync loop (e.g. bumping `bestTip` before the engine's
+    /// next re-poll), avoiding races against consumer-side iteration timing.
+    func setOnBlockFetched(_ hook: (@Sendable (Data) -> Void)?) {
+        lock.withLock { state.onBlockFetched = hook }
+    }
+
     // MARK: - BlockSource conformance
 
     func bestTip() async throws -> BlockTip {
@@ -124,15 +134,17 @@ final class MockBlockSource: BlockSource, @unchecked Sendable {
     }
 
     func block(for hash: Data) async throws -> Block {
-        let resolved: Result<Block, BlockSourceError> = lock.withLock {
+        let (resolved, hook): (Result<Block, BlockSourceError>, (@Sendable (Data) -> Void)?) = lock.withLock {
             if let error = state.nextBlockErrorsByHash.removeValue(forKey: hash) {
-                return .failure(error)
+                return (.failure(error), nil)
             }
             if let block = state.blocksByHash[hash] {
-                return .success(block)
+                return (.success(block), state.onBlockFetched)
             }
-            return .failure(.notFound)
+            return (.failure(.notFound), nil)
         }
-        return try resolved.get()
+        let block = try resolved.get()
+        hook?(hash)
+        return block
     }
 }
