@@ -28,15 +28,25 @@ Organized following the [Bitcoin Core `depends/patches/` convention](https://git
 
 ### Non-patch custom files
 
-The following are **not** upstream patches but custom SPM build configuration replacements for the CMake-generated `bitcoin-build-config.h`:
+The following are **not** upstream patches but custom SPM build configuration files committed alongside the vendored Bitcoin Core sources. They live under `Sources/` and look like they could be subtree-extracted, but they're not — the subtree patterns in `subtree.yaml` only match `*.{h,c,cc,cpp}`, so these survive `swift package plugin subtree-sync`.
+
+**`bitcoin-build-config.h` replacements** (stand in for what CMake would have generated; contain `TARGET_OS_OSX` guards for `HAVE_GETENTROPY_RAND` and `HAVE_SYSTEM` to support iOS):
 
 - `Sources/bitcoind/include/bitcoin-build-config.h` (bitcoind target)
 - `Sources/libbitcoinkernel/src/bitcoin-build-config.h` (libbitcoinkernel target)
 
-These contain `TARGET_OS_OSX` guards for `HAVE_GETENTROPY_RAND` and `HAVE_SYSTEM` to support iOS builds.
+**Clang modulemap stubs** (`module <target> { requires !cplusplus; export * }` — tell SwiftPM not to auto-generate a modulemap, which under Linux's `-fno-implicit-modules` + Swift C++ interop would otherwise fail with "module needed but not provided"):
+
+- `Sources/secp256k1/include/module.modulemap`
+- `Sources/crc32c/include/module.modulemap`
+- `Sources/leveldb/include/module.modulemap`
+- `Sources/minisketch/include/module.modulemap`
+
+The stub form (no `umbrella` / `header` declarations) means the module owns no headers, so C++ consumers continue to resolve `#include "secp256k1.h"` etc. via the `-I` search path as textual includes — and Swift consumers never `import` these targets (they're C/C++ hosts for the higher-level `BitcoinKernel` Swift target).
 
 ## swift-boost
 
 | # | Patch | Description |
 |---|---|---|
 | 1 | [Inter-target dependencies](swift-boost/inter-target-deps.md) | Dependency structure for swift-boost SPM targets |
+| 2 | [Linux module compilation](swift-boost/linux-module-compilation.md) | ✅ Resolved upstream in `pruned-umbrella-1.90.0` |

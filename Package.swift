@@ -16,8 +16,8 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/csjones/lefthook-plugin.git", exact: "1.6.15"),
-        .package(url: "https://github.com/21-DOT-DEV/swift-boost", branch: "subtree-1.81.0"),
-        .package(url: "https://github.com/21-DOT-DEV/swift-event", exact: "0.1.4"),
+        .package(url: "https://github.com/21-DOT-DEV/swift-boost", branch: "pruned-umbrella-1.90.0"),
+        .package(url: "https://github.com/21-DOT-DEV/swift-event", exact: "0.2.1"),
         .package(url: "https://github.com/21-DOT-DEV/swift-plugin-tuist.git", exact: "4.20.0"),
         .package(url: "https://github.com/21-DOT-DEV/swift-plugin-subtree.git", exact: "0.0.15"),
         .package(url: "https://github.com/apple/swift-docc-plugin", from: "1.5.0"),
@@ -113,23 +113,13 @@ let package = Package(
 // MARK: - Extensions
 
 extension Target.Dependency {
-    /// Boost header-only modules required by Bitcoin Core CMake.
-    static let boostDeps: [Self] = [
-        "assert", "bind", "config", "container_hash", "core", "describe",
-        "detail", "foreach", "function", "integer", "iterator", "move",
-        "mp11", "mpl", "multi_index", "optional", "preprocessor",
-        "serialization", "signals2", "smart_ptr", "static_assert",
-        "throw_exception", "tuple", "type_index", "type_traits",
-        "utility", "variant",
-    ].map { .product(name: $0, package: "swift-boost") }
-
     /// Dependencies for the libbitcoinkernel target.
-    static let kernelDeps: [Self] =
-        boostDeps + [
-            .target(name: "crc32c"),
-            .target(name: "leveldb"),
-            .target(name: "secp256k1"),
-        ]
+    static let kernelDeps: [Self] = [
+        .product(name: "boost", package: "swift-boost"),
+        .target(name: "crc32c"),
+        .target(name: "leveldb"),
+        .target(name: "secp256k1"),
+    ]
 
     /// Dependencies for the bitcoind target.
     static let bitcoinDeps: [Self] =
@@ -153,14 +143,15 @@ extension SwiftSetting {
 }
 
 extension CXXSetting {
-    /// Define shared across all Bitcoin Core C++ targets.
-    static let boostDefine: Self = .define("BOOST_MULTI_INDEX_DISABLE_SERIALIZATION")
-
     /// Shared C++ settings for all Bitcoin Core C++ targets.
     static let shared: [Self] = [
         .headerSearchPath("src"),
         .headerSearchPath("src/univalue/include"),
-        boostDefine,
+        // Disable `multi_index_container`'s serialization member templates
+        // — we never call them in the swift-bitcoin subset, and skipping
+        // their declaration keeps us decoupled from the standalone Boost
+        // `serialization` module so it stays out of the dependency graph.
+        .define("BOOST_MULTI_INDEX_DISABLE_SERIALIZATION"),
     ]
 
     /// C++ settings for the bitcoind target.
