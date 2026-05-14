@@ -1,0 +1,4 @@
+module secp256k1 {
+    requires !cplusplus
+    export *
+}
