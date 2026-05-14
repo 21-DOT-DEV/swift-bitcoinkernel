@@ -1,72 +1,79 @@
-# Bitcoin
+Bitcoin Core integration/staging tree
+=====================================
 
-A Swift package for running an embedded Bitcoin node and interacting with Bitcoin Core via JSON-RPC.
+https://bitcoincore.org
 
-## Overview
+For an immediately usable, binary version of the Bitcoin Core software, see
+https://bitcoincore.org/en/download/.
 
-This package provides:
+What is Bitcoin Core?
+---------------------
 
-- **`Bitcoin`** — High-level `RPCClient` with typed async/await methods for every Bitcoin Core v31.x RPC, plus an embedded daemon bridge for in-process operation.
-- **`RPCModels`** — 95 `Codable` model types covering all RPC response schemas, with `BTCAmount` (satoshi-precision arithmetic) and `UnixTimestamp` value types.
-- **`BitcoinKernel`** — Low-level bindings to `libbitcoinkernel` for consensus validation.
+Bitcoin Core connects to the Bitcoin peer-to-peer network to download and fully
+validate blocks and transactions. It also includes a wallet and graphical user
+interface, which can be optionally built.
 
-## Requirements
+Further information about Bitcoin Core is available in the [doc folder](/doc).
 
-- Swift 6.0+
-- macOS 13+ / iOS 16+ / Linux
+License
+-------
 
-## RPC Coverage
+Bitcoin Core is released under the terms of the MIT license. See [COPYING](COPYING) for more
+information or see https://opensource.org/license/MIT.
 
-**171 methods** across all 8 Bitcoin Core RPC categories. All RPCs target **Bitcoin Core v31.x**.
+Development Process
+-------------------
 
-| Category | Methods | File | Notes |
-|---|---|---|---|
-| **Blockchain** | 51 | `RPCClient+Blockchain.swift` | Block, mempool, UTXO set, chain state, tx proofs |
-| **Wallet** | 55 | `RPCClient+Wallet.swift` | Balance, send, PSBT, descriptors, encryption, backup |
-| **Raw Transactions** | 21 | `RPCClient+RawTransactions.swift` | Create/sign/send raw tx, PSBT lifecycle |
-| **Network** | 19 | `RPCClient+Network.swift` | Peers, banning, ZMQ, addrman |
-| **Util** | 9 | `RPCClient+Util.swift` | Fee estimation, address validation, descriptors |
-| **Mining** | 7 | `RPCClient+Mining.swift` | Block templates, hashrate, priority |
-| **Control** | 6 | `RPCClient+Control.swift` | Memory, RPC info, logging, stop |
-| **Generating** | 3 | `RPCClient+Generating.swift` | `generatetoaddress`, `generatetodescriptor`, `generateblock` |
+The `master` branch is regularly built (see `doc/build-*.md` for instructions) and tested, but it is not guaranteed to be
+completely stable. [Tags](https://github.com/bitcoin/bitcoin/tags) are created
+regularly from release branches to indicate new official, stable release versions of Bitcoin Core.
 
-## Key Types
+The https://github.com/bitcoin-core/gui repository is used exclusively for the
+development of the GUI. Its master branch is identical in all monotree
+repositories. Release branches and tags do not exist, so please do not fork
+that repository unless it is for development reasons.
 
-| Type | Description |
-|---|---|
-| `BTCAmount` | Satoshi-precision amount. Stores `Int64` sats, decodes/encodes BTC `Decimal`. Supports arithmetic. |
-| `UnixTimestamp` | Epoch seconds wrapper with `Date` conversion. |
-| `RPCError` | Server-originated JSON-RPC error with code + message. |
-| `LastProcessedBlock` | Block hash + height, included in wallet RPC responses. |
+The contribution workflow is described in [CONTRIBUTING.md](CONTRIBUTING.md)
+and useful hints for developers can be found in [doc/developer-notes.md](doc/developer-notes.md).
 
-## Quick Start
+Testing
+-------
 
-```swift
-import Bitcoin
+Testing and code review is the bottleneck for development; we get more pull
+requests than we can review and test on short notice. Please be patient and help out by testing
+other people's pull requests, and remember this is a security-critical project where any mistake might cost people
+lots of money.
 
-// In-process (embedded daemon)
-let client = RPCClient()
+### Automated Testing
 
-// Remote node
-let client = RPCClient(url: "http://127.0.0.1:8332", username: "rpc", password: "pass")
+Developers are strongly encouraged to write [unit tests](src/test/README.md) for new code, and to
+submit new unit tests for old code. Unit tests can be compiled and run
+(assuming they weren't disabled during the generation of the build system) with: `ctest`. Further details on running
+and extending unit tests can be found in [/src/test/README.md](/src/test/README.md).
 
-// Blockchain
-let info = try await client.getBlockchainInfo()
-print(info.chain, info.blocks)
+There are also [regression and integration tests](/test), written
+in Python.
+These tests can be run (if the [test dependencies](/test) are installed) with: `build/test/functional/test_runner.py`
+(assuming `build` is your build directory).
 
-// Wallet (wallet-scoped RPCs require wallet name)
-let balances = try await client.getBalances(wallet: "default")
-print(balances.mine.trusted) // "1.5 BTC"
-```
+The CI (Continuous Integration) systems make sure that every pull request is tested on Windows, Linux, and macOS.
+The CI must pass on all commits before merge to avoid unrelated CI failures on new pull requests.
 
-## Testing
+### Manual Quality Assurance (QA) Testing
 
-177 decode tests covering all model types, including test vectors derived from Bitcoin Core's functional test suite.
+Changes should be tested by somebody other than the developer who wrote the
+code. This is especially important for large or high-risk changes. It is useful
+to add a test plan to the pull request description if testing the changes is
+not straightforward.
 
-```bash
-swift test --filter RPCModelsTests
-```
+Translations
+------------
 
-## License
+Changes to translations as well as new translations can be submitted to
+[Bitcoin Core's Transifex page](https://explore.transifex.com/bitcoin/bitcoin/).
 
-Distributed under the MIT software license. See [LICENSE](LICENSE) for details.
+Translations are periodically pulled from Transifex and merged into the git repository. See the
+[translation process](doc/translation_process.md) for details on how this works.
+
+**Important**: We do not accept translation changes as GitHub pull requests because the next
+pull from Transifex would automatically overwrite them again.

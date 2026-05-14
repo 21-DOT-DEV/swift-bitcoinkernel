@@ -1,4 +1,0 @@
-module minisketch {
-    requires !cplusplus
-    export *
-}

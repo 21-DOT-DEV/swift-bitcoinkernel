@@ -1,7 +1,0 @@
-//
-// Debug.xcconfig
-//
-// KernelApp - Debug configuration
-//
-
-#include "Shared.xcconfig"

@@ -1,4 +1,0 @@
-module crc32c {
-    requires !cplusplus
-    export *
-}
