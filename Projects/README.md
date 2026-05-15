@@ -1,134 +1,66 @@
-# Bitcoin Tuist Project
+# Bitcoin Tuist Workspace
 
-Tuist-managed Xcode workspace with example apps, framework tests, and upstream vector tests for the `Bitcoin` and `BitcoinKernel` Swift packages.
+A Tuist-managed Xcode workspace with two demo apps (`NodeApp`, `KernelApp`) and their UI/logic test bundles, layered on top of the SPM package. Use this directory when you want to **see swift-bitcoin running** — the SPM package itself is the thing to depend on; this workspace exists for hands-on exploration.
 
 ## Quick Start
 
 ```bash
-# Generate Xcode project
+# Generate the Xcode workspace
 swift package --disable-sandbox tuist generate -p Projects/ --no-open
 
-# Build all apps (macOS)
-swift package --disable-sandbox tuist build NodeApp -p Projects/ --platform macos
-swift package --disable-sandbox tuist build KernelApp -p Projects/ --platform macos
-swift package --disable-sandbox tuist build XCFrameworkApp -p Projects/ --platform macos
-
-# Run all tests
-swift package --disable-sandbox tuist test Bitcoin-Workspace -p Projects/ --platform macos
-
-# xcodebuild fallback
-xcodebuild test -workspace Projects/Bitcoin.xcworkspace -scheme BitcoinTests -destination 'platform=macOS'
+# Open it
+open Projects/Bitcoin.xcworkspace
 ```
 
-## Targets
+Then pick a scheme (`NodeApp` or `KernelApp`) and ⌘R.
 
-### Example Apps
+## What's in here
 
-| Target | Description | Dependencies |
-|--------|-------------|-------------|
-| **NodeApp** | Full-node demo (RPC, Daemon, Tor) | `Bitcoin`, `Tor` |
-| **KernelApp** | Kernel-only demo (chain types, Tor plumbing) | `BitcoinKernel`, `Tor` |
-| **XCFrameworkApp** | Multi-library demo (both modules) | `Bitcoin`, `BitcoinKernel` |
+### Demo apps
 
-### Test Targets
+| App | What it demonstrates | Run |
+|---|---|---|
+| **NodeApp** | Embedded `bitcoind` lifecycle, RPC client, optional Tor SOCKS proxy, `BitcoinConfig` builder | `tuist build NodeApp -p Projects/ --platform macos` |
+| **KernelApp** | `BitcoinKernel` chain sync via `BlockchainSync` over `EsploraBlockSource`, with optional Tor-routed block downloads | `tuist build KernelApp -p Projects/ --platform macos` |
 
-| Target | Description | Dependencies |
-|--------|-------------|-------------|
-| **BitcoinTests** | Bitcoin library tests | `Bitcoin` (SPM) |
-| **BitcoinKernelTests** | BitcoinKernel library tests | `BitcoinKernel` (SPM) |
-| **NodeAppTests** | NodeApp UI/logic tests + Tor tests | `NodeApp` |
-| **KernelAppTests** | KernelApp UI/logic tests | `KernelApp` |
-| **RPCModelsTests** | RPC model decoding tests | `Bitcoin` (SPM) |
-| **ScriptVectorTests** | Bitcoin Core `script_tests.json` | `BitcoinKernel` (SPM) |
-| **TransactionVectorTests** | Bitcoin Core `tx_valid/invalid.json` | `BitcoinKernel` (SPM) |
-| **BlockfilterVectorTests** | Bitcoin Core `blockfilters.json` | `BitcoinKernel` (SPM) |
+> [!NOTE]
+> Tuist commands run via the SwiftPM plugin: prefix with `swift package --disable-sandbox`. The plugin matches what CI invokes, so reproducing CI failures locally is `tuist build <Target> -p Projects/`.
 
-### Shared Code
+### App test bundles (Tuist)
 
-- **TestShared/** — `HexHelpers`, `VectorLoader` utilities (compiled into each vector test target)
+- **NodeAppTests** — UI/logic tests for `NodeApp`, including `TorViewModelTests` (state-machine, no network) and `TorIntegrationTests` (live Tor lifecycle, `.disabled` by default).
+- **KernelAppTests** — UI/logic tests for `KernelApp`.
 
-## Architecture
+### SPM test targets (run alongside, not part of the Tuist workspace)
 
-All targets depend directly on SPM package products (`Bitcoin`, `BitcoinKernel`, `RPCModels`, `Tor`). No intermediate static framework wrappers — keeping the project simple and fast to build.
+The package's own tests live under `Tests/` and are run with `swift test` from the repository root:
 
-## Tor Integration
+- **BitcoinTests** — Bitcoin library tests (`Bitcoin` target).
+- **BitcoinKernelTests** — `BitcoinKernel` target tests.
+- **RPCModelsTests** — RPC model decode tests with fixture vectors under `Tests/RPCModelsTests/Fixtures/`.
 
-Both **NodeApp** and **KernelApp** embed Tor support via the [`swift-tor`](https://github.com/21-DOT-DEV/swift-tor) package.
-
-### Dependency Setup
-
-`swift-tor` is declared as a local path dependency in `Project.swift`:
-
-```swift
-packages: [
-    .package(path: ".."),
-    .package(path: "../../swift-tor"),
-]
-```
-
-This requires `swift-tor` to be cloned as a sibling directory. It is **not** declared in the root `Package.swift` to avoid increasing resolution time for public consumers.
-
-### Key Files
-
-| File | Purpose |
-|------|---------|
-| `NodeApp/TorViewModel.swift` | Tor lifecycle management (`@Observable`, `@MainActor`) |
-| `NodeApp/DaemonConfig.swift` | Type-safe `BitcoinConfig` argument builder with `torProxy:` parameter |
-| `KernelApp/TorViewModel.swift` | Tor plumbing (copy of NodeApp's, networking deferred) |
-| `NodeAppTests/TorViewModelTests.swift` | Unit tests for TorViewModel state logic |
-| `NodeAppTests/TorIntegrationTests.swift` | Live Tor lifecycle test (`.disabled`, network required) |
-
-### Tor Toggle Behavior
-
-| Action | Result |
-|--------|--------|
-| Tor toggle ON | `TorClient` starts immediately with ephemeral SOCKS port; bootstrap progress shown |
-| Tor toggle OFF | `TorClient` stops; state resets to disabled |
-| Start Node (Tor ready) | Daemon launched with `-proxy=<host>:<port>` from live SOCKS endpoint |
-| Start Node (Tor bootstrapping) | Start button disabled until Tor is ready |
-| Stop Node | Daemon stops; Tor keeps running (user toggles Tor OFF to stop it) |
-| Private Broadcast toggle | Adds `-privatebroadcast=1`; disabled when Tor is off |
-
-### `DaemonConfig` API
-
-`DaemonConfig.buildArguments(torProxy:)` builds daemon CLI arguments using the type-safe `BitcoinConfig` builder from the `Bitcoin` library:
-
-```swift
-// Without Tor
-let args = DaemonConfig.buildArguments()
-
-// With Tor (proxy address from TorViewModel)
-let args = DaemonConfig.buildArguments(torProxy: torViewModel.proxyAddress)
-```
-
-When `torProxy` is `nil` and `tor_enabled` is true, the `-proxy=` argument is omitted (Tor not yet bootstrapped). When `tor_enabled` is false, the `torProxy` parameter is ignored.
-
-### Manual Integration Testing
-
-The Tor integration test is gated with `.disabled` to avoid network dependencies in CI. To run manually:
+### Run everything (apps + their bundles) via Tuist
 
 ```bash
-# Run Tor lifecycle test only
-xcodebuild test -workspace Projects/Bitcoin.xcworkspace \
-    -scheme Bitcoin-Workspace \
-    -destination 'platform=macOS' \
-    -only-testing:NodeAppTests/TorIntegrationTests
+swift package --disable-sandbox tuist test Bitcoin-Workspace -p Projects/ --platform macos
 ```
 
-> **Note**: Tor bootstrap takes 30–60s (5–10s with cached consensus). The test has a 3-minute timeout.
+Or fall back to `xcodebuild` when you need finer-grained control:
 
-### Entitlements
-
-Both apps require `com.apple.security.network.client` for Tor SOCKS connections. NodeApp additionally has `com.apple.security.network.server` for the RPC listener.
-
-## Configuration
-
-Each target uses the **Shared/Debug/Release** xcconfig pattern:
-- `Shared.xcconfig` — common settings (versioning, module verifier, security analyzers)
-- `Debug.xcconfig` — `#include "Shared.xcconfig"` + debug overrides
-- `Release.xcconfig` — `#include "Shared.xcconfig"` + release overrides
+```bash
+xcodebuild test \
+    -workspace Projects/Bitcoin.xcworkspace \
+    -scheme NodeAppTests \
+    -destination 'platform=macOS'
+```
 
 ## Platforms
 
-- **macOS 15.0** (primary development/testing)
-- **iOS 18.0** (BitcoinKernel targets build; Bitcoin targets require macOS due to `sys/random.h`)
+Both apps declare `destinations: [.iPhone, .iPad, .mac]` in `Project.swift` and have iOS-specific UI paths in their sources.
+
+- **macOS 15+** — primary; everything builds and runs.
+- **iOS 18+** — both apps target it. Day-to-day development and CI run on macOS; iOS builds are not exercised on every change, so treat them as best-effort until covered by a job in `.github/workflows/`.
+
+## Going deeper
+
+For Tor wiring, the `DaemonConfig` builder, integration-test recipes, entitlements, and the Shared/Debug/Release xcconfig pattern, see [`Projects/AGENTS.md`](AGENTS.md). For project-wide architecture and the subtree extraction flow, see the root [`AGENTS.md`](../AGENTS.md).

@@ -1,0 +1,58 @@
+# Auto-detect text files and normalize line endings
+* text=auto
+
+# Swift files
+*.swift text diff=swift
+
+# C / C++ files (upstream library code)
+*.c   text diff=c
+*.h   text diff=c
+*.cc  text diff=cpp
+*.cpp text diff=cpp
+*.hpp text diff=cpp
+
+# Upstream code in Sources/ marked as vendored so GitHub language stats
+# reflect the swift-bitcoin Swift surface, not Bitcoin Core C++.
+Sources/bitcoind/**          linguist-vendored
+Sources/libbitcoinkernel/**  linguist-vendored
+Sources/secp256k1/**         linguist-vendored
+Sources/leveldb/**           linguist-vendored
+Sources/minisketch/**        linguist-vendored
+Sources/crc32c/**            linguist-vendored
+
+# Custom SPM build configuration files committed alongside vendored Bitcoin
+# Core sources. These are NOT subtree-extracted (they are not *.{h,c,cc,cpp}
+# matches in `subtree.yaml`) and survive `swift package plugin subtree-sync`.
+# See `patches/README.md` § "Non-patch custom files" for the maintenance contract.
+Sources/bitcoind/include/module.modulemap            linguist-vendored=false
+Sources/bitcoind/include/bitcoin-build-config.h      linguist-vendored=false
+Sources/libbitcoinkernel/include/module.modulemap    linguist-vendored=false
+Sources/libbitcoinkernel/src/bitcoin-build-config.h  linguist-vendored=false
+Sources/secp256k1/include/module.modulemap           linguist-vendored=false
+Sources/leveldb/include/module.modulemap             linguist-vendored=false
+Sources/minisketch/include/module.modulemap          linguist-vendored=false
+Sources/crc32c/include/module.modulemap              linguist-vendored=false
+
+# Vendor / development directories
+Vendor/**                   export-ignore linguist-vendored
+Projects/**                 export-ignore
+patches/**                  export-ignore
+upstream-issues/**          export-ignore
+.build/**                   export-ignore linguist-vendored
+.github/**                  export-ignore linguist-vendored
+.swiftpm/**                 export-ignore linguist-vendored
+.specify/**                 export-ignore linguist-vendored
+.windsurf/**                export-ignore linguist-vendored
+
+# CI/CD and tooling configs
+Dockerfile                  export-ignore
+.dockerignore               export-ignore
+subtree.yaml                export-ignore
+lefthook.yml                export-ignore
+
+# Git and editor files
+.gitignore                  export-ignore
+.DS_Store                   export-ignore
+
+# Package lockfile (not needed for library consumers)
+Package.resolved            export-ignore linguist-generated
