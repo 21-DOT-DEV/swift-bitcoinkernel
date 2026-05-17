@@ -11,7 +11,6 @@
 import Testing
 import Foundation
 import Synchronization
-import RPCModels
 @testable import Bitcoin
 
 // MARK: - Mock Transport

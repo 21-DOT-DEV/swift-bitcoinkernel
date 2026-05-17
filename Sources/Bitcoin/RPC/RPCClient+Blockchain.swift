@@ -9,7 +9,6 @@
 //
 
 import Foundation
-import RPCModels
 
 // MARK: - Blockchain RPCs
 // https://developer.bitcoin.org/reference/rpc/#blockchain-rpcs

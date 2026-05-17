@@ -58,7 +58,7 @@ Provide a complete, type-safe Swift RPC client covering all Bitcoin Core v31.x R
 
 ---
 
-### 3.3 RPCModels — Response Types (95 models)
+### 3.3 Response Models (95 types in `Bitcoin/Models/`)
 
 **Purpose & User Value**: Provide strongly-typed, Codable model types for all RPC responses, with satoshi-precision arithmetic and proper timestamp handling.
 
@@ -73,7 +73,7 @@ Provide a complete, type-safe Swift RPC client covering all Bitcoin Core v31.x R
 
 **Dependencies**: None (pure models)
 
-**Status**: COMPLETE (`Sources/RPCModels/`)
+**Status**: COMPLETE (`Sources/Bitcoin/Models/`)
 
 ---
 
@@ -97,7 +97,7 @@ Provide a complete, type-safe Swift RPC client covering all Bitcoin Core v31.x R
 ```
 3.1 RPCTransport Protocol ✅
     └── 3.2 RPCClient (171 methods) ✅
-            ├── 3.3 RPCModels (95 types) ✅
+            ├── 3.3 Response Models (95 types) ✅
             └── 3.4 Wallet RPC Coverage ✅
 ```
 

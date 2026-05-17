@@ -9,7 +9,6 @@
 //
 
 import Foundation
-import RPCModels
 
 // MARK: - Network RPCs
 // https://developer.bitcoin.org/reference/rpc/#network-rpcs

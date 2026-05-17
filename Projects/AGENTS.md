@@ -1,6 +1,6 @@
 # AGENTS.md (Projects)
 
-Tuist-managed targets that complement the SPM package: two demo apps (`NodeApp`, `KernelApp`) and their UI/logic test bundles (`NodeAppTests`, `KernelAppTests`). The SPM test targets (`BitcoinTests`, `BitcoinKernelTests`, `RPCModelsTests`) live under `Tests/` and are run with `swift test`, not through this workspace.
+Tuist-managed targets that complement the SPM package: two demo apps (`NodeApp`, `KernelApp`) and their UI/logic test bundles (`NodeAppTests`, `KernelAppTests`). The SPM test targets (`BitcoinTests`, `BitcoinKernelTests`) live under `Tests/` and are run with `swift test`, not through this workspace.
 
 User-facing usage instructions live in [`README.md`](README.md). This file is deltas-only for maintainers editing the Tuist project.
 

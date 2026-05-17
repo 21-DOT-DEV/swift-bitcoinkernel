@@ -4,12 +4,25 @@
 
 # ₿ swift-bitcoin
 
-Embed Bitcoin Core in your Swift app — a typed `async`/`await` JSON-RPC client and an in-process daemon bridge wrapping [Bitcoin Core v31.0](https://github.com/bitcoin/bitcoin/releases/tag/v31.0), plus a low-level `BitcoinKernel` consensus-validation product other Swift packages can link.
+Swift framework for embedding a full Bitcoin node and consensus engine. Typed `async`/`await` JSON-RPC, in-process `bitcoind` lifecycle, and a standalone `BitcoinKernel` consensus-validation product. Uses Swift's [C++ interoperability](https://www.swift.org/documentation/cxx-interop/) with [Bitcoin Core](https://github.com/bitcoin/bitcoin).
 
 📚 [Bitcoin](https://docs.21.dev/documentation/bitcoin/) · [BitcoinKernel](https://docs.21.dev/documentation/bitcoinkernel/)
 
 > [!CAUTION]
 > This package is pre-1.0 ([SemVer major version zero](https://semver.org/#spec-item-4)). The public API is not stable and may change with any release. Pin a version using `exact:` to avoid unexpected breaking changes. Mainnet operations move real value — test on `regtest` or `signet` first.
+
+## Contents
+
+- [Why swift-bitcoin?](#why-swift-bitcoin)
+- [Features](#features)
+- [Installation](#installation)
+- [Package Traits](#package-traits)
+- [Quick Start](#quick-start)
+- [Hosted documentation](#hosted-documentation)
+- [Requirements](#requirements)
+- [Contributing](#contributing)
+- [Security](#security)
+- [License](#license)
 
 ## Why swift-bitcoin?
 
@@ -18,10 +31,9 @@ Reach for swift-bitcoin when you want Bitcoin Core's reference implementation em
 ## Features
 
 - **Embedded daemon** — in-process `bitcoind` lifecycle via `Daemon.start(with:)`, configured with the type-safe `BitcoinConfig` builder (phantom-typed `mainnet()` / `testnet()` / `signet()` / `regtest()` factories with compile-time-checked options).
-- **Typed JSON-RPC** — `RPCClient` with async/await methods covering all 171 [Bitcoin Core v31.0](https://github.com/bitcoin/bitcoin/releases/tag/v31.0) RPCs across 8 categories, decoded into ~90 `Codable` `Sendable` response models in `RPCModels`.
+- **Typed JSON-RPC** — `RPCClient` with async/await methods covering all 171 [Bitcoin Core v31.0](https://github.com/bitcoin/bitcoin/releases/tag/v31.0) RPCs across 8 categories, decoded into ~90 `Codable` `Sendable` response models.
 - **Pluggable transports** — `DirectTransport` (in-process C bridge), `HTTPTransport` (Basic auth), `CookieTransport` (cookie-file auth), and `AutoTransport` (routes wallet RPCs over HTTP, everything else direct). The `RPCClient(url:username:password:)` initializer wires up `AutoTransport` for you.
 - **`BitcoinKernel` standalone product** — wraps `libbitcoinkernel` for consensus validation without the daemon. Includes the `BlockchainSync` API (typed `AsyncSequence<Update>` with KVO-observable `Foundation.Progress`) and the `BlockSource` protocol for plugging in custom block providers (`EsploraBlockSource` ships in-tree). Used by wallets and SDKs that need consensus rules but not a full node.
-- **`wallet` package trait** — Bitcoin Core's wallet (BDB/SQLite, descriptors, PSBT) is opt-in. Off by default to keep binary size and the dependency graph small.
 - **Bitcoin Core v31.0 statically vendored** via [subtree](https://github.com/21-DOT-DEV/subtree) — pinned commit, audited patches under `patches/`, no system `bitcoind` dependency at runtime.
 
 ## Installation
@@ -44,7 +56,15 @@ Include `Bitcoin` (or `BitcoinKernel`) in your target:
 ]),
 ```
 
-To opt into Bitcoin Core's wallet:
+Or use Xcode: **File → Add Packages…**, then enter `https://github.com/21-DOT-DEV/swift-bitcoin`.
+
+## Package Traits
+
+This package uses [SE-0450 Package Traits](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0450-swiftpm-package-traits.md) (Swift 6.1+) to gate optional functionality. By default, no traits are enabled.
+
+### `wallet`
+
+Opts into Bitcoin Core's wallet functionality. Off by default to keep binary size and the dependency graph small. Enable when you need wallet RPCs (`createwallet`, `sendtoaddress`, `walletProcessPSBT`, etc.):
 
 ```swift
 .package(
@@ -54,7 +74,8 @@ To opt into Bitcoin Core's wallet:
 ),
 ```
 
-Or use Xcode: **File → Add Packages…**, then enter `https://github.com/21-DOT-DEV/swift-bitcoin`.
+> [!NOTE]
+> Xcode does not currently resolve SwiftPM package trait conditions for Swift settings. As a workaround, wallet sources are guarded with `#if Xcode || ENABLE_WALLET` so the wallet API is always visible in Xcode builds. Package traits are fully respected when building with `swift build` from the command line.
 
 ## Quick Start
 

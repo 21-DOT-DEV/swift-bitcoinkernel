@@ -50,10 +50,10 @@ subtrees:
     - '**/wycheproof/**'
     base: match
   - from: test/functional/data/rpc_{getblock*,decodescript,psbt}.json
-    to: Tests/RPCModelsTests/Fixtures/
+    to: Tests/BitcoinTests/Fixtures/
     base: match
   - from: src/test/data/blockfilter*.json
-    to: Tests/RPCModelsTests/Fixtures/
+    to: Tests/BitcoinTests/Fixtures/
     base: match
   - from: src/**/*.h
     to: Sources/libbitcoinkernel/src/

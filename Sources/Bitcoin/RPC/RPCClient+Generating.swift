@@ -8,7 +8,6 @@
 //  See the accompanying file LICENSE for information
 //
 
-import RPCModels
 
 // MARK: - Generating RPCs
 // https://developer.bitcoin.org/reference/rpc/#generating-rpcs

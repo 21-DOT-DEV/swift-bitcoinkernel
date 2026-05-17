@@ -35,9 +35,8 @@ Then pick a scheme (`NodeApp` or `KernelApp`) and ⌘R.
 
 The package's own tests live under `Tests/` and are run with `swift test` from the repository root:
 
-- **BitcoinTests** — Bitcoin library tests (`Bitcoin` target).
+- **BitcoinTests** — Bitcoin library tests (`Bitcoin` target), including RPC model decode tests with fixture vectors under `Tests/BitcoinTests/Fixtures/`.
 - **BitcoinKernelTests** — `BitcoinKernel` target tests.
-- **RPCModelsTests** — RPC model decode tests with fixture vectors under `Tests/RPCModelsTests/Fixtures/`.
 
 ### Run everything (apps + their bundles) via Tuist
 

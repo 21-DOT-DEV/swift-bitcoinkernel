@@ -9,7 +9,6 @@
 //
 
 import Foundation
-import RPCModels
 
 // MARK: - Util RPCs
 // https://developer.bitcoin.org/reference/rpc/#util-rpcs

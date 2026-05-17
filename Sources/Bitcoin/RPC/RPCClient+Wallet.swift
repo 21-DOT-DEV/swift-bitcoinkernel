@@ -9,7 +9,6 @@
 //
 
 import Foundation
-import RPCModels
 
 #if Xcode || ENABLE_WALLET
 

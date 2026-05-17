@@ -9,7 +9,6 @@
 //
 
 import Foundation
-import RPCModels
 
 // MARK: - Mining RPCs
 // https://developer.bitcoin.org/reference/rpc/#mining-rpcs

@@ -13,7 +13,7 @@ Vulnerabilities in the embedded Bitcoin Core sources under `Vendor/bitcoin/` and
 
 ### swift-bitcoin Swift wrapper
 
-Vulnerabilities specific to this package's Swift code — `RPCClient`, `Daemon`, `BitcoinConfig`, `BlockchainSync`, `BlockSource`, the `RPCTransport` family, and `RPCModels` — should be reported via [GitHub Security Advisories](https://github.com/21-DOT-DEV/swift-bitcoin/security/advisories).
+Vulnerabilities specific to this package's Swift code — `RPCClient`, `Daemon`, `BitcoinConfig`, `BlockchainSync`, `BlockSource`, the `RPCTransport` family, and the response-model types under `Bitcoin/Models/` — should be reported via [GitHub Security Advisories](https://github.com/21-DOT-DEV/swift-bitcoin/security/advisories).
 
 **Do not file a public issue.**
 
