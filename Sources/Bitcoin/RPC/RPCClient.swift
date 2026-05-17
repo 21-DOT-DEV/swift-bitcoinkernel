@@ -9,7 +9,6 @@
 //
 
 import Foundation
-import RPCModels
 import bitcoind
 
 let rpcLogger = Logger(subsystem: "Bitcoin", category: "RPC")

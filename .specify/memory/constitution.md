@@ -52,7 +52,7 @@ Sync Impact Report:
 
 This constitution governs the **swift-bitcoin** package, a Swift 6 wrapper around Bitcoin Core's C++ implementation providing embedded-node functionality and high-level RPC access for Apple platforms and Linux.
 
-**Scope**: This repository only. Covers the `Bitcoin` high-level Swift library (embedded daemon bridge + RPC client), the `BitcoinKernel` low-level library (consensus-validation bindings), the `RPCModels` models module, and the vendored Bitcoin Core source tree under `Vendor/bitcoin/` synchronized via the `subtree` CLI.
+**Scope**: This repository only. Covers the `Bitcoin` high-level Swift library (embedded daemon bridge + typed RPC client + response models), the `BitcoinKernel` low-level library (consensus-validation bindings), and the vendored Bitcoin Core source tree under `Vendor/bitcoin/` synchronized via the `subtree` CLI.
 
 **Philosophy**: Principles are technology-agnostic where possible. swift-bitcoin is a **thin, disciplined wrapper** over a battle-tested C++ codebase — **correctness, resource safety, Swift-native ergonomics, and operational clarity** take precedence over feature breadth. Where Bitcoin Core already solves a problem, the Swift layer MUST defer to it rather than reimplement.
 
@@ -166,7 +166,7 @@ This constitution governs the **swift-bitcoin** package, a Swift 6 wrapper aroun
 - **MUST** preserve Bitcoin Core RPC error codes in the Swift error types so callers can branch on them.
 - **MUST** document the pinned Bitcoin Core release the typed wrappers are verified against (e.g., v31.x).
 - **SHOULD** organize typed wrappers by Bitcoin Core's own RPC categories (Blockchain, Wallet, Raw Transactions, Network, Util, Mining, Control, Generating).
-- **SHOULD** keep typed models (`RPCModels`) separable from the RPC client so they can be consumed independently.
+- **SHOULD** organize typed response models in a dedicated `Models/` subdirectory of the `Bitcoin` target to keep them discoverable independent of RPC client code.
 - **MAY** provide convenience methods for common Bitcoin wallet patterns that compose typed RPC calls.
 
 **Compliance**: Code review enforces API naming, error typing, documentation, and the typed-plus-passthrough contract. New typed RPC methods MUST ship with corresponding model tests.
@@ -190,7 +190,7 @@ This constitution governs the **swift-bitcoin** package, a Swift 6 wrapper aroun
 - **MUST** write tests before implementation (red → green → refactor).
 - **MUST** verify tests fail before the implementing change lands.
 - **MUST** maintain separate test tiers (below).
-- **MUST** validate RPC decoding against fixtures derived from Bitcoin Core's functional test suite where available (`Tests/RPCModelsTests/Fixtures/`).
+- **MUST** validate RPC decoding against fixtures derived from Bitcoin Core's functional test suite where available (`Tests/BitcoinTests/Fixtures/`).
 - **SHOULD** develop outside-in, starting from the caller's perspective.
 - **MAY** add property-based tests for parser and state-machine components where they add value beyond fixture-based coverage.
 
@@ -399,9 +399,9 @@ swift package --disable-sandbox tuist test Bitcoin-Workspace -p Projects/ --plat
 
 ### Development-only Dependencies
 
-- `lefthook-plugin` — git-hooks management
 - `swift-plugin-tuist` — Tuist integration for `Projects/`
 - `swift-plugin-subtree` — vendored-source sync
+- `swift-docc-plugin` — DocC archive generation
 
 ### Upstream
 

@@ -37,7 +37,15 @@ import Bitcoin
 Use ``BitcoinConfig`` to create a type-safe, validated configuration. Start with a network factory method:
 
 ```swift
-let auth = RPCAuth(username: "user", salt: "abc123", passwordHMAC: "def456")
+// Demo credentials — username "111", password "222".
+// `passwordHMAC` is the hex HMAC-SHA256 of the password keyed by the salt.
+// Generate your own with Bitcoin Core's helper:
+//     python3 share/rpcauth/rpcauth.py <username> <password>
+let auth = RPCAuth(
+    username: "111",
+    salt: "14c1e13a71b7d6a4dab6c9d8f107bb5b",
+    passwordHMAC: "73b9fbbd71dbbb1476efa6da7b37dde5111153a17ccb5fdef79537d276fd03d4"
+)
 
 let config = BitcoinConfig
     .regtest()
@@ -66,8 +74,8 @@ Create an ``RPCClient`` that auto-detects the best transport:
 ```swift
 let client = RPCClient(
     url: URL(string: "http://127.0.0.1:18443")!,
-    username: "user",
-    password: "pass"
+    username: "111",
+    password: "222"
 )
 ```
 

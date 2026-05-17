@@ -97,3 +97,102 @@ print("Chain: \(info.chain), Height: \(info.blocks)")
 ### Architecture Reference
 
 - <doc:Architecture>
+
+### RPC Response Decoding
+
+- <doc:DecodingRPCResponses>
+- <doc:UnitConventions>
+
+### Response Models — Blockchain
+
+- ``Block``
+- ``BlockHeader``
+- ``BlockWithTransactions``
+- ``BlockWithPrevouts``
+- ``BlockStats``
+- ``BlockFilter``
+- ``BlockchainInfo``
+- ``ChainTip``
+- ``ChainTxStats``
+- ``DeploymentInfo``
+- ``TxOut``
+- ``TxOutSetInfo``
+- ``TxSpendingPrevout``
+
+### Response Models — Transactions
+
+- ``Transaction``
+- ``DecodedTransaction``
+- ``RawTransaction``
+- ``Vin``
+- ``Vout``
+- ``ScriptSig``
+- ``ScriptPubKey``
+- ``SignedTransaction``
+- ``DecodedScript``
+
+### Response Models — PSBT
+
+- ``DecodedPSBT``
+- ``PSBTAnalysis``
+- ``FinalizedPSBT``
+
+### Response Models — Mempool
+
+- ``MempoolInfo``
+- ``MempoolEntry``
+- ``MempoolFees``
+- ``MempoolAcceptResult``
+
+### Response Models — Network
+
+- ``PeerInfo``
+- ``NetworkInfo``
+- ``AddedNodeInfo``
+- ``NodeAddress``
+- ``BannedInfo``
+- ``NetTotals``
+- ``ZMQNotification``
+
+### Response Models — Mining
+
+- ``MiningInfo``
+- ``BlockTemplate``
+- ``GeneratedBlock``
+
+### Response Models — Wallet
+
+- ``WalletInfo``
+- ``WalletTransaction``
+- ``WalletBalances``
+- ``UnspentOutput``
+- ``ListSinceBlockResult``
+- ``CreateWalletResult``
+- ``BumpFeeResult``
+- ``SendResult``
+- ``FundRawTransactionResult``
+- ``RescanResult``
+
+### Response Models — Utility
+
+- ``AddressValidation``
+- ``DescriptorInfo``
+- ``MultisigResult``
+- ``SmartFeeEstimate``
+- ``IndexInfo``
+- ``MemoryInfo``
+- ``RPCInfo``
+
+### Response Models — Shared Types
+
+- ``BTCAmount``
+- ``UnixTimestamp``
+- ``RPCParam``
+- ``RPCError``
+- ``LastProcessedBlock``
+- ``PrevTxOut``
+
+### Response Models — Scanning
+
+- ``ScanTxOutResult``
+- ``ScanTxOutProgress``

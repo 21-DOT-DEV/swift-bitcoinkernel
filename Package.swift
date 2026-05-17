@@ -15,18 +15,14 @@ let package = Package(
         .trait(name: "wallet")
     ],
     dependencies: [
-        .package(url: "https://github.com/csjones/lefthook-plugin.git", exact: "1.6.15"),
         .package(url: "https://github.com/21-DOT-DEV/swift-boost", branch: "pruned-umbrella-1.90.0"),
         .package(url: "https://github.com/21-DOT-DEV/swift-event", exact: "0.2.1"),
-        .package(url: "https://github.com/21-DOT-DEV/swift-plugin-tuist.git", exact: "4.20.0"),
-        .package(url: "https://github.com/21-DOT-DEV/swift-plugin-subtree.git", exact: "0.0.15"),
-        .package(url: "https://github.com/apple/swift-docc-plugin", from: "1.5.0"),
-    ],
+    ] + Package.Dependency.developmentDependencies,
     targets: [
 
         .target(
             name: "Bitcoin",
-            dependencies: ["bitcoind", "RPCModels"],
+            dependencies: ["bitcoind"],
             swiftSettings: SwiftSetting.bitcoinSettings
         ),
         .target(
@@ -85,21 +81,13 @@ let package = Package(
             ]
         ),
 
-        // MARK: - Swift Modules
-
-        .target(name: "RPCModels"),
-
         // MARK: - Tests
 
         .testTarget(
             name: "BitcoinTests",
             dependencies: ["Bitcoin"],
+            resources: [.copy("Fixtures")],
             swiftSettings: SwiftSetting.bitcoinSettings
-        ),
-        .testTarget(
-            name: "RPCModelsTests",
-            dependencies: ["RPCModels"],
-            resources: [.copy("Fixtures")]
         ),
         .testTarget(
             name: "BitcoinKernelTests",
@@ -111,6 +99,23 @@ let package = Package(
 )
 
 // MARK: - Extensions
+
+extension Package.Dependency {
+    /// Development-only dependencies, excluded at tagged releases.
+    ///
+    /// When resolved at a tagged release (`Context.gitInformation?.currentTag != nil`),
+    /// development tools (tuist, subtree, docc) are excluded so consumers aren't
+    /// forced to download them. Runtime dependencies (`swift-boost`, `swift-event`)
+    /// stay inline above and always resolve.
+    static var developmentDependencies: [Package.Dependency] {
+        guard Context.gitInformation?.currentTag == nil else { return [] }
+        return [
+            .package(url: "https://github.com/21-DOT-DEV/swift-plugin-tuist.git", exact: "4.20.0"),
+            .package(url: "https://github.com/21-DOT-DEV/swift-plugin-subtree.git", exact: "0.0.15"),
+            .package(url: "https://github.com/apple/swift-docc-plugin", from: "1.5.0"),
+        ]
+    }
+}
 
 extension Target.Dependency {
     /// Dependencies for the libbitcoinkernel target.

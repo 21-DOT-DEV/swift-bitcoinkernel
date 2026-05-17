@@ -10,7 +10,6 @@
 
 import Testing
 import Foundation
-import RPCModels
 @testable import Bitcoin
 
 /// Unit tests for JSON-RPC envelope decoding.

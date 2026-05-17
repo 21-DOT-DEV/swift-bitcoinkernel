@@ -48,7 +48,6 @@ upstream-issues/**          export-ignore
 Dockerfile                  export-ignore
 .dockerignore               export-ignore
 subtree.yaml                export-ignore
-lefthook.yml                export-ignore
 
 # Git and editor files
 .gitignore                  export-ignore

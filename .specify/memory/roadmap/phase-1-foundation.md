@@ -57,7 +57,7 @@ Establish the build infrastructure and project structure that all subsequent pha
 - `Package.swift` exposes two library products:
   - `.library(name: "Bitcoin", targets: ["Bitcoin"])`
   - `.library(name: "BitcoinKernel", targets: ["BitcoinKernel"])`
-- `Bitcoin` target wraps `bitcoind` + `RPCModels`
+- `Bitcoin` target wraps `bitcoind` (RPC client + response models in `Sources/Bitcoin/Models/`)
 - `BitcoinKernel` target wraps `libbitcoinkernel` only
 - Wallet functionality gated behind `wallet` package trait
 - Both targets build on all Tier 1 platforms

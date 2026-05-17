@@ -9,7 +9,6 @@
 //
 
 import Foundation
-import RPCModels
 
 // MARK: - Rawtransactions RPCs (includes PSBT)
 // https://developer.bitcoin.org/reference/rpc/#rawtransactions-rpcs

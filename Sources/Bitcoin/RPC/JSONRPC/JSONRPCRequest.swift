@@ -8,7 +8,6 @@
 //  See the accompanying file LICENSE for information
 //
 
-import RPCModels
 
 /// Represents a JSON-RPC request to be sent to the Bitcoin node.
 public struct JSONRPCRequest: Encodable, Sendable {
