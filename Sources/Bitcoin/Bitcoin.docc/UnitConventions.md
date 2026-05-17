@@ -6,11 +6,13 @@
 
 Understand how Bitcoin Core represents monetary amounts, fee rates, and timestamps in JSON-RPC responses.
 
-## Monetary Amounts
+## Overview
+
+### Monetary Amounts
 
 Bitcoin Core uses two conventions for monetary amounts:
 
-### BTC Decimal (via BTCAmount)
+#### BTC Decimal (via BTCAmount)
 
 Most wallet and transaction RPCs return amounts as JSON decimals in **BTC**. These are decoded into ``BTCAmount``, which stores the value internally as satoshis (`Int64`) for precision:
 
@@ -22,7 +24,7 @@ print(fee.satoshis) // 10000
 
 Examples: `WalletTransaction.amount`, `Vout.value`, `TxOut.value`
 
-### Satoshis (via Int64)
+#### Satoshis (via Int64)
 
 Per-block statistics and some internal fields use raw **satoshis** as `Int64`:
 
@@ -30,7 +32,7 @@ Examples: `BlockStats.avgfee`, `BlockStats.subsidy`, `BlockStats.totalfee`
 
 The ``BlockStats`` doc comment notes: "All amount fields are in **satoshis** (raw `Int64`), not BTC."
 
-## Fee Rates
+### Fee Rates
 
 Fee rates appear in two units across different RPCs:
 
@@ -43,9 +45,9 @@ To convert between them: **1 sat/vB = 0.00001 BTC/kvB**.
 
 The ``SmartFeeEstimate/feerate`` field is in BTC/kvB.
 
-## Timestamps
+### Timestamps
 
-### Unix Epoch Seconds (via UnixTimestamp)
+#### Unix Epoch Seconds (via UnixTimestamp)
 
 Most time fields use ``UnixTimestamp``, which decodes from `Int64` and provides a `date` property:
 
@@ -56,7 +58,7 @@ print(block.time.date) // Foundation Date
 
 Examples: `Block.time`, `PeerInfo.lastsend`, `MempoolEntry.time`
 
-### Special Cases
+#### Special Cases
 
 Not all integer time-like fields are ``UnixTimestamp``:
 

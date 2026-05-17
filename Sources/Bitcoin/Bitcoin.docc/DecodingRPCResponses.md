@@ -4,9 +4,11 @@
     @TitleHeading("How-to Guide")
 }
 
-Work with the response-model types under ``Bitcoin/Models/`` to decode Bitcoin Core JSON-RPC responses.
+Work with the response-model types in the Bitcoin module to decode Bitcoin Core JSON-RPC responses.
 
-## How Models Map to RPC Methods
+## Overview
+
+### How Models Map to RPC Methods
 
 Each response-model struct corresponds to a specific Bitcoin Core RPC method's response. The struct's doc comment names the source method:
 
@@ -15,7 +17,7 @@ Each response-model struct corresponds to a specific Bitcoin Core RPC method's r
 public struct BlockStats: Codable, Sendable, Equatable { ... }
 ```
 
-## Handling Optional Fields
+### Handling Optional Fields
 
 Many RPC responses include optional fields that depend on:
 - **Bitcoin Core version** -- newer fields are absent in older versions
@@ -32,7 +34,7 @@ public struct RawTransaction: Codable, Sendable, Equatable {
 }
 ```
 
-## CodingKeys and Field Naming
+### CodingKeys and Field Naming
 
 Bitcoin Core uses `snake_case` for JSON field names. When the Swift property name differs, a `CodingKeys` enum handles the mapping:
 
@@ -48,7 +50,7 @@ public struct PeerInfo: Codable, Sendable, Equatable {
 }
 ```
 
-## Version-Dependent Fields
+### Version-Dependent Fields
 
 Some fields only exist in specific Bitcoin Core versions. The struct doc comments note version requirements:
 
@@ -58,6 +60,6 @@ Some fields only exist in specific Bitcoin Core versions. The struct doc comment
 
 When using these models against older nodes, version-specific fields should be optional to avoid decoding failures.
 
-## Working with Amounts
+### Working with Amounts
 
 See <doc:UnitConventions> for details on how monetary values are represented.
