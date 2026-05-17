@@ -60,7 +60,7 @@ Or use Xcode: **File → Add Packages…**, then enter `https://github.com/21-DO
 
 ## Package Traits
 
-This package uses [SE-0450 Package Traits](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0450-swiftpm-package-traits.md) (Swift 6.1+) to gate optional functionality. By default, no traits are enabled.
+This package uses [SE-0450 Package Traits](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0450-swiftpm-package-traits.md) to gate optional functionality. By default, no traits are enabled.
 
 ### `wallet`
 
@@ -75,7 +75,7 @@ Opts into Bitcoin Core's wallet functionality. Off by default to keep binary siz
 ```
 
 > [!NOTE]
-> Xcode does not currently resolve SwiftPM package trait conditions for Swift settings. As a workaround, wallet sources are guarded with `#if Xcode || ENABLE_WALLET` so the wallet API is always visible in Xcode builds. Package traits are fully respected when building with `swift build` from the command line.
+> Xcode does not currently resolve SwiftPM package trait conditions for Swift settings. As a workaround, wallet sources are guarded with `#if Xcode || ENABLE_WALLET` so the wallet API is always visible in Xcode builds. This means the "small binary size" benefit only applies to `swift build` from the command line — Xcode consumers always compile the wallet Swift API surface, regardless of whether they opt into the `wallet` trait. Package traits are fully respected when building with `swift build`.
 
 ## Quick Start
 
@@ -85,7 +85,15 @@ Run an embedded `bitcoind` on regtest and query it through `RPCClient`:
 import Bitcoin
 import Foundation
 
-let auth = RPCAuth(username: "user", salt: "abc123", passwordHMAC: "def456")
+// Demo credentials — username "111", password "222".
+// `passwordHMAC` is the hex HMAC-SHA256 of the password keyed by the salt.
+// Generate your own with Bitcoin Core's helper:
+//     python3 share/rpcauth/rpcauth.py <username> <password>
+let auth = RPCAuth(
+    username: "111",
+    salt: "14c1e13a71b7d6a4dab6c9d8f107bb5b",
+    passwordHMAC: "73b9fbbd71dbbb1476efa6da7b37dde5111153a17ccb5fdef79537d276fd03d4"
+)
 
 let config = BitcoinConfig
     .regtest()
@@ -98,8 +106,8 @@ try Daemon.start(with: config)
 
 let client = RPCClient(
     url: URL(string: "http://127.0.0.1:18443")!,
-    username: "user",
-    password: "pass"
+    username: "111",
+    password: "222"
 )
 
 let info = try await client.getBlockchainInfo()
