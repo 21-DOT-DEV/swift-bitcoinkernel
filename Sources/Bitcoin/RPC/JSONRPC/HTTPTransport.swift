@@ -23,6 +23,13 @@ public struct HTTPTransport: WalletCapableTransport {
     private let password: String
     private let session: URLSession
 
+    /// Creates an HTTP transport for a Bitcoin node's JSON-RPC endpoint.
+    ///
+    /// - Parameters:
+    ///   - url: Base RPC URL (e.g., `http://127.0.0.1:8332`). Wallet path is appended per call.
+    ///   - username: RPC username (from `rpcuser` or `rpcauth` in `bitcoin.conf`).
+    ///   - password: RPC password (from `rpcpassword` or `rpcauth`).
+    ///   - session: The `URLSession` used to dispatch requests. Defaults to `.shared`.
     public init(url: URL, username: String, password: String, session: URLSession = .shared) {
         self.url = url
         self.username = username

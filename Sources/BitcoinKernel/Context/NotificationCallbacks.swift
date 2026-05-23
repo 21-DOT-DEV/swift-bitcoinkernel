@@ -70,6 +70,15 @@ public final class NotificationCallbacks: @unchecked Sendable {
     ///
     /// Set only the callbacks you need; unset callbacks are ignored.
     /// All closures are captured at init time and cannot be changed later.
+    ///
+    /// - Parameters:
+    ///   - blockTip: Handler for chain tip updates. See ``blockTip``.
+    ///   - headerTip: Handler for new best headers. See ``headerTip``.
+    ///   - progress: Handler for block sync progress. See ``progress``.
+    ///   - warningSet: Handler for new validation warnings. See ``warningSet``.
+    ///   - warningUnset: Handler for cleared validation warnings. See ``warningUnset``.
+    ///   - flushError: Handler for errors flushing data to disk. See ``flushError``.
+    ///   - fatalError: Handler for unrecoverable library errors. See ``fatalError``.
     public init(
         blockTip: ((_ state: SynchronizationState, _ entry: BlockTreeEntrySnapshot, _ progress: Double) -> Void)? = nil,
         headerTip: ((_ state: SynchronizationState, _ height: Int64, _ timestamp: Int64, _ presync: Bool) -> Void)? = nil,

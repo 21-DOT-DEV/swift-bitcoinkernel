@@ -136,6 +136,14 @@ public struct BlockTemplateRequest: Encodable, Sendable {
     /// Block hex (proposal mode only).
     public let data: String?
 
+    /// Creates a request for `getblocktemplate`.
+    ///
+    /// - Parameters:
+    ///   - rules: Client-side supported softfork deployment rules. Required by Core v31.x; defaults to `["segwit"]`.
+    ///   - mode: `"template"` (default) or `"proposal"` (BIP 23). `nil` lets the server pick.
+    ///   - capabilities: Client-side supported features (e.g., `"longpoll"`, `"coinbasevalue"`, `"proposal"`).
+    ///   - longpollid: Long-poll identifier returned by a previous template (template mode only).
+    ///   - data: Block hex to submit for validation (proposal mode only).
     public init(
         rules: [String] = ["segwit"],
         mode: String? = nil,

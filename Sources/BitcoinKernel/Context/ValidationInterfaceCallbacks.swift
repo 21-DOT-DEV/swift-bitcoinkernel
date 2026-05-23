@@ -52,6 +52,12 @@ public final class ValidationInterfaceCallbacks: @unchecked Sendable {
     ///
     /// Set only the callbacks you need; unset callbacks are ignored.
     /// All closures are captured at init time and cannot be changed later.
+    ///
+    /// - Parameters:
+    ///   - blockChecked: Handler for blocks that have been fully validated. See ``blockChecked``.
+    ///   - powValidBlock: Handler for blocks with valid proof-of-work added to the header chain. See ``powValidBlock``.
+    ///   - blockConnected: Handler for blocks connected to the best chain. See ``blockConnected``.
+    ///   - blockDisconnected: Handler for blocks removed from the best chain during a re-org. See ``blockDisconnected``.
     public init(
         blockChecked: ((_ block: Block, _ state: BlockValidationState) -> Void)? = nil,
         powValidBlock: ((_ block: Block, _ entry: BlockTreeEntrySnapshot) -> Void)? = nil,

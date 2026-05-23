@@ -8,7 +8,7 @@ BitcoinKernel is a Swift library wrapping Bitcoin Core's `libbitcoinkernel` C AP
 
 ## Overview
 
-BitcoinKernel wraps Bitcoin Core's [`libbitcoinkernel`](https://github.com/bitcoin/bitcoin/tree/master/src/kernel) behind a type-safe Swift API. Every opaque C handle is owned by a Swift `class` whose `deinit` calls the matching `btck_*_destroy`, so memory management is invisible to callers — no manual cleanup, no `OpaquePointer` in public signatures. The module also ships a sync engine (``BlockchainSync``) that drives a ``ChainstateManager`` from any ``BlockSource`` while emitting typed `AsyncSequence` progress.
+BitcoinKernel wraps Bitcoin Core's [`libbitcoinkernel`](https://github.com/bitcoin/bitcoin/tree/master/src/kernel) behind a type-safe Swift API. Every opaque C handle is owned by a Swift `class` whose `deinit` calls the matching `btck_*_destroy`, so memory management is invisible to callers — no manual cleanup, no `OpaquePointer` in public signatures. The module also ships a sync engine (``BlockchainSync``) that drives a ``ChainstateManager`` from any ``BlockSource`` while emitting typed [`AsyncSequence`](https://developer.apple.com/documentation/swift/asyncsequence) progress, per the Swift Concurrency model introduced in [SE-0298](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0298-asyncsequence.md).
 
 The package is part of the [21-DOT-DEV](https://github.com/21-DOT-DEV) Swift Bitcoin ecosystem alongside [swift-tor](https://github.com/21-DOT-DEV/swift-tor) (embedded Tor for privacy-routed sync), [swift-event](https://github.com/21-DOT-DEV/swift-event) (async TCP sockets, a future P2P block-source substrate), and [swift-openssl](https://github.com/21-DOT-DEV/swift-openssl) (TLS/crypto).
 

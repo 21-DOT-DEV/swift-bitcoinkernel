@@ -8,11 +8,13 @@ Embed a Bitcoin Core daemon in your Swift application with a type-safe RPC clien
 
 ## Overview
 
-The Bitcoin module provides three main capabilities:
+The Bitcoin module embeds [Bitcoin Core](https://github.com/bitcoin/bitcoin) in a Swift application and exposes its JSON-RPC interface as typed Swift APIs. The module provides three main capabilities:
 
-1. **Embedded Daemon** -- Start and stop a Bitcoin Core daemon within your process using ``Daemon``.
-2. **RPC Client** -- Send typed JSON-RPC commands via ``RPCClient``, with automatic transport selection between in-process IPC and HTTP.
-3. **Configuration** -- Build validated Bitcoin Core configurations using the fluent ``BitcoinConfig`` builder with compile-time network type safety.
+1. **Embedded Daemon** -- Start and stop a Bitcoin Core daemon within your process using ``Daemon``. The daemon runs on a dedicated background thread; `start(with:)` returns immediately and `waitUntilStopped()` joins on shutdown.
+2. **RPC Client** -- Send typed JSON-RPC commands via ``RPCClient``, with automatic transport selection between an in-process C bridge (zero serialization overhead) and HTTP (for wallet-scoped calls or remote nodes).
+3. **Configuration** -- Build validated Bitcoin Core configurations using the fluent ``BitcoinConfig`` builder with compile-time network type safety. Network-specific options are encoded as phantom types so misuse is caught at compile time rather than at daemon startup.
+
+The module pairs with [`BitcoinKernel`](https://github.com/21-DOT-DEV/swift-bitcoinkernel) (which wraps `libbitcoinkernel` for validation without the full daemon) in the [21-DOT-DEV](https://github.com/21-DOT-DEV) Swift Bitcoin ecosystem. Use `Bitcoin` when you need a full node (mempool, wallet, P2P); use `BitcoinKernel` when you only need validation primitives.
 
 ```swift
 import Bitcoin

@@ -68,14 +68,29 @@ public struct BTCAmount: Codable, Sendable, Hashable, Comparable, AdditiveArithm
 
     // MARK: - AdditiveArithmetic
 
+    /// The zero amount. Additive identity for `AdditiveArithmetic`.
     public static var zero: BTCAmount { BTCAmount(satoshis: 0) }
 
+    /// Adds two amounts.
+    ///
+    /// - Parameters:
+    ///   - lhs: The first amount.
+    ///   - rhs: The second amount.
+    /// - Returns: The sum, in satoshis.
+    /// - Precondition: The sum fits in `Int64`; traps on overflow.
     public static func + (lhs: BTCAmount, rhs: BTCAmount) -> BTCAmount {
         let (result, overflow) = lhs.satoshis.addingReportingOverflow(rhs.satoshis)
         precondition(!overflow, "BTCAmount addition overflow")
         return BTCAmount(satoshis: result)
     }
 
+    /// Subtracts one amount from another.
+    ///
+    /// - Parameters:
+    ///   - lhs: The amount to subtract from.
+    ///   - rhs: The amount to subtract.
+    /// - Returns: The difference, in satoshis. May be negative.
+    /// - Precondition: The difference fits in `Int64`; traps on overflow.
     public static func - (lhs: BTCAmount, rhs: BTCAmount) -> BTCAmount {
         let (result, overflow) = lhs.satoshis.subtractingReportingOverflow(rhs.satoshis)
         precondition(!overflow, "BTCAmount subtraction overflow")
@@ -84,12 +99,24 @@ public struct BTCAmount: Codable, Sendable, Hashable, Comparable, AdditiveArithm
 
     // MARK: - Additional Arithmetic
 
+    /// Negates an amount.
+    ///
+    /// - Parameter value: The amount to negate.
+    /// - Returns: A ``BTCAmount`` with `-value.satoshis`.
+    /// - Precondition: `value.satoshis != Int64.min`; traps on overflow.
     public static prefix func - (value: BTCAmount) -> BTCAmount {
         let (result, overflow) = (0 as Int64).subtractingReportingOverflow(value.satoshis)
         precondition(!overflow, "BTCAmount negation overflow")
         return BTCAmount(satoshis: result)
     }
 
+    /// Multiplies an amount by an integer scalar.
+    ///
+    /// - Parameters:
+    ///   - lhs: The amount to scale.
+    ///   - rhs: The integer multiplier.
+    /// - Returns: A ``BTCAmount`` with `lhs.satoshis * rhs`.
+    /// - Precondition: The product fits in `Int64`; traps on overflow.
     public static func * (lhs: BTCAmount, rhs: Int64) -> BTCAmount {
         let (result, overflow) = lhs.satoshis.multipliedReportingOverflow(by: rhs)
         precondition(!overflow, "BTCAmount multiplication overflow")

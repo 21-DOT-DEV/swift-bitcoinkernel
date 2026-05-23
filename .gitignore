@@ -148,3 +148,8 @@ Local.xcconfig
 
 ### Tuist managed dependencies ###
 Tuist/.build
+
+# DocC suite per-catalog state. The docc-symbols / docc-articles / docc-audit
+# skills write here at catalog root; ignore at any depth to defend against
+# stray writes from eval sessions running against fixtures.
+.docc-suite-state/

@@ -24,9 +24,18 @@ public struct SignedTransaction: Codable, Sendable, Equatable {
 
 /// A signing error for a specific input.
 public struct SigningError: Codable, Sendable, Equatable {
+    /// Hex-encoded txid of the outpoint being spent.
     public let txid: String
+
+    /// Output index of the outpoint being spent.
     public let vout: Int
+
+    /// Hex-encoded scriptSig produced for this input.
     public let scriptSig: String
+
+    /// Input sequence number.
     public let sequence: Int64
+
+    /// Verification error message from Bitcoin Core.
     public let error: String
 }

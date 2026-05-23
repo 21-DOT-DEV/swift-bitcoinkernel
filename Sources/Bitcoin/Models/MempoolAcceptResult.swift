@@ -12,10 +12,19 @@
 ///
 /// - Note: Targets Bitcoin Core v31.x.
 public struct MempoolAcceptResult: Codable, Sendable, Equatable {
+    /// The transaction ID, hex-encoded.
     public let txid: String
+
+    /// The witness transaction ID, hex-encoded.
     public let wtxid: String
+
+    /// Whether the transaction would be accepted into the mempool. `nil` on internal error.
     public let allowed: Bool?
+
+    /// Virtual size in vbytes. Present only when `allowed` is true.
     public let vsize: Int?
+
+    /// Fee details. Present only when `allowed` is true.
     public let fees: MempoolAcceptFees?
 
     /// Rejection reason (only present when `allowed` is false).
