@@ -22,17 +22,17 @@ You do **not** need to install `bitcoind` separately — the `Bitcoin` module co
 
 ### Step 1: Add Bitcoin to your project
 
-Add `swift-bitcoin` as a Swift Package Manager dependency in your `Package.swift`:
+Add `swift-bitcoinkernel` as a Swift Package Manager dependency in your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/21-DOT-DEV/swift-bitcoin.git", branch: "main"),
+    .package(url: "https://github.com/21-DOT-DEV/swift-bitcoinkernel.git", branch: "main"),
 ],
 targets: [
     .target(
         name: "MyTarget",
         dependencies: [
-            .product(name: "Bitcoin", package: "swift-bitcoin"),
+            .product(name: "Bitcoin", package: "swift-bitcoinkernel"),
         ]
     ),
 ]

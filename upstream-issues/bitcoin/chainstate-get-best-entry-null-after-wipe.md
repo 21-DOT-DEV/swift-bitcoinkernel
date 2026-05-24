@@ -319,9 +319,9 @@ While triaging this, two follow-on hypotheses were tested and **rejected**:
 | libbitcoinkernel has bitcoind-style process-global state breaking repeated lifecycle cycles | `Tests/BitcoinKernelTests/UpstreamConcernsTests.swift::repeatedKernelLifecycle` | **PASSES** — no global-state bug |
 | `ChainstateManager.deinit` aborts when the data directory has been removed while the manager is alive | `Tests/BitcoinKernelTests/UpstreamConcernsTests.swift::managerDeinitAfterDirRemoved` | **PASSES** — kernel deinit is graceful |
 
-## Local fix in swift-bitcoin (applied — independent of upstream)
+## Local fix in swift-bitcoinkernel (applied — independent of upstream)
 
-`Sources/libbitcoinkernel/include/libbitcoinkernel.apinotes` (a swift-bitcoin-local
+`Sources/libbitcoinkernel/include/libbitcoinkernel.apinotes` (a swift-bitcoinkernel-local
 file, not part of upstream Bitcoin Core) **previously** annotated the function as
 `_Nonnull`, which let the Swift importer generate a non-failable Swift signature
 for a function that could return null.

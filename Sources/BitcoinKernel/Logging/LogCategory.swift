@@ -29,11 +29,11 @@ public enum LogCategory: UInt8, Sendable, CaseIterable, Codable {
     /// index and chainstate.
     case levelDB      = 4
 
-    /// Mempool transaction processing — swift-bitcoin's kernel does not
+    /// Mempool transaction processing — swift-bitcoinkernel's kernel does not
     /// run a mempool, so this category is effectively quiet.
     case mempool      = 5
 
-    /// Block pruning operations — mainnet-only; swift-bitcoin does not
+    /// Block pruning operations — mainnet-only; swift-bitcoinkernel does not
     /// currently expose `-prune=N`, so this category is effectively quiet.
     case prune        = 6
 

@@ -12,7 +12,7 @@
 *.hpp text diff=cpp
 
 # Upstream code in Sources/ marked as vendored so GitHub language stats
-# reflect the swift-bitcoin Swift surface, not Bitcoin Core C++.
+# reflect the swift-bitcoinkernel Swift surface, not Bitcoin Core C++.
 Sources/bitcoind/**          linguist-vendored
 Sources/libbitcoinkernel/**  linguist-vendored
 Sources/secp256k1/**         linguist-vendored

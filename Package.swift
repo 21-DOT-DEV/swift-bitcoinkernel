@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "Bitcoin",
+    name: "BitcoinKernel",
     platforms: [
         .macOS(.v15),
         .iOS(.v18),
@@ -153,7 +153,7 @@ extension CXXSetting {
         .headerSearchPath("src"),
         .headerSearchPath("src/univalue/include"),
         // Disable `multi_index_container`'s serialization member templates
-        // — we never call them in the swift-bitcoin subset, and skipping
+        // — we never call them in the swift-bitcoinkernel subset, and skipping
         // their declaration keeps us decoupled from the standalone Boost
         // `serialization` module so it stays out of the dependency graph.
         .define("BOOST_MULTI_INDEX_DISABLE_SERIALIZATION"),

@@ -34,13 +34,13 @@ public enum ChainType: UInt8, Sendable, CaseIterable, Codable, CustomStringConve
     ///
     /// Small (~50 MB at typical tip), predictable block rate, and immune to
     /// testnet-style difficulty games — the recommended real-network sync
-    /// target for swift-bitcoin.
+    /// target for swift-bitcoinkernel.
     case signet   = 3
 
     /// Bitcoin regression test network — fully local, mineable-on-demand.
     ///
     /// No network peers, genesis-only by default, zero proof-of-work
-    /// difficulty (any hash passes). Used by swift-bitcoin's test suite via
+    /// difficulty (any hash passes). Used by swift-bitcoinkernel's test suite via
     /// the `RegtestChainBuilder` test-support helper.
     case regtest  = 4
 

@@ -102,13 +102,13 @@ final class KernelAppSettings {
     // MARK: - Logging
 
     /// Master switch for attaching a ``LoggingConnection``. When `false`,
-    /// KernelApp does not construct a connection — swift-bitcoin's logging
+    /// KernelApp does not construct a connection — swift-bitcoinkernel's logging
     /// is opt-in by construction, so no log output is emitted at all.
     var loggingEnabled: Bool {
         didSet { defaults.set(loggingEnabled, forKey: Key.loggingEnabled) }
     }
 
-    /// Include swift-bitcoin's own internal log lines alongside kernel
+    /// Include swift-bitcoinkernel's own internal log lines alongside kernel
     /// output.
     var loggingInternal: Bool {
         didSet { defaults.set(loggingInternal, forKey: Key.loggingInternal) }

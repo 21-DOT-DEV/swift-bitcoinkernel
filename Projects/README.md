@@ -1,6 +1,6 @@
 # Bitcoin Tuist Workspace
 
-A Tuist-managed Xcode workspace with two demo apps (`NodeApp`, `KernelApp`) and their UI/logic test bundles, layered on top of the SPM package. Use this directory when you want to **see swift-bitcoin running** — the SPM package itself is the thing to depend on; this workspace exists for hands-on exploration.
+A Tuist-managed Xcode workspace with two demo apps (`NodeApp`, `KernelApp`) and their UI/logic test bundles, layered on top of the SPM package. Use this directory when you want to **see swift-bitcoinkernel running** — the SPM package itself is the thing to depend on; this workspace exists for hands-on exploration.
 
 ## Quick Start
 

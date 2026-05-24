@@ -1,11 +1,11 @@
 # bridge/
 
 Swift ↔ bitcoind interop code. **Everything in this directory is original
-to `swift-bitcoin`.** Every other file under `Sources/bitcoind/src/` is
+to `swift-bitcoinkernel`.** Every other file under `Sources/bitcoind/src/` is
 vendored from upstream Bitcoin Core (`Vendor/bitcoin/src/`) and MUST NOT
 be edited directly — use a file here instead.
 
-This directory exists because `swift-bitcoin` embeds `bitcoind_main()`
+This directory exists because `swift-bitcoinkernel` embeds `bitcoind_main()`
 in-process and calls it multiple times during a single app session (each
 node start/stop cycle). The upstream codebase assumes one-process-per-run:
 various globals are set during shutdown and never reset, because the

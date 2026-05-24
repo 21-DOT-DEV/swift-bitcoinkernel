@@ -8,7 +8,7 @@ Drive a ``ChainstateManager`` from an Esplora-compatible HTTP source with a type
 
 ## Overview
 
-> Warning: Mainnet initial block download is on the order of 600 GB and is not a practical target for mobile today. Signet (< 50 MB typical) is swift-bitcoin's primary sync target; testnet and regtest are for development and testing.
+> Warning: Mainnet initial block download is on the order of 600 GB and is not a practical target for mobile today. Signet (< 50 MB typical) is swift-bitcoinkernel's primary sync target; testnet and regtest are for development and testing.
 
 ``BlockchainSync`` is a value-type engine that walks a local chainstate from its current tip to the source's best tip, processing each block through ``ChainstateManager/processBlock(_:)`` and emitting typed ``BlockchainSync/Update`` snapshots. The API shape mirrors Apple's [`CLLocationUpdate.liveUpdates(_:)`](https://developer.apple.com/documentation/corelocation/cllocationupdate/liveupdates(_:)) — a configuration struct exposing a typed `Updates` sequence — while the vocabulary (``BlockTip``, ``BlockchainSync/Update/verificationProgress``, ``BlockchainSync/Update/State-swift.enum``) mirrors Bitcoin Core's [`interfaces::BlockTip`](https://github.com/bitcoin/bitcoin/blob/master/src/interfaces/node.h), [`GetVerificationProgress`](https://github.com/bitcoin/bitcoin/blob/master/src/validation.h), and [`SynchronizationState`](https://github.com/bitcoin/bitcoin/blob/master/src/validationinterface.h) so Bitcoin developers recognize it on sight.
 
@@ -20,7 +20,7 @@ Run the code under **Running a sync** below against signet for a working end-to-
 
 ### Choosing a block source
 
-swift-bitcoin does not hard-code a default endpoint — the library ships URL convenience accessors for common public Esplora instances, and callers pick one explicitly. This matters: the block source is the network trust authority for validation input, and the library does not silently pick one for you.
+swift-bitcoinkernel does not hard-code a default endpoint — the library ships URL convenience accessors for common public Esplora instances, and callers pick one explicitly. This matters: the block source is the network trust authority for validation input, and the library does not silently pick one for you.
 
 ```swift
 import BitcoinKernel
@@ -142,10 +142,10 @@ Most application code should consume ``BlockchainSync/Update/State-swift.enum`` 
 
 ### Pre-1.0 API stability
 
-swift-bitcoin is pre-1.0 — major-version zero per [SemVer 2.0 §4](https://semver.org/#spec-item-4). ``BlockSource``, ``BlockchainSync``, ``BlockTip``, ``BlockSourceError``, and the `URL` convenience accessors may change across `0.y.z` releases until the first 1.0 tag. Pin an exact version in `Package.swift` to avoid surprise migrations:
+swift-bitcoinkernel is pre-1.0 — major-version zero per [SemVer 2.0 §4](https://semver.org/#spec-item-4). ``BlockSource``, ``BlockchainSync``, ``BlockTip``, ``BlockSourceError``, and the `URL` convenience accessors may change across `0.y.z` releases until the first 1.0 tag. Pin an exact version in `Package.swift` to avoid surprise migrations:
 
 ```swift
-.package(url: "https://github.com/swift-bitcoin/swift-bitcoin.git", exact: "0.x.y")
+.package(url: "https://github.com/21-DOT-DEV/swift-bitcoinkernel.git", exact: "0.x.y")
 ```
 
 ## See Also

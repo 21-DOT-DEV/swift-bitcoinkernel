@@ -1,6 +1,6 @@
 //
 //  JSONRPCRequest.swift
-//  21-DOT-DEV/swift-bitcoin
+//  21-DOT-DEV/swift-bitcoinkernel
 //
 //  Copyright (c) 2024-2026 Timechain Software Initiative, Inc.
 //  Distributed under the MIT software license
@@ -27,10 +27,10 @@ public struct JSONRPCRequest: Encodable, Sendable {
     ///
     /// - Parameters:
     ///   - jsonrpc: The JSON-RPC version. Defaults to "1.0".
-    ///   - id: A unique identifier for the request. Defaults to "swift-bitcoin".
+    ///   - id: A unique identifier for the request. Defaults to "swift-bitcoinkernel".
     ///   - method: The name of the method to be invoked on the server.
     ///   - params: An array of parameters to pass to the method. Defaults to an empty array.
-    public init(jsonrpc: String = "1.0", id: String = "swift-bitcoin", method: String, params: [RPCParam] = []) {
+    public init(jsonrpc: String = "1.0", id: String = "swift-bitcoinkernel", method: String, params: [RPCParam] = []) {
         self.jsonrpc = jsonrpc
         self.id = id
         self.method = method

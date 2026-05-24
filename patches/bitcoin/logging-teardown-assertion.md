@@ -33,7 +33,7 @@ All tests pass — the assertion happens during process exit after the test suit
      m_buffering = true;
      if (m_fileout != nullptr) fclose(m_fileout);
      m_fileout = nullptr;
-+    m_print_to_file = false;  // swift-bitcoin: prevent assertion during teardown
++    m_print_to_file = false;  // swift-bitcoinkernel: prevent assertion during teardown
      m_print_callbacks.clear();
 ```
 

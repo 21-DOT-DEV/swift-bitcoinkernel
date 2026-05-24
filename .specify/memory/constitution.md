@@ -2,7 +2,7 @@
 Sync Impact Report:
 - Version: 1.0.0 → 2.0.0 (MAJOR — structural rewrite, platform scope redefinition, principle consolidation)
 - Change Type: Full rewrite
-- Scope: swift-bitcoin package (/Users/csjones/Developer/swift-bitcoin)
+- Scope: swift-bitcoinkernel package (/Users/csjones/Developer/swift-bitcoinkernel)
 - Structure: Seven core principles + implementation practices + governance, three-tier enforcement (MUST/SHOULD/MAY + explicit MUST NOT)
 - Core Principles (v2.0.0):
   I.   Scope & Bitcoin Core Alignment
@@ -46,15 +46,15 @@ Sync Impact Report:
   • Ensure SwiftLint / SwiftFormat infrastructure lands before the linting MUST gate takes effect
 -->
 
-# Constitution for swift-bitcoin
+# Constitution for swift-bitcoinkernel
 
 ## Preamble
 
-This constitution governs the **swift-bitcoin** package, a Swift 6 wrapper around Bitcoin Core's C++ implementation providing embedded-node functionality and high-level RPC access for Apple platforms and Linux.
+This constitution governs the **swift-bitcoinkernel** package, a Swift 6 wrapper around Bitcoin Core's C++ implementation providing embedded-node functionality and high-level RPC access for Apple platforms and Linux.
 
 **Scope**: This repository only. Covers the `Bitcoin` high-level Swift library (embedded daemon bridge + typed RPC client + response models), the `BitcoinKernel` low-level library (consensus-validation bindings), and the vendored Bitcoin Core source tree under `Vendor/bitcoin/` synchronized via the `subtree` CLI.
 
-**Philosophy**: Principles are technology-agnostic where possible. swift-bitcoin is a **thin, disciplined wrapper** over a battle-tested C++ codebase — **correctness, resource safety, Swift-native ergonomics, and operational clarity** take precedence over feature breadth. Where Bitcoin Core already solves a problem, the Swift layer MUST defer to it rather than reimplement.
+**Philosophy**: Principles are technology-agnostic where possible. swift-bitcoinkernel is a **thin, disciplined wrapper** over a battle-tested C++ codebase — **correctness, resource safety, Swift-native ergonomics, and operational clarity** take precedence over feature breadth. Where Bitcoin Core already solves a problem, the Swift layer MUST defer to it rather than reimplement.
 
 **Ecosystem Documents**: Repository-level guidance in this file is complemented by the authoritative org-level documents at <https://github.com/21-DOT-DEV/.github>, including `CONTRIBUTING.md` (branching and commit guidelines) and `SECURITY.md` (vulnerability disclosure). This constitution does not duplicate that guidance.
 
@@ -222,7 +222,7 @@ This constitution governs the **swift-bitcoin** package, a Swift 6 wrapper aroun
 
 **Practices**:
 - **MUST** build and run tests on every Tier 1 platform on every PR.
-- **MUST** ensure deterministic behavior: given the same inputs, Bitcoin Core + swift-bitcoin produce the same outputs across all Tier 1 platforms.
+- **MUST** ensure deterministic behavior: given the same inputs, Bitcoin Core + swift-bitcoinkernel produce the same outputs across all Tier 1 platforms.
 - **MUST** pass all Tier 1 unit and regtest smoke tests before merge.
 - **MUST** enforce linting (SwiftLint, SwiftFormat) as merge gates once the infrastructure is in place.
 - **MUST NOT** merge code that breaks any Tier 1 platform.
@@ -240,10 +240,10 @@ This constitution governs the **swift-bitcoin** package, a Swift 6 wrapper aroun
 
 **Statement**: All development MUST follow open-source best practices: clear documentation, correct licensing and attribution, and code that favors readability over cleverness. Contribution and security-disclosure guidance MUST be deferred to the authoritative org-level documents.
 
-**Rationale**: swift-bitcoin sits in an ecosystem where users evaluate library trust (correctness, maintenance responsiveness, honest framing) before adopting it, especially for Bitcoin software handling real funds. Good documentation, responsive maintenance, and clear licensing lower adoption friction and increase the chance that security-relevant feedback reaches the maintainer.
+**Rationale**: swift-bitcoinkernel sits in an ecosystem where users evaluate library trust (correctness, maintenance responsiveness, honest framing) before adopting it, especially for Bitcoin software handling real funds. Good documentation, responsive maintenance, and clear licensing lower adoption friction and increase the chance that security-relevant feedback reaches the maintainer.
 
 **Practices**:
-- **MUST** include a LICENSE file (MIT) for swift-bitcoin's own code.
+- **MUST** include a LICENSE file (MIT) for swift-bitcoinkernel's own code.
 - **MUST** preserve and attribute the upstream Bitcoin Core license(s) shipped under `Vendor/bitcoin/`.
 - **MUST** maintain a README with setup, supported platforms, a Quick Start, RPC coverage summary, and pinned Bitcoin Core version.
 - **MUST** defer contribution guidelines to the org-level [CONTRIBUTING.md](https://github.com/21-DOT-DEV/.github/blob/main/CONTRIBUTING.md) (branching and commit guidelines apply).
@@ -317,7 +317,7 @@ This repository defers to the org-level `SECURITY.md` for vulnerability reportin
 
 ### Tuist Projects Folder
 
-**Purpose**: `Projects/` hosts Tuist-managed targets for cross-platform integration validation (including XCFramework workflows) that exercise swift-bitcoin beyond SPM's capabilities.
+**Purpose**: `Projects/` hosts Tuist-managed targets for cross-platform integration validation (including XCFramework workflows) that exercise swift-bitcoinkernel beyond SPM's capabilities.
 
 **Workflow** (from `Projects/AGENTS.md`):
 
@@ -495,7 +495,7 @@ Changes that affect consensus behavior, node lifecycle, resource safety at the C
 
 ## Appendix: Principle Mapping
 
-This constitution organizes swift-bitcoin-specific concerns on top of the shared sibling canon:
+This constitution organizes swift-bitcoinkernel-specific concerns on top of the shared sibling canon:
 
 - Scope, upstream alignment, runtime-dependency allowlist, local-patches discipline → **Principle I**
 - C++ memory safety, exception handling, resource lifetimes, Swift concurrency → **Principle II**

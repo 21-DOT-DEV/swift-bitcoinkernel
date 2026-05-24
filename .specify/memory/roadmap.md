@@ -1,4 +1,4 @@
-# swift-bitcoin Product Roadmap
+# swift-bitcoinkernel Product Roadmap
 
 **Version**: v2.2.3  
 **Last Updated**: 2026-05-07  

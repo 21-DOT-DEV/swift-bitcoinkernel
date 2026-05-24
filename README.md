@@ -1,19 +1,19 @@
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Apple Platforms](https://github.com/21-DOT-DEV/swift-bitcoin/actions/workflows/apple-builds.yml/badge.svg)](https://github.com/21-DOT-DEV/swift-bitcoin/actions/workflows/apple-builds.yml)
-[![Docker Builds](https://github.com/21-DOT-DEV/swift-bitcoin/actions/workflows/docker-builds.yml/badge.svg)](https://github.com/21-DOT-DEV/swift-bitcoin/actions/workflows/docker-builds.yml)
+[![Apple Platforms](https://github.com/21-DOT-DEV/swift-bitcoinkernel/actions/workflows/apple-builds.yml/badge.svg)](https://github.com/21-DOT-DEV/swift-bitcoinkernel/actions/workflows/apple-builds.yml)
+[![Docker Builds](https://github.com/21-DOT-DEV/swift-bitcoinkernel/actions/workflows/docker-builds.yml/badge.svg)](https://github.com/21-DOT-DEV/swift-bitcoinkernel/actions/workflows/docker-builds.yml)
 
-# ₿ swift-bitcoin
+# ₿ swift-bitcoinkernel
 
-Swift framework for embedding a full Bitcoin node and consensus engine. Typed `async`/`await` JSON-RPC, in-process `bitcoind` lifecycle, and a standalone `BitcoinKernel` consensus-validation product. Uses Swift's [C++ interoperability](https://www.swift.org/documentation/cxx-interop/) with [Bitcoin Core](https://github.com/bitcoin/bitcoin).
+Swift framework for Bitcoin consensus validation, with the option to embed a full Bitcoin node. Ships a standalone `BitcoinKernel` product that wraps `libbitcoinkernel` for consensus rules without a daemon, plus a `Bitcoin` product that runs `bitcoind` in-process with typed `async`/`await` JSON-RPC. Uses Swift's [C++ interoperability](https://www.swift.org/documentation/cxx-interop/) with [Bitcoin Core](https://github.com/bitcoin/bitcoin).
 
-📚 [Bitcoin](https://docs.21.dev/documentation/bitcoin/) · [BitcoinKernel](https://docs.21.dev/documentation/bitcoinkernel/)
+📚 [BitcoinKernel](https://docs.21.dev/documentation/bitcoinkernel/) · [Bitcoin](https://docs.21.dev/documentation/bitcoin/)
 
 > [!CAUTION]
 > This package is pre-1.0 ([SemVer major version zero](https://semver.org/#spec-item-4)). The public API is not stable and may change with any release. Pin a version using `exact:` to avoid unexpected breaking changes. Mainnet operations move real value — test on `regtest` or `signet` first.
 
 ## Contents
 
-- [Why swift-bitcoin?](#why-swift-bitcoin)
+- [Why swift-bitcoinkernel?](#why-swift-bitcoinkernel)
 - [Features](#features)
 - [Installation](#installation)
 - [Package Traits](#package-traits)
@@ -24,16 +24,16 @@ Swift framework for embedding a full Bitcoin node and consensus engine. Typed `a
 - [Security](#security)
 - [License](#license)
 
-## Why swift-bitcoin?
+## Why swift-bitcoinkernel?
 
-Reach for swift-bitcoin when you want Bitcoin Core's reference implementation embedded directly in a Swift binary instead of running `bitcoind` out-of-process: no IPC overhead, single-binary deploy, deterministic regtest fixtures inside the same test runner. This is a *node* layer, not a wallet SDK — pair it with a wallet library, or opt into Bitcoin Core's wallet via the `wallet` package trait. For consumers that need consensus rules without the full daemon (wallets, light clients, block-validation services), the standalone `BitcoinKernel` product wraps `libbitcoinkernel` and links cleanly without dragging in networking, mempool, or RPC.
+Reach for swift-bitcoinkernel when you need Bitcoin Core's consensus rules in a Swift binary without dragging in a full node. The headline `BitcoinKernel` product wraps `libbitcoinkernel` for block/script validation and chainstate management — useful for wallets, light clients, block-validation services, and SDKs that need consensus correctness without networking, mempool, or RPC. Uniquely among Swift packages, the companion `Bitcoin` product also lets you embed the *complete* Bitcoin Core reference implementation directly in-process — no IPC overhead, single-binary deploy, deterministic regtest fixtures inside the same test runner. This is a *node* layer, not a wallet SDK; pair it with a wallet library, or opt into Bitcoin Core's wallet via the `wallet` package trait.
 
 ## Features
 
+- **`BitcoinKernel` standalone product** — wraps `libbitcoinkernel` for consensus validation without the daemon. Includes the `BlockchainSync` API (typed `AsyncSequence<Update>` with KVO-observable `Foundation.Progress`) and the `BlockSource` protocol for plugging in custom block providers (`EsploraBlockSource` ships in-tree). Used by wallets and SDKs that need consensus rules but not a full node.
 - **Embedded daemon** — in-process `bitcoind` lifecycle via `Daemon.start(with:)`, configured with the type-safe `BitcoinConfig` builder (phantom-typed `mainnet()` / `testnet()` / `signet()` / `regtest()` factories with compile-time-checked options).
 - **Typed JSON-RPC** — `RPCClient` with async/await methods covering all 171 [Bitcoin Core v31.0](https://github.com/bitcoin/bitcoin/releases/tag/v31.0) RPCs across 8 categories, decoded into ~90 `Codable` `Sendable` response models.
 - **Pluggable transports** — `DirectTransport` (in-process C bridge), `HTTPTransport` (Basic auth), `CookieTransport` (cookie-file auth), and `AutoTransport` (routes wallet RPCs over HTTP, everything else direct). The `RPCClient(url:username:password:)` initializer wires up `AutoTransport` for you.
-- **`BitcoinKernel` standalone product** — wraps `libbitcoinkernel` for consensus validation without the daemon. Includes the `BlockchainSync` API (typed `AsyncSequence<Update>` with KVO-observable `Foundation.Progress`) and the `BlockSource` protocol for plugging in custom block providers (`EsploraBlockSource` ships in-tree). Used by wallets and SDKs that need consensus rules but not a full node.
 - **Bitcoin Core v31.0 statically vendored** via [subtree](https://github.com/21-DOT-DEV/subtree) — pinned commit, audited patches under `patches/`, no system `bitcoind` dependency at runtime.
 
 ## Installation
@@ -41,22 +41,22 @@ Reach for swift-bitcoin when you want Bitcoin Core's reference implementation em
 Add the package to your `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/21-DOT-DEV/swift-bitcoin.git", from: "0.1.0"),
+.package(url: "https://github.com/21-DOT-DEV/swift-bitcoinkernel.git", from: "0.1.0"),
 ```
 
 > [!WARNING]
 > Pin with `exact:` while the package is pre-1.0 ([SemVer 0.y.z](https://semver.org/#spec-item-4) reserves this range as "anything may change at any time").
 
-Include `Bitcoin` (or `BitcoinKernel`) in your target:
+Include `BitcoinKernel` (or `Bitcoin`) in your target:
 
 ```swift
 .target(name: "<target>", dependencies: [
-    .product(name: "Bitcoin", package: "swift-bitcoin"),
-    // .product(name: "BitcoinKernel", package: "swift-bitcoin"),
+    .product(name: "BitcoinKernel", package: "swift-bitcoinkernel"),
+    // .product(name: "Bitcoin", package: "swift-bitcoinkernel"),
 ]),
 ```
 
-Or use Xcode: **File → Add Packages…**, then enter `https://github.com/21-DOT-DEV/swift-bitcoin`.
+Or use Xcode: **File → Add Packages…**, then enter `https://github.com/21-DOT-DEV/swift-bitcoinkernel`.
 
 ## Package Traits
 
@@ -68,7 +68,7 @@ Opts into Bitcoin Core's wallet functionality. Off by default to keep binary siz
 
 ```swift
 .package(
-    url: "https://github.com/21-DOT-DEV/swift-bitcoin.git",
+    url: "https://github.com/21-DOT-DEV/swift-bitcoinkernel.git",
     from: "0.1.0",
     traits: ["wallet"]
 ),
