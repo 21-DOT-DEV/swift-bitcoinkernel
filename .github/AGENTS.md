@@ -35,6 +35,6 @@ This directory contains GitHub configuration and CI workflows.
 
 - **macOS**: `swift test && swift test --traits wallet`
 - **Linux**: `docker build .`
-- **iOS cross-compile**: `xcrun xcodebuild -skipMacroValidation -skipPackagePluginValidation build -scheme "Bitcoin-Package" -destination generic/platform=iOS`
+- **iOS cross-compile**: `xcrun xcodebuild -skipMacroValidation -skipPackagePluginValidation build -scheme "BitcoinKernel-Package" -destination generic/platform=iOS`
 - **visionOS cross-compile**: same as iOS, substitute `generic/platform=visionOS`
 - **DocC validation**: `swift package generate-documentation --target Bitcoin --analyze --warnings-as-errors` (repeat for `BitcoinKernel`)
