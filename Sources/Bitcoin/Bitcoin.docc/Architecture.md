@@ -10,12 +10,12 @@ Understand how the Bitcoin module embeds Bitcoin Core and bridges Swift to C++.
 
 ### Embedded Daemon Design
 
-The Bitcoin module compiles Bitcoin Core's `bitcoind` entry point as a C++ target (`bitcoind`) and calls it from Swift via C interop. When you call ``Daemon/start(with:)``, the module spawns a dedicated background thread and returns immediately. On that thread, it:
+The Bitcoin module compiles Bitcoin Core's [`bitcoind` entry point](https://github.com/bitcoin/bitcoin/blob/master/src/bitcoind.cpp) as a C++ target and calls it from Swift via C interop. When you call ``Daemon/start(with:)``, the module spawns a dedicated background thread and returns immediately. On that thread, it:
 
 1. **Registers the RPC bridge** -- Calls `bitcoin_rpc_register()` to install a hidden `_bridge_init` RPC command before the RPC server starts.
-2. **Launches bitcoind** -- Calls `bitcoind_main(argc, argv)`, passing the configuration arguments.
+2. **Launches bitcoind** -- Calls `bitcoind_main(argc, argv)`, passing the configuration arguments — the same entry point invoked when you run `bitcoind` from the command line.
 
-The daemon runs until shutdown is signaled (via the `stop` RPC), at which point `bitcoind_main` returns and the completion semaphore is signaled.
+The daemon runs until shutdown is signaled (via the [`stop` RPC](https://developer.bitcoin.org/reference/rpc/stop.html)), at which point `bitcoind_main` returns and the completion semaphore is signaled.
 
 ### Transport Abstraction
 
@@ -42,9 +42,9 @@ The ``RPCTransport`` protocol abstracts how JSON-RPC requests reach Bitcoin Core
             dispatch table
 ```
 
-The ``DirectTransport`` calls `bitcoin_rpc(method, params)` directly -- a C function that dispatches into Bitcoin Core's RPC table and returns JSON as a C string. This avoids HTTP serialization, authentication, and network overhead.
+The ``DirectTransport`` calls `bitcoin_rpc(method, params)` directly -- a C function that dispatches into [Bitcoin Core's RPC server](https://github.com/bitcoin/bitcoin/blob/master/src/rpc/server.cpp) and returns JSON as a C string. This avoids HTTP serialization, authentication, and network overhead. The shape — a single in-process function consuming a method name and JSON parameters — mirrors the in-process IPC pattern used by `libbitcoinkernel` for validation calls.
 
-The ``HTTPTransport`` sends a standard HTTP POST with Basic authentication, which Bitcoin Core's built-in HTTP server handles normally.
+The ``HTTPTransport`` sends a standard HTTP POST with JSON-RPC 1.0 framing and HTTP Basic authentication ([RFC 7617](https://datatracker.ietf.org/doc/html/rfc7617)), which Bitcoin Core's built-in HTTP server handles normally.
 
 ### Auto-Detection
 
@@ -53,9 +53,11 @@ When using `RPCClient(url:username:password:)`, an internal transport checks `bi
 ### Thread Safety
 
 - ``Daemon`` methods are static and use a `DispatchSemaphore` for synchronization.
-- ``RPCClient`` is `Sendable` and safe to use from any task or thread.
+- ``RPCClient`` is `Sendable` and safe to use from any task or thread, following the data-race-safety contract introduced in [SE-0302](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md).
 - Each `send` call creates a fresh `JSONDecoder` to avoid shared mutable state.
 - The `bitcoin_rpc()` C function is internally synchronized by Bitcoin Core's RPC dispatch table.
+
+> Note: Per-call `JSONDecoder` allocation is intentional. The decoder is not `Sendable` in Swift's strict-concurrency model, and re-using one across concurrent tasks would either require an actor hop or undermine the `Sendable` conformance.
 
 ### Configuration Validation
 
@@ -64,3 +66,9 @@ When using `RPCClient(url:username:password:)`, an internal transport checks `bi
 - **Compile-time safety** -- Network-specific options (e.g., `fastPrune`) are only available on the correct network type.
 - **O(1) validation** -- A `ConfigFlags` bitfield tracks which options have been set, enabling conflict detection without re-parsing the argument list.
 - **Immutable builder** -- Each method returns a new value, preventing accidental mutation.
+
+The same approach is used elsewhere in Apple's frameworks where a generic parameter constrains the API surface without runtime overhead — for example, the way `KeyPath` parameterizes root and value types.
+
+### Why these choices
+
+Embedding `bitcoind` in-process (rather than fork-execing) keeps validation, mempool, and wallet state inside the application's address space, which matters for mobile and sandboxed deployments where spawning child processes is restricted or unavailable. The direct transport then becomes the fast path for the common case (a daemon and its client living together), while HTTP transport remains the compatibility path for remote nodes — both paths reach the same dispatch table, so behavior is consistent across both.

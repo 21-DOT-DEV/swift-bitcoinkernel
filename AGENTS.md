@@ -1,4 +1,4 @@
-# AGENTS.md (swift-bitcoin)
+# AGENTS.md (swift-bitcoinkernel)
 
 A Swift 6.3 package wrapping Bitcoin Core for embedded use: daemon lifecycle (`Bitcoin` target) and consensus validation (`BitcoinKernel` target). Supports macOS 15+, iOS 18+ (Tier 1); Linux, tvOS, visionOS (Tier 2 aspirational). Uses Swift C++ interoperability mode and C++20.
 

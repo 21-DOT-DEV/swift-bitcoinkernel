@@ -32,20 +32,18 @@ Establish the build infrastructure and project structure that all subsequent pha
 
 ---
 
-### 1.2 MAIN_FUNCTION Header Fix
+### 1.2 MAIN_FUNCTION Macro Override
 
-**Purpose & User Value**: Replace the lefthook `sed` workaround with a proper C++ header define, eliminating the post-checkout hook and making builds deterministic.
+**Purpose & User Value**: Replace the lefthook `sed` workaround with a build-system-level `MAIN_FUNCTION` macro override, eliminating the post-checkout hook and making builds deterministic.
 
 **Success Metrics**:
-- `Sources/bitcoind/include/swift-bitcoin-config.h` created
-- `MAIN_FUNCTION` defined as `int entry(int argc, char* argv[])`
-- `Package.swift` updated with `-include swift-bitcoin-config.h` flag
-- `lefthook.yml` post-checkout hook removed
+- `Package.swift` defines `MAIN_FUNCTION` as `int bitcoind_main(int argc, char* argv[])` via `.define()` on the `bitcoind` target's `cxxSettings` (`Package.swift:167`)
+- `lefthook.yml` deleted from repo root
 - Build succeeds without manual intervention
 
 **Dependencies**: 1.1 Subtree Migration
 
-**Status**: COMPLETE
+**Status**: COMPLETE (commit `d77c9646edd` — *Replaced sed-based bitcoind.cpp generation with MAIN_FUNCTION macro override*; the renamed function `entry` → `bitcoind_main` followed in a later commit)
 
 ---
 

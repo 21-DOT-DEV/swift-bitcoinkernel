@@ -1,6 +1,6 @@
 //
 //  RPCError.swift
-//  21-DOT-DEV/swift-bitcoin
+//  21-DOT-DEV/swift-bitcoinkernel
 //
 //  Copyright (c) 2024-2026 Timechain Software Initiative, Inc.
 //  Distributed under the MIT software license
@@ -23,6 +23,12 @@ public struct RPCError: Error, Decodable, Sendable, Equatable, CustomStringConve
     /// Additional error data. Almost never present in Bitcoin Core errors.
     public let data: String?
 
+    /// Creates an `RPCError`.
+    ///
+    /// - Parameters:
+    ///   - code: The JSON-RPC error code (e.g., `-32601` for "Method not found").
+    ///   - message: A short description of the error.
+    ///   - data: Additional error data. Defaults to `nil`; almost never present in Bitcoin Core errors.
     public init(code: Int, message: String, data: String? = nil) {
         self.code = code
         self.message = message

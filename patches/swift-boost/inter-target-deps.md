@@ -14,7 +14,7 @@ targets: boostModules.map { .target(name: $0) }
 
 When a consumer depends on just `multi_index`, SPM only provides that target's headers. But `multi_index`'s headers `#include` from `config`, `core`, `preprocessor`, etc. — causing "file not found" errors.
 
-Consumers must work around this by listing all transitive dependencies manually. For example, swift-bitcoin needs 27 of 35 modules just because `multi_index` and `signals2` transitively include them.
+Consumers must work around this by listing all transitive dependencies manually. For example, swift-bitcoinkernel needs 27 of 35 modules just because `multi_index` and `signals2` transitively include them.
 
 ## Solution
 
@@ -137,7 +137,7 @@ Keep individual targets but use `cxxSettings: [.headerSearchPath(...)]` for the 
 
 ## Consumer Impact
 
-After this fix, swift-bitcoin's `Package.swift` simplifies from 27 explicit modules to just 2:
+After this fix, swift-bitcoinkernel's `Package.swift` simplifies from 27 explicit modules to just 2:
 
 ```swift
 // Before (workaround):

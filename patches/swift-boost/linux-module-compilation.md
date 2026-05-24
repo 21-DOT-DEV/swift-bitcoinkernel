@@ -1,7 +1,7 @@
 # swift-boost: Linux Module Compilation Fix
 
 **Date**: 2026-05-08 (initial); 2026-05-11 (resolved upstream)
-**Status**: ✅ Resolved — `pruned-umbrella-1.90.0` ships `requires !cplusplus` modulemaps in each target's `include/` directory. swift-bitcoin pins that tag and no longer injects module maps for swift-boost paths. The Linux Dockerfile workaround has been retired entirely; the equivalent stubs for swift-bitcoin's local C/C++ targets are now committed in-tree (see [Non-patch custom files](../README.md#non-patch-custom-files)).
+**Status**: ✅ Resolved — `pruned-umbrella-1.90.0` ships `requires !cplusplus` modulemaps in each target's `include/` directory. swift-bitcoinkernel pins that tag and no longer injects module maps for swift-boost paths. The Linux Dockerfile workaround has been retired entirely; the equivalent stubs for swift-bitcoinkernel's local C/C++ targets are now committed in-tree (see [Non-patch custom files](../README.md#non-patch-custom-files)).
 **Repo**: https://github.com/21-DOT-DEV/swift-boost
 
 ## Problem
@@ -48,7 +48,7 @@ module multi_index {
 
 Option B is simpler and more reliable. Boost is header-only; there's no benefit to compiling it as Clang modules.
 
-### Current workaround (swift-bitcoin Dockerfile)
+### Current workaround (swift-bitcoinkernel Dockerfile)
 
 Aggregate all boost headers into a module-free include directory after dependency resolution:
 

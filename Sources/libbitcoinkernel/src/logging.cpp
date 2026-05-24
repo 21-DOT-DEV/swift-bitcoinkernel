@@ -101,7 +101,7 @@ void BCLog::Logger::DisconnectTestLogger()
     m_buffering = true;
     if (m_fileout != nullptr) fclose(m_fileout);
     m_fileout = nullptr;
-    m_print_to_file = false;  // swift-bitcoin: prevent assertion during teardown when background threads log after disconnect
+    m_print_to_file = false;  // swift-bitcoinkernel: prevent assertion during teardown when background threads log after disconnect
     m_print_callbacks.clear();
     m_max_buffer_memusage = DEFAULT_MAX_LOG_BUFFER;
     m_cur_buffer_memusage = 0;

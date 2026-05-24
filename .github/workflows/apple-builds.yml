@@ -33,7 +33,7 @@ jobs:
     permissions:
       contents: read
     env:
-      SCHEME: Bitcoin-Package
+      SCHEME: BitcoinKernel-Package
       DEVELOPER_DIR: "/Applications/Xcode_26.4.app/Contents/Developer"
     steps:
       - uses: actions/checkout@v6
@@ -52,7 +52,7 @@ jobs:
     permissions:
       contents: read
     env:
-      SCHEME: Bitcoin-Package
+      SCHEME: BitcoinKernel-Package
       DEVELOPER_DIR: "/Applications/Xcode_26.4.app/Contents/Developer"
     steps:
       - uses: actions/checkout@v6

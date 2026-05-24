@@ -11,9 +11,9 @@ Vulnerabilities in the embedded Bitcoin Core sources under `Vendor/bitcoin/` and
 - See the [Bitcoin Core security reporting process](https://bitcoincore.org/en/contact/) (PGP-encrypted email to the security maintainers listed there).
 - For consensus-affecting bugs, follow the upstream [responsible disclosure guidelines](https://bitcoincore.org/en/security-advisories/) before any public discussion.
 
-### swift-bitcoin Swift wrapper
+### swift-bitcoinkernel Swift wrapper
 
-Vulnerabilities specific to this package's Swift code — `RPCClient`, `Daemon`, `BitcoinConfig`, `BlockchainSync`, `BlockSource`, the `RPCTransport` family, and the response-model types under `Bitcoin/Models/` — should be reported via [GitHub Security Advisories](https://github.com/21-DOT-DEV/swift-bitcoin/security/advisories).
+Vulnerabilities specific to this package's Swift code — `RPCClient`, `Daemon`, `BitcoinConfig`, `BlockchainSync`, `BlockSource`, the `RPCTransport` family, and the response-model types under `Bitcoin/Models/` — should be reported via [GitHub Security Advisories](https://github.com/21-DOT-DEV/swift-bitcoinkernel/security/advisories).
 
 **Do not file a public issue.**
 
@@ -54,7 +54,7 @@ This package is pre-1.0 ([SemVer major version zero](https://semver.org/#spec-it
 
 ## Threat Model & Responsible Use
 
-swift-bitcoin runs Bitcoin Core in-process via `bitcoind` and links `libbitcoinkernel` for consensus validation. This has important implications:
+swift-bitcoinkernel runs Bitcoin Core in-process via `bitcoind` and links `libbitcoinkernel` for consensus validation. This has important implications:
 
 - **Mainnet operations move real value.** Test on `regtest` or `signet` before pointing the daemon at mainnet, especially when integrating new code paths or upgrading versions.
 - **Never log sensitive material.** Wallet seed phrases, BIP32 extended private keys, descriptor secrets, RPC cookies, and `bitcoin.conf` `rpcpassword=` lines must stay out of logs, crash reports, and analytics.

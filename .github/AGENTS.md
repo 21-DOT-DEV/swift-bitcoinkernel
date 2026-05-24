@@ -23,7 +23,7 @@ This directory contains GitHub configuration and CI workflows.
 - **Least-privilege pattern for private repos**: set `permissions: {}` at the **workflow** level (deny-by-default baseline for any job that omits its own block) and grant the **minimum** each job needs at the job level. For `actions/checkout` against a private repo, that minimum is `contents: read`. A bare `permissions: {}` at the job level strips `contents: read` and causes `actions/checkout` to fail with a 404 "repository not found" error on private repos.
 - Workflows use `env:` blocks for context values — no inline `${{ }}` interpolation in `run:` scripts.
 - Avoid fragile shell output capture for UTF-8 / multiline content; prefer temp files and tools like `jq` reading from files.
-- Unlike sibling repos, swift-bitcoin does NOT use `Context.gitInformation?.currentTag` to gate dev dependencies. `swift-docc-plugin` is always resolvable without tag deletion.
+- swift-bitcoinkernel gates dev plugins (`swift-plugin-tuist`, `swift-plugin-subtree`, `swift-docc-plugin`) behind `Context.gitInformation?.currentTag` — see `Package.Dependency.developmentDependencies` in `Package.swift`, which returns an empty array when the package is resolved at a tagged ref. Consumers of tagged releases don't download dev tooling. Workflows that need those plugins (e.g. `docc-release.yml` invoking `swift package generate-documentation`) currently check out at the release tag, which excludes the plugin; if DocC generation regresses at tag time, this is the likely cause and the workaround is to delete the local tag before running the plugin, or to pin the plugin outside `developmentDependencies`.
 
 ## Gotchas
 
@@ -35,6 +35,6 @@ This directory contains GitHub configuration and CI workflows.
 
 - **macOS**: `swift test && swift test --traits wallet`
 - **Linux**: `docker build .`
-- **iOS cross-compile**: `xcrun xcodebuild -skipMacroValidation -skipPackagePluginValidation build -scheme "Bitcoin-Package" -destination generic/platform=iOS`
+- **iOS cross-compile**: `xcrun xcodebuild -skipMacroValidation -skipPackagePluginValidation build -scheme "BitcoinKernel-Package" -destination generic/platform=iOS`
 - **visionOS cross-compile**: same as iOS, substitute `generic/platform=visionOS`
 - **DocC validation**: `swift package generate-documentation --target Bitcoin --analyze --warnings-as-errors` (repeat for `BitcoinKernel`)

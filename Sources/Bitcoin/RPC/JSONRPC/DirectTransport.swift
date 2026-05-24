@@ -1,6 +1,6 @@
 //
 //  DirectTransport.swift
-//  21-DOT-DEV/swift-bitcoin
+//  21-DOT-DEV/swift-bitcoinkernel
 //
 //  Copyright (c) 2024-2026 Timechain Software Initiative, Inc.
 //  Distributed under the MIT software license
@@ -45,6 +45,9 @@ public struct DirectTransport: RPCTransport {
     /// synchronous C call cannot be cancelled) and frees its memory on return.
     public var timeout: TimeInterval
 
+    /// Creates a direct transport that calls `bitcoin_rpc()` in-process.
+    ///
+    /// - Parameter timeout: Maximum seconds to wait for the blocking `bitcoin_rpc()` call before resuming with `URLError(.timedOut)`. Defaults to `30`, matching Bitcoin Core's `-rpcservertimeout`.
     public init(timeout: TimeInterval = 30) {
         self.timeout = timeout
     }

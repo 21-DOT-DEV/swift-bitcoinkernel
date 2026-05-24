@@ -1,6 +1,6 @@
 //
 //  EsploraAPI.swift
-//  21-DOT-DEV/swift-bitcoin
+//  21-DOT-DEV/swift-bitcoinkernel
 //
 //  Copyright (c) 2024-2026 Timechain Software Initiative, Inc.
 //  Distributed under the MIT software license
@@ -116,7 +116,7 @@ public extension URL {
     /// `https://mempool.space/signet/api` — mempool.space
     /// [signet](https://github.com/bitcoin/bips/blob/master/bip-0325.mediawiki).
     ///
-    /// The recommended real-network sync target for swift-bitcoin today.
+    /// The recommended real-network sync target for swift-bitcoinkernel today.
     /// Signet is small (~50 MB at typical tip height) and produces
     /// predictable, uncontentious blocks.
     static let mempoolSpaceSignet = URL(string: "https://mempool.space/signet/api")!

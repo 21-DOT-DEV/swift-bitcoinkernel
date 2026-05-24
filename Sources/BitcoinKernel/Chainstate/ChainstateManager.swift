@@ -1,6 +1,6 @@
 //
 //  ChainstateManager.swift
-//  21-DOT-DEV/swift-bitcoin
+//  21-DOT-DEV/swift-bitcoinkernel
 //
 //  Copyright (c) 2024-2026 Timechain Software Initiative, Inc.
 //  Distributed under the MIT software license
@@ -56,7 +56,7 @@ public final class ChainstateManager: @unchecked Sendable {
     /// best header — currently observable only after a `(true, true)` wipe
     /// before genesis is re-loaded. See
     /// `upstream-issues/bitcoin/chainstate-get-best-entry-null-after-wipe.md`
-    /// in the swift-bitcoin repo. The trap converts what would otherwise
+    /// in the swift-bitcoinkernel repo. The trap converts what would otherwise
     /// be a SIGSEGV inside `btck_block_tree_entry_get_height` into a
     /// diagnosable Swift fatal error.
     public var bestEntry: BlockTreeEntry {

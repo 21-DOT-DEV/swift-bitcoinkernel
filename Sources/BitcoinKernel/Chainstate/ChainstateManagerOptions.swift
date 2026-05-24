@@ -1,6 +1,6 @@
 //
 //  ChainstateManagerOptions.swift
-//  21-DOT-DEV/swift-bitcoin
+//  21-DOT-DEV/swift-bitcoinkernel
 //
 //  Copyright (c) 2024-2026 Timechain Software Initiative, Inc.
 //  Distributed under the MIT software license
@@ -92,7 +92,7 @@ public final class ChainstateManagerOptions: @unchecked Sendable {
 
     /// Keeps the block-index database in RAM instead of on disk.
     ///
-    /// Used by swift-bitcoin's test suite — see the regtest chainstate
+    /// Used by swift-bitcoinkernel's test suite — see the regtest chainstate
     /// fixtures in `ChainstateManagerTests`. In production, leave disabled
     /// so the index survives process restart.
     ///
