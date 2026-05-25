@@ -4,13 +4,15 @@
     @TitleHeading("Framework")
 }
 
-BitcoinKernel is a Swift library wrapping Bitcoin Core's `libbitcoinkernel` C API for block validation, chainstate management, chain sync, and script verification on macOS and Linux.
+BitcoinKernel is a Swift library wrapping Bitcoin Core's [`libbitcoinkernel`][bitcoin-kernel] C API for block validation, chainstate management, chain sync, and script verification on iOS, iPadOS, macOS, and Linux.
 
 ## Overview
 
-BitcoinKernel wraps Bitcoin Core's [`libbitcoinkernel`](https://github.com/bitcoin/bitcoin/tree/master/src/kernel) behind a type-safe Swift API. Every opaque C handle is owned by a Swift `class` whose `deinit` calls the matching `btck_*_destroy`, so memory management is invisible to callers — no manual cleanup, no `OpaquePointer` in public signatures. The module also ships a sync engine (``BlockchainSync``) that drives a ``ChainstateManager`` from any ``BlockSource`` while emitting typed [`AsyncSequence`](https://developer.apple.com/documentation/swift/asyncsequence) progress, per the Swift Concurrency model introduced in [SE-0298](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0298-asyncsequence.md).
+The BitcoinKernel module wraps Bitcoin Core's [`libbitcoinkernel`][bitcoin-kernel] behind a type-safe Swift API designed to match the style of Apple's [`swift-crypto`][swift-crypto] framework. It surfaces the consensus-validation engine extracted from Bitcoin Core's [`src/kernel`][bitcoin-kernel] subtree — block validation, chainstate management, chain sync, and script verification — with the network, wallet, and GUI subsystems excluded by design.
 
-The package is part of the [21-DOT-DEV](https://github.com/21-DOT-DEV) Swift Bitcoin ecosystem alongside [swift-tor](https://github.com/21-DOT-DEV/swift-tor) (embedded Tor for privacy-routed sync), [swift-event](https://github.com/21-DOT-DEV/swift-event) (async TCP sockets, a future P2P block-source substrate), and [swift-openssl](https://github.com/21-DOT-DEV/swift-openssl) (TLS/crypto).
+Every opaque C handle is owned by a Swift `class` whose `deinit` calls the matching `btck_*_destroy`, so memory management is invisible to callers — no manual cleanup, no `OpaquePointer` in public signatures. The module also ships a sync engine (``BlockchainSync``) that drives a ``ChainstateManager`` from any ``BlockSource`` while emitting typed [`AsyncSequence`][async-sequence] progress, per the Swift Concurrency model introduced in [SE-0298][se-0298].
+
+The package is part of the [21-DOT-DEV][21dotdev] Swift Bitcoin ecosystem alongside [swift-tor][swift-tor] (embedded Tor for privacy-routed sync), [swift-event][swift-event] (async TCP sockets, a future P2P block-source substrate), and [swift-openssl][swift-openssl] (TLS/crypto).
 
 ```swift
 import BitcoinKernel
@@ -23,20 +25,13 @@ let context = try Context(options: options)
 
 ### Where to start
 
-New to BitcoinKernel? Start with <doc:GettingStarted> for a task-oriented walkthrough of context and chainstate setup. To drive a real sync from an HTTP block source, read <doc:Sync>. For block- and script-validation recipes, see <doc:ValidatingBlocks> and <doc:VerifyingScripts>. The ARC-based ownership model that underpins every type is explained in <doc:MemoryManagement>.
+Shipping `BitcoinKernel` inside an iPhone, iPad, or Apple Silicon Mac app? <doc:EmbeddingOnIOS> walks through the SwiftPM target topology, the sandbox-friendly data-directory placement, the cross-compile invocation, and the iOS-specific caveats that determine whether your app survives App Store review.
 
 ## Topics
 
 ### Guides
 
-- <doc:GettingStarted>
-- <doc:Sync>
-- <doc:ValidatingBlocks>
-- <doc:VerifyingScripts>
-
-### Concepts
-
-- <doc:MemoryManagement>
+- <doc:EmbeddingOnIOS>
 
 ### Essentials
 
@@ -104,3 +99,12 @@ New to BitcoinKernel? Start with <doc:GettingStarted> for a task-oriented walkth
 - ``LoggingConnection``
 - ``LogCategory``
 - ``LogLevel``
+
+[21dotdev]: https://github.com/21-DOT-DEV
+[async-sequence]: https://developer.apple.com/documentation/swift/asyncsequence
+[bitcoin-kernel]: https://github.com/bitcoin/bitcoin/tree/master/src/kernel
+[se-0298]: https://github.com/swiftlang/swift-evolution/blob/main/proposals/0298-asyncsequence.md
+[swift-crypto]: https://github.com/apple/swift-crypto
+[swift-event]: https://github.com/21-DOT-DEV/swift-event
+[swift-openssl]: https://github.com/21-DOT-DEV/swift-openssl
+[swift-tor]: https://github.com/21-DOT-DEV/swift-tor

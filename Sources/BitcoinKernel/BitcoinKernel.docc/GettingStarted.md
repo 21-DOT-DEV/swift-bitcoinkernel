@@ -1,94 +1,80 @@
 # Getting Started with BitcoinKernel
 
 @Metadata {
-    @TitleHeading("Tutorial")
+    @TitleHeading("How-To Guide")
+    @Available(iOS, introduced: "18.0")
+    @Available(macOS, introduced: "15.0")
 }
 
-Set up a ``Context``, configure chain parameters, initialize a ``ChainstateManager``, and read the active chain — a task-oriented walkthrough with working code for every step.
+Install `BitcoinKernel` via Swift Package Manager and boot Bitcoin Core's consensus-validation engine inside your own Swift process on macOS 15+, iOS 18+, iPadOS 18+, or Linux — ending with a running ``ChainstateManager`` pinned to the regtest genesis in a throwaway temporary directory.
 
-## Prerequisites
+## Overview
 
-You need a Swift 6.0+ toolchain and ~50 MB of free disk space for a regtest data directory (signet needs ~50 MB initially; mainnet needs ~600 GB and isn't a practical target for a quickstart). Install Swift from [swift.org](https://www.swift.org/install/) or via Xcode.
+**Key facts.** Swift 6.3 toolchain · macOS 15+ · iOS 18+ · iPadOS 18+ · Linux · Regtest first-run · Single SwiftPM dependency.
 
-> Checkpoint: Run `swift --version` and confirm it reports 6.0 or later.
+`BitcoinKernel` wraps Bitcoin Core's [`libbitcoinkernel`][bitcoin-kernel] — the consensus-validation engine extracted from [`src/kernel`][bitcoin-kernel] with the network, wallet, and GUI subsystems excluded by design — behind a type-safe Swift API. This article walks from an empty SwiftPM project to a live engine: install the dependency, build three objects (``Context``, ``ChainstateManagerOptions``, ``ChainstateManager``), and confirm the engine has located its tip.
 
-## Step 1: Create a Context
+### Prerequisites
 
-Every operation in BitcoinKernel starts with a ``Context``, a Swift wrapper around Bitcoin Core's [`libbitcoinkernel`](https://github.com/bitcoin/bitcoin/tree/master/src/kernel) `btck_Context`. The context holds chain parameters (selected from ``ChainType`` — mainnet, testnet, testnet4, signet, regtest, matching Bitcoin Core's [`chainparams.cpp`](https://github.com/bitcoin/bitcoin/blob/master/src/kernel/chainparams.cpp)) and optional notification callbacks. Create one by configuring ``ContextOptions``:
+- Swift 6.3 toolchain (Xcode 26.4 or later on Apple platforms; matching `swift-tools-version` on Linux), so the package resolves cleanly.
+- A deployment target on macOS 15.0+, iOS 18.0+, iPadOS 18.0+, or a Linux distribution with a current Swift toolchain.
+- Under 50 MB of free disk space — the regtest data directory this article creates is tiny and lives in your system's temporary directory.
 
-```swift
-import BitcoinKernel
+### Add BitcoinKernel with Swift Package Manager
 
-let params = ChainParameters(.regtest)
-let options = ContextOptions()
-options.setChainParams(params)
-let context = try Context(options: options)
-```
+Add the package, then depend on the `BitcoinKernel` product from your target:
 
-The context is thread-safe and can be shared across multiple threads.
-
-> Checkpoint: The `try Context(options:)` call returns without throwing. If it throws ``KernelError``, the most common cause is missing chain parameters — `setChainParams(_:)` must run before `Context(options:)`.
-
-## Step 2: Set up notification callbacks
-
-To receive updates about new blocks and chain tips, configure ``NotificationCallbacks`` before creating the context. These map to Bitcoin Core's [`KernelNotifications`](https://github.com/bitcoin/bitcoin/blob/master/src/kernel/notifications_interface.h) callback interface:
+> Important: This package is currently pre-1.0. Track `main` until a stable tag ships, then pin with `.upToNextMajor(from:)` so a `swift package update` cannot break your build at an unmarked boundary.
 
 ```swift
-let notifications = NotificationCallbacks(
-    blockTip: { state, entry, progress in
-        print("New tip at height \(entry.height)")
-    },
-    headerTip: { state, height, timestamp, presync in
-        print("Header tip: \(height)")
-    }
-)
-options.setNotifications(notifications)
+// Package.swift
+dependencies: [
+    .package(
+        url: "https://github.com/21-DOT-DEV/swift-bitcoinkernel.git",
+        branch: "main"
+    ),
+],
+targets: [
+    .target(
+        name: "MyBitcoinApp",
+        dependencies: [
+            .product(name: "BitcoinKernel", package: "swift-bitcoinkernel"),
+        ]
+    ),
+]
 ```
 
-> Checkpoint: When you later process blocks, you should see "New tip at height N" log output from the closure. If nothing fires, confirm `setNotifications(_:)` ran *before* `Context(options:)` — callbacks attached after context creation are ignored.
+The first build compiles `libbitcoinkernel` and its C/C++ dependencies from source for your destination's triple — several minutes on a cold cache, seconds for incremental rebuilds. The Xcode equivalent is **File → Add Package Dependencies…**; both routes resolve to the same `Package.resolved`.
 
-## Step 3: Initialize a chainstate manager
+### Boot the validating engine
 
-The ``ChainstateManager`` handles block storage and validation. It requires a data directory for the block index and chainstate databases — typically placed inside [Apple's Application Support directory](https://developer.apple.com/library/archive/documentation/FileManagement/Conceptual/FileSystemProgrammingGuide/FileSystemOverview/FileSystemOverview.html) on macOS/iOS (set `isExcludedFromBackup = true`, since chainstate is reproducible from network):
+Three objects, constructed in fixed order, get a regtest consensus engine running in a throwaway temporary directory. This is `Snippets/BootValidatingEngine.swift` in the package, compile-checked on every `swift build`:
 
-```swift
-let managerOptions = try ChainstateManagerOptions(
-    context: context,
-    dataDirectory: "/tmp/bitcoin-kernel",
-    blocksDirectory: "/tmp/bitcoin-kernel/blocks"
-)
-let manager = try ChainstateManager(options: managerOptions)
-```
+@Snippet(path: "BitcoinKernel/Snippets/BootValidatingEngine")
 
-For testing, you can use in-memory databases:
+A ``Context`` carries the chain parameters and the interrupt handle every validation operation reads from; a ``ChainstateManagerOptions`` binds that context to a writable data directory; a ``ChainstateManager`` opens the block-index and chainstate LevelDB stores under that directory, replays any existing state, and exposes the chain tip via ``ChainstateManager/bestEntry``. On a fresh regtest data directory the kernel writes the embedded regtest genesis block and nothing else, so `bestEntry.height` returning `0` proves the engine opened both LevelDB stores, loaded the chain parameters, and now knows where its tip is — anything other than `0` against a fresh regtest directory indicates a partial boot.
 
-```swift
-managerOptions.setBlockTreeDBInMemory(true)
-managerOptions.setChainstateDBInMemory(true)
-```
+### Where to go next
 
-> Checkpoint: After `try ChainstateManager(options:)`, your data directory contains a `blocks/` subdirectory and a `chainstate/` LevelDB store (unless you set both DBs in-memory). The first launch on a fresh directory initializes the genesis entry.
+The snippet above uses a disposable temp directory and stops at the regtest genesis on purpose, so the article you read next depends on what you're adding:
 
-## Step 4: Read the active chain
-
-Once the chainstate manager is initialized, you can query the active chain:
-
-```swift
-let chain = manager.activeChain
-let tip = manager.bestEntry
-print("Chain height: \(chain.height)")
-print("Best block height: \(tip.height)")
-```
-
-> Checkpoint: On a freshly initialized regtest data directory, both heights print as `0` — the genesis block. After running a sync (see <doc:Sync>) the values advance as blocks connect.
-
-## Next steps
-
-Drive a real sync with <doc:Sync>, validate blocks end-to-end with <doc:ValidatingBlocks>, or study the ownership model in <doc:MemoryManagement>.
+- **Shipping inside an iPhone, iPad, or Apple Silicon Mac app.** <doc:EmbeddingOnIOS> covers the production data-directory layout (Application Support, backup exclusion), the SwiftUI `App` init pattern, background-task budgets for chain sync, and the App Store encryption-export self-classification.
+- **Driving a real chain sync.** The ``BlockchainSync`` engine pulls blocks from any ``BlockSource`` conformer and feeds them into the manager you just built. The shipped ``EsploraBlockSource`` covers HTTP-served Esplora endpoints; that pair gets you from regtest genesis to a synced signet or mainnet tip with progress as a typed [`AsyncSequence`][async-sequence].
+- **Talking to a running Bitcoin Core daemon over RPC instead.** The package's sibling `Bitcoin` product embeds the full `bitcoind` and exposes a typed RPC client — a different mental model than the kernel-only approach this article takes.
 
 ## See Also
 
-- <doc:Sync>
-- <doc:ValidatingBlocks>
-- <doc:VerifyingScripts>
-- <doc:MemoryManagement>
+- ``Context``
+- ``ChainstateManager``
+- ``ChainstateManagerOptions``
+- ``BlockchainSync``
+- ``EsploraBlockSource``
+- <doc:EmbeddingOnIOS>
+- [Bitcoin Core `src/kernel`][bitcoin-kernel]
+- [Wrapping a C/C++ Library in Swift — Swift.org][wrapping-c-cpp]
+- [`FileManager.temporaryDirectory` — Apple][file-manager-temp]
+
+[async-sequence]: https://developer.apple.com/documentation/swift/asyncsequence
+[bitcoin-kernel]: https://github.com/bitcoin/bitcoin/tree/master/src/kernel
+[file-manager-temp]: https://developer.apple.com/documentation/foundation/filemanager/temporarydirectory
+[wrapping-c-cpp]: https://www.swift.org/documentation/articles/wrapping-c-cpp-library-in-swift.html

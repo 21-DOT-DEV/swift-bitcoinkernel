@@ -57,7 +57,6 @@ print("Chain: \(info.chain), Height: \(info.blocks)")
 
 ### Transport Layer
 
-- <doc:ChoosingAnRPCTransport>
 - ``RPCTransport``
 - ``WalletCapableTransport``
 - ``HTTPTransport``
@@ -70,7 +69,6 @@ print("Chain: \(info.chain), Height: \(info.blocks)")
 
 ### Configuration
 
-- <doc:ConfiguringBitcoinCore>
 - ``BitcoinConfig``
 - ``BitcoinNetwork``
 - ``Mainnet``
@@ -95,15 +93,6 @@ print("Chain: \(info.chain), Height: \(info.blocks)")
 
 - ``ConfigError``
 - ``ConfigWarning``
-
-### Architecture Reference
-
-- <doc:Architecture>
-
-### RPC Response Decoding
-
-- <doc:DecodingRPCResponses>
-- <doc:UnitConventions>
 
 ### Response Models — Blockchain
 

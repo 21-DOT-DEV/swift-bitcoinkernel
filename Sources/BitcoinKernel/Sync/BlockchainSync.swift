@@ -162,7 +162,7 @@ public struct BlockchainSync: Sendable {
         /// Lifecycle phase of a sync run. Mirrors Bitcoin Core's
         /// [`SynchronizationState`](https://github.com/bitcoin/bitcoin/blob/master/src/validationinterface.h)
         /// conceptually while remaining a distinct Swift type — see
-        /// <doc:Sync#State-enum-disambiguation>.
+        /// ``SynchronizationState`` for how the two enums differ.
         ///
         /// A sync run produces exactly one emission per state transition:
         /// exactly one ``preparing``, zero or more ``syncing``, and exactly
