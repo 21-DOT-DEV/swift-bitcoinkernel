@@ -10,8 +10,7 @@
 /// — they solve different problems. `SynchronizationState` is the
 /// kernel's internal IBD-or-not flag (relevant to notification callback
 /// consumers); `BlockchainSync.Update.State` is the sync engine's own
-/// lifecycle enum (relevant to sync-sequence consumers). See
-/// <doc:Sync#State-enum-disambiguation>.
+/// lifecycle enum (relevant to sync-sequence consumers).
 ///
 /// Maps to `btck_SynchronizationState` constants in the kernel C API.
 public enum SynchronizationState: UInt8, Sendable, CaseIterable, Codable, CustomStringConvertible {

@@ -1,8 +1,8 @@
 /// Flags controlling which BIP-governed consensus rules apply during
 /// script verification.
 ///
-/// Each flag maps to a specific BIP — see the table in <doc:VerifyingScripts>
-/// for citations. Compose using `OptionSet` syntax:
+/// Each flag maps to a specific BIP — see the individual flag
+/// documentation below for citations. Compose using `OptionSet` syntax:
 /// `[.p2sh, .witness, .taproot]`. Use ``all`` for full mainnet-equivalent
 /// verification; leave flags off to simulate validation under older
 /// consensus rules (useful for testing pre-activation blocks).

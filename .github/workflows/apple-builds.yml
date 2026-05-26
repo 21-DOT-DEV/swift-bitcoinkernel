@@ -10,8 +10,14 @@ permissions: {}
 
 jobs:
   macos:
-    name: macOS
+    name: macOS (${{ matrix.name }})
     runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: default, traits: "" }
+          - { name: wallet,  traits: "wallet" }
     permissions:
       contents: read
     env:
@@ -19,12 +25,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Build and test
-        run: swift test
-      - name: Build and test (wallet trait)
-        run: swift test --traits wallet
+        run: swift test ${{ matrix.traits && format('--traits {0}', matrix.traits) || '' }}
       - name: Validate DocC catalog (Bitcoin)
+        if: matrix.name == 'default'
         run: swift package generate-documentation --target Bitcoin --analyze --warnings-as-errors
       - name: Validate DocC catalog (BitcoinKernel)
+        if: matrix.name == 'default'
         run: swift package generate-documentation --target BitcoinKernel --analyze --warnings-as-errors
 
   ios:

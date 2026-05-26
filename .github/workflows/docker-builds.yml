@@ -10,11 +10,17 @@ permissions: {}
 
 jobs:
   linux:
-    name: Linux
+    name: Linux (${{ matrix.name }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: default, traits: "" }
+          - { name: wallet,  traits: "wallet" }
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v6
       - name: Build and test
-        run: docker build .
+        run: docker build --build-arg TRAITS=${{ matrix.traits }} .

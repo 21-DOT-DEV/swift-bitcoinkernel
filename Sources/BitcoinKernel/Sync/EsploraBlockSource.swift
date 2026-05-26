@@ -62,7 +62,7 @@ public struct EsploraBlockSource: BlockSource {
     ///     which network to trust is an explicit caller decision.
     ///   - urlSession: The `URLSession` used for HTTP requests. Defaults to
     ///     `.shared`. Pass a session with a SOCKS5-proxied configuration to
-    ///     route sync through Tor — see <doc:Sync#Routing-through-Tor>.
+    ///     route sync through Tor.
     ///   - minimumInterRequestDelay: Minimum time between the start of
     ///     consecutive requests. Defaults to 100 ms, which keeps mempool.space
     ///     and blockstream.info well below their public rate limits.
