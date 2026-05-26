@@ -1,3 +1,13 @@
+//
+//  BootValidatingEngine.swift
+//  21-DOT-DEV/swift-bitcoinkernel
+//
+//  Copyright (c) 2026-present Timechain Software Initiative, Inc.
+//  Distributed under the MIT software license
+//
+//  See the accompanying file LICENSE for information
+//
+
 // Boot Bitcoin Core's consensus-validation engine into a fresh regtest data
 // directory and confirm the chainstate has loaded by reading the tip height.
 

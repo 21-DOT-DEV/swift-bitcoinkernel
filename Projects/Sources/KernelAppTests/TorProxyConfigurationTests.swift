@@ -1,7 +1,13 @@
 //
 //  TorProxyConfigurationTests.swift
-//  21-DOT-DEV/Bitcoin
+//  21-DOT-DEV/swift-bitcoinkernel
 //
+//  Copyright (c) 2022-present Timechain Software Initiative, Inc.
+//  Distributed under the MIT software license
+//
+//  See the accompanying file LICENSE for information
+//
+
 //  Verifies the `URLSessionConfiguration.ephemeralProxyConfigurationForTor(socksEndpoint:)`
 //  helper attaches a proxy configuration to an otherwise clean session.
 //  The modern `ProxyConfiguration` struct is intentionally opaque — its
@@ -10,12 +16,6 @@
 //  to a URLSessionConfiguration? Round-trip through the factory in
 //  `KernelAppViewModelTorTests` exercises the end-to-end `HostPort`
 //  plumbing.
-//
-//  Copyright (c) 2022 21 Development Innovations LLC
-//  Distributed under the MIT software license
-//
-//  See the accompanying file LICENSE for information
-//
 
 import Foundation
 import Testing

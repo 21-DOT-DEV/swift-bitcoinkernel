@@ -1,17 +1,17 @@
 //
 //  KernelApp.swift
-//  21-DOT-DEV/Bitcoin
+//  21-DOT-DEV/swift-bitcoinkernel
 //
-//  App entry point. Owns the root view model, settings, and Tor view
-//  model at App scope so the tab subtree re-subscribes to the same
-//  instances across scene activations. Platform-specific window-frame
-//  preferences live here.
-//
-//  Copyright (c) 2022 21 Development Innovations LLC
+//  Copyright (c) 2022-present Timechain Software Initiative, Inc.
 //  Distributed under the MIT software license
 //
 //  See the accompanying file LICENSE for information
 //
+
+//  App entry point. Owns the root view model, settings, and Tor view
+//  model at App scope so the tab subtree re-subscribes to the same
+//  instances across scene activations. Platform-specific window-frame
+//  preferences live here.
 
 import SwiftUI
 

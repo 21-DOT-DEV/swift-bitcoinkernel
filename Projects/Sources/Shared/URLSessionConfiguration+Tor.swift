@@ -1,7 +1,13 @@
 //
 //  URLSessionConfiguration+Tor.swift
-//  21-DOT-DEV/Bitcoin
+//  21-DOT-DEV/swift-bitcoinkernel
 //
+//  Copyright (c) 2022-present Timechain Software Initiative, Inc.
+//  Distributed under the MIT software license
+//
+//  See the accompanying file LICENSE for information
+//
+
 //  Builds a URLSessionConfiguration wired to a SOCKS5 proxy — the
 //  plumbing that routes block-source HTTPS requests through the Tor
 //  client's local SOCKS listener.
@@ -16,12 +22,6 @@
 //  but that one uses the legacy `connectionProxyDictionary` shape. We
 //  intentionally diverge to use the modern `ProxyConfiguration` API —
 //  hence the distinct factory name `ephemeralProxyConfigurationForTor`.
-//
-//  Copyright (c) 2022 21 Development Innovations LLC
-//  Distributed under the MIT software license
-//
-//  See the accompanying file LICENSE for information
-//
 
 import Foundation
 import Network

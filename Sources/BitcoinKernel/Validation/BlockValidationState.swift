@@ -2,7 +2,7 @@
 //  BlockValidationState.swift
 //  21-DOT-DEV/swift-bitcoinkernel
 //
-//  Copyright (c) 2024-2026 Timechain Software Initiative, Inc.
+//  Copyright (c) 2026-present Timechain Software Initiative, Inc.
 //  Distributed under the MIT software license
 //
 //  See the accompanying file LICENSE for information

@@ -1,19 +1,19 @@
 //
 //  RootViewTests.swift
-//  21-DOT-DEV/Bitcoin
+//  21-DOT-DEV/swift-bitcoinkernel
 //
+//  Copyright (c) 2022-present Timechain Software Initiative, Inc.
+//  Distributed under the MIT software license
+//
+//  See the accompanying file LICENSE for information
+//
+
 //  Smoke-level tests that `RootView` constructs against the
 //  approved dependency shape (KernelAppViewModel + KernelAppSettings)
 //  and that its `body` evaluates without hitting preconditions or
 //  crashing. View tree inspection is deliberately kept light —
 //  per-feature behavioural tests live with their feature's value
 //  types (e.g. `SyncViewPresenterTests`).
-//
-//  Copyright (c) 2022 21 Development Innovations LLC
-//  Distributed under the MIT software license
-//
-//  See the accompanying file LICENSE for information
-//
 
 import BitcoinKernel
 import Foundation

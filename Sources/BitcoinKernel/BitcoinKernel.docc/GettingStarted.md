@@ -6,19 +6,19 @@
     @Available(macOS, introduced: "15.0")
 }
 
-Install `BitcoinKernel` via Swift Package Manager and boot Bitcoin Core's consensus-validation engine inside your own Swift process on macOS 15+, iOS 18+, iPadOS 18+, or Linux — ending with a running ``ChainstateManager`` pinned to the regtest genesis in a throwaway temporary directory.
+Install `BitcoinKernel` via Swift Package Manager and boot Bitcoin Core's consensus-validation engine inside your own Swift process, ending with a running ``ChainstateManager`` pinned to the regtest genesis in a throwaway temporary directory.
 
 ## Overview
 
-**Key facts.** Swift 6.3 toolchain · macOS 15+ · iOS 18+ · iPadOS 18+ · Linux · Regtest first-run · Single SwiftPM dependency.
+`BitcoinKernel` wraps Bitcoin Core's [`libbitcoinkernel`][bitcoin-kernel] behind a type-safe Swift API. `libbitcoinkernel` is the consensus-validation engine extracted from [`src/kernel`][bitcoin-kernel] with the network, wallet, and GUI subsystems excluded by design.
 
-`BitcoinKernel` wraps Bitcoin Core's [`libbitcoinkernel`][bitcoin-kernel] — the consensus-validation engine extracted from [`src/kernel`][bitcoin-kernel] with the network, wallet, and GUI subsystems excluded by design — behind a type-safe Swift API. This article walks from an empty SwiftPM project to a live engine: install the dependency, build three objects (``Context``, ``ChainstateManagerOptions``, ``ChainstateManager``), and confirm the engine has located its tip.
+This article walks from an empty SwiftPM project to a live engine. Install the dependency, build three objects (``Context``, ``ChainstateManagerOptions``, ``ChainstateManager``), and confirm the engine has located its tip.
 
 ### Prerequisites
 
-- Swift 6.3 toolchain (Xcode 26.4 or later on Apple platforms; matching `swift-tools-version` on Linux), so the package resolves cleanly.
+- Swift 6.3 toolchain (Xcode 26.4 or later on Apple platforms, matching `swift-tools-version` on Linux).
 - A deployment target on macOS 15.0+, iOS 18.0+, iPadOS 18.0+, or a Linux distribution with a current Swift toolchain.
-- Under 50 MB of free disk space — the regtest data directory this article creates is tiny and lives in your system's temporary directory.
+- Under 50 MB of free disk space for the regtest data directory this article creates.
 
 ### Add BitcoinKernel with Swift Package Manager
 
@@ -44,23 +44,25 @@ targets: [
 ]
 ```
 
-The first build compiles `libbitcoinkernel` and its C/C++ dependencies from source for your destination's triple — several minutes on a cold cache, seconds for incremental rebuilds. The Xcode equivalent is **File → Add Package Dependencies…**; both routes resolve to the same `Package.resolved`.
+The first build compiles `libbitcoinkernel` and its C/C++ dependencies from source for your destination's triple. Expect several minutes on a cold cache and seconds for incremental rebuilds. The Xcode equivalent is **File → Add Package Dependencies…** and resolves to the same `Package.resolved`.
 
 ### Boot the validating engine
 
-Three objects, constructed in fixed order, get a regtest consensus engine running in a throwaway temporary directory. This is `Snippets/BootValidatingEngine.swift` in the package, compile-checked on every `swift build`:
+Three objects, constructed in fixed order, get a regtest consensus engine running in a throwaway temporary directory. The example below is `Snippets/BootValidatingEngine.swift` in the package and is compile-checked on every `swift build`.
 
 @Snippet(path: "BitcoinKernel/Snippets/BootValidatingEngine")
 
-A ``Context`` carries the chain parameters and the interrupt handle every validation operation reads from; a ``ChainstateManagerOptions`` binds that context to a writable data directory; a ``ChainstateManager`` opens the block-index and chainstate LevelDB stores under that directory, replays any existing state, and exposes the chain tip via ``ChainstateManager/bestEntry``. On a fresh regtest data directory the kernel writes the embedded regtest genesis block and nothing else, so `bestEntry.height` returning `0` proves the engine opened both LevelDB stores, loaded the chain parameters, and now knows where its tip is — anything other than `0` against a fresh regtest directory indicates a partial boot.
+A ``Context`` carries the chain parameters and the interrupt handle every validation operation reads from. A ``ChainstateManagerOptions`` binds that context to a writable data directory. A ``ChainstateManager`` opens the block-index and chainstate LevelDB stores under that directory, replays any existing state, and exposes the chain tip via ``ChainstateManager/bestEntry``.
+
+On a fresh regtest data directory the kernel writes the embedded regtest genesis block and nothing else, so `bestEntry.height` returning `0` proves the engine opened both LevelDB stores, loaded the chain parameters, and now knows where its tip is. Anything other than `0` against a fresh regtest directory indicates a partial boot.
 
 ### Where to go next
 
-The snippet above uses a disposable temp directory and stops at the regtest genesis on purpose, so the article you read next depends on what you're adding:
+The snippet above uses a disposable temp directory and stops at the regtest genesis on purpose. What to read next depends on what you're adding.
 
-- **Shipping inside an iPhone, iPad, or Apple Silicon Mac app.** <doc:EmbeddingOnIOS> covers the production data-directory layout (Application Support, backup exclusion), the SwiftUI `App` init pattern, background-task budgets for chain sync, and the App Store encryption-export self-classification.
-- **Driving a real chain sync.** The ``BlockchainSync`` engine pulls blocks from any ``BlockSource`` conformer and feeds them into the manager you just built. The shipped ``EsploraBlockSource`` covers HTTP-served Esplora endpoints; that pair gets you from regtest genesis to a synced signet or mainnet tip with progress as a typed [`AsyncSequence`][async-sequence].
-- **Talking to a running Bitcoin Core daemon over RPC instead.** The package's sibling `Bitcoin` product embeds the full `bitcoind` and exposes a typed RPC client — a different mental model than the kernel-only approach this article takes.
+- To ship inside an iPhone, iPad, or Apple Silicon Mac app, see <doc:EmbeddingOnIOS> for production data-directory layout, the SwiftUI `App` init pattern, background-task budgets for chain sync, and App Store encryption-export self-classification.
+- To drive a real chain sync, pair ``BlockchainSync`` with any ``BlockSource`` conformer; the shipped ``EsploraBlockSource`` covers HTTP-served Esplora endpoints and emits progress as a typed [`AsyncSequence`][async-sequence].
+- To talk to a running Bitcoin Core daemon over RPC instead, use the sibling `Bitcoin` product, which embeds the full `bitcoind` and exposes a typed RPC client.
 
 ## See Also
 

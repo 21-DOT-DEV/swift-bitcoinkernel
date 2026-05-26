@@ -1,7 +1,13 @@
 //
 //  SyncView.swift
-//  21-DOT-DEV/Bitcoin
+//  21-DOT-DEV/swift-bitcoinkernel
 //
+//  Copyright (c) 2022-present Timechain Software Initiative, Inc.
+//  Distributed under the MIT software license
+//
+//  See the accompanying file LICENSE for information
+//
+
 //  The main kernel-sync surface. Wires KernelAppViewModel snapshot
 //  + lifecycle controls to a SwiftUI tree, including the destructive
 //  reindex actions gated behind a confirmation dialog.
@@ -9,12 +15,6 @@
 //  Display logic lives in a pure value-type Presenter below, so the
 //  SwiftUI tree can stay thin and most behavioural coverage can be
 //  expressed as value assertions.
-//
-//  Copyright (c) 2022 21 Development Innovations LLC
-//  Distributed under the MIT software license
-//
-//  See the accompanying file LICENSE for information
-//
 
 import BitcoinKernel
 import Foundation
