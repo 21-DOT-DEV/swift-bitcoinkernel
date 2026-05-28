@@ -53,6 +53,14 @@ jobs:
           ref: ${{ github.event.inputs.release_tag || github.ref }}
           fetch-depth: 0
 
+      - name: Enable development dependencies
+        # Delete ALL tags at HEAD so Context.gitInformation?.currentTag is nil,
+        # which flips the `developmentDependencies` guard in Package.swift and
+        # includes swift-docc-plugin. Single-tag deletion fails when a commit
+        # has sibling tags (e.g., 0.1.0 + 0.1.0-prerelease-0), causing
+        # "Unknown subcommand or plugin name 'generate-documentation'".
+        run: git tag --points-at HEAD | xargs -r -n 1 git tag -d
+
       - name: Build DocC Archive
         env:
           SOURCE_SERVICE_BASE_URL: "https://github.com/${{ github.repository }}/blob/${{ github.event.inputs.release_tag || github.ref_name }}"
