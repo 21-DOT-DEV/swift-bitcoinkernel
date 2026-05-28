@@ -1,3 +1,13 @@
+//
+//  BlockTreeEntrySnapshot.swift
+//  21-DOT-DEV/swift-bitcoinkernel
+//
+//  Copyright (c) 2026-present Timechain Software Initiative, Inc.
+//  Distributed under the MIT software license
+//
+//  See the accompanying file LICENSE for information
+//
+
 /// An owned snapshot of a ``BlockTreeEntry``'s data — three fields
 /// (height, block hash, block header) captured as Swift-owned values.
 ///

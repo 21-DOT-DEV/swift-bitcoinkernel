@@ -6,6 +6,8 @@ let package = Package(
     platforms: [
         .macOS(.v15),
         .iOS(.v18),
+        .tvOS(.v18),
+        .visionOS(.v2),
     ],
     products: [
         .library(name: "Bitcoin", targets: ["Bitcoin"]),

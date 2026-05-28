@@ -1,8 +1,8 @@
 //
 //  Command.swift
-//  21-DOT-DEV/Bitcoin
+//  21-DOT-DEV/swift-bitcoinkernel
 //
-//  Copyright (c) 2022 21 Development Innovations LLC
+//  Copyright (c) 2022-present Timechain Software Initiative, Inc.
 //  Distributed under the MIT software license
 //
 //  See the accompanying file LICENSE for information

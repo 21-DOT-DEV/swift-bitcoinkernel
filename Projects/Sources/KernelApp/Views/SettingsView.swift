@@ -1,7 +1,13 @@
 //
 //  SettingsView.swift
-//  21-DOT-DEV/Bitcoin
+//  21-DOT-DEV/swift-bitcoinkernel
 //
+//  Copyright (c) 2022-present Timechain Software Initiative, Inc.
+//  Distributed under the MIT software license
+//
+//  See the accompanying file LICENSE for information
+//
+
 //  In-app Settings surface. Two-tier apply model per Apple HIG:
 //
 //  - Immediate-apply fields (live-bound to KernelAppSettings):
@@ -16,12 +22,6 @@
 //
 //  Reindex is intentionally NOT here — lives on the Sync tab as an
 //  action, not a setting.
-//
-//  Copyright (c) 2022 21 Development Innovations LLC
-//  Distributed under the MIT software license
-//
-//  See the accompanying file LICENSE for information
-//
 
 import BitcoinKernel
 import Foundation

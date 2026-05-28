@@ -1,18 +1,18 @@
 //
 //  RootView.swift
-//  21-DOT-DEV/Bitcoin
+//  21-DOT-DEV/swift-bitcoinkernel
 //
+//  Copyright (c) 2022-present Timechain Software Initiative, Inc.
+//  Distributed under the MIT software license
+//
+//  See the accompanying file LICENSE for information
+//
+
 //  Root SwiftUI surface for KernelApp. A uniform TabView on iOS and
 //  macOS with two peer tabs — Sync and Settings. Ownership of
 //  KernelAppViewModel and KernelAppSettings lives one level up (in
 //  `KernelApp`), wired in via initializer so the whole app can be
 //  previewed with in-memory regtest fixtures.
-//
-//  Copyright (c) 2022 21 Development Innovations LLC
-//  Distributed under the MIT software license
-//
-//  See the accompanying file LICENSE for information
-//
 
 import SwiftUI
 

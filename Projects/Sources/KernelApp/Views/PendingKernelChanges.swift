@@ -1,7 +1,13 @@
 //
 //  PendingKernelChanges.swift
-//  21-DOT-DEV/Bitcoin
+//  21-DOT-DEV/swift-bitcoinkernel
 //
+//  Copyright (c) 2022-present Timechain Software Initiative, Inc.
+//  Distributed under the MIT software license
+//
+//  See the accompanying file LICENSE for information
+//
+
 //  Draft-state value type for the Settings tab's "pending changes"
 //  banner. Represents the subset of KernelAppSettings whose changes
 //  require a full kernel rebuild (the `.restartKernel` bucket of
@@ -13,12 +19,6 @@
 //  The non-kernel-restarting fields (block source, Tor toggle,
 //  logging) live-bind straight through to `KernelAppSettings` in
 //  the view layer — they don't pass through this type.
-//
-//  Copyright (c) 2022 21 Development Innovations LLC
-//  Distributed under the MIT software license
-//
-//  See the accompanying file LICENSE for information
-//
 
 import BitcoinKernel
 import Foundation

@@ -1,16 +1,16 @@
 //
 //  PendingKernelChangesTests.swift
-//  21-DOT-DEV/Bitcoin
+//  21-DOT-DEV/swift-bitcoinkernel
 //
-//  Pure tests for the draft-state value type that backs the Settings
-//  tab's "pending changes" banner. Apply / count / summary-text
-//  semantics are all value-level and exercised here without SwiftUI.
-//
-//  Copyright (c) 2022 21 Development Innovations LLC
+//  Copyright (c) 2022-present Timechain Software Initiative, Inc.
 //  Distributed under the MIT software license
 //
 //  See the accompanying file LICENSE for information
 //
+
+//  Pure tests for the draft-state value type that backs the Settings
+//  tab's "pending changes" banner. Apply / count / summary-text
+//  semantics are all value-level and exercised here without SwiftUI.
 
 import BitcoinKernel
 import Foundation

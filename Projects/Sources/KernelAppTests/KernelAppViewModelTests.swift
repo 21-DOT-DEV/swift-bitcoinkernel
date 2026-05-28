@@ -1,15 +1,15 @@
 //
 //  KernelAppViewModelTests.swift
-//  21-DOT-DEV/Bitcoin
+//  21-DOT-DEV/swift-bitcoinkernel
 //
-//  Drives the design of KernelAppViewModel — start/stop lifecycle,
-//  snapshot translation, reindex paths, and settings-change policies.
-//
-//  Copyright (c) 2022 21 Development Innovations LLC
+//  Copyright (c) 2022-present Timechain Software Initiative, Inc.
 //  Distributed under the MIT software license
 //
 //  See the accompanying file LICENSE for information
 //
+
+//  Drives the design of KernelAppViewModel — start/stop lifecycle,
+//  snapshot translation, reindex paths, and settings-change policies.
 
 import BitcoinKernel
 import Foundation

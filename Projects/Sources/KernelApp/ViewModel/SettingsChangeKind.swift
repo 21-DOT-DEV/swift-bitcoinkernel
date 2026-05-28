@@ -1,16 +1,16 @@
 //
 //  SettingsChangeKind.swift
-//  21-DOT-DEV/Bitcoin
+//  21-DOT-DEV/swift-bitcoinkernel
 //
-//  Classifies a diff between two ``KernelAppSettings`` snapshots into
-//  the action ``KernelAppViewModel`` must take — none, respawn the
-//  sync, or teardown+rebuild the kernel.
-//
-//  Copyright (c) 2022 21 Development Innovations LLC
+//  Copyright (c) 2022-present Timechain Software Initiative, Inc.
 //  Distributed under the MIT software license
 //
 //  See the accompanying file LICENSE for information
 //
+
+//  Classifies a diff between two ``KernelAppSettings`` snapshots into
+//  the action ``KernelAppViewModel`` must take — none, respawn the
+//  sync, or teardown+rebuild the kernel.
 
 import BitcoinKernel
 import Foundation

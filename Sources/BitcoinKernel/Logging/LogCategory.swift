@@ -1,3 +1,13 @@
+//
+//  LogCategory.swift
+//  21-DOT-DEV/swift-bitcoinkernel
+//
+//  Copyright (c) 2026-present Timechain Software Initiative, Inc.
+//  Distributed under the MIT software license
+//
+//  See the accompanying file LICENSE for information
+//
+
 /// Categories for filtering kernel log messages — pass to
 /// ``enableLogCategory(_:)`` / ``disableLogCategory(_:)`` /
 /// ``setLogLevel(category:level:)`` to control the noise level.

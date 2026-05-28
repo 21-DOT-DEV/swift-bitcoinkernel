@@ -70,3 +70,24 @@ jobs:
             build \
             -scheme "$SCHEME" \
             -destination generic/platform=visionOS
+
+  tvos:
+    name: tvOS (BitcoinKernel)
+    runs-on: macos-26
+    permissions:
+      contents: read
+    env:
+      # BitcoinKernel-only on tvOS: the Bitcoin product depends on bitcoind, whose
+      # `src/util/exec.cpp` calls `execvp()` — marked `__TVOS_PROHIBITED` in the tvOS SDK.
+      SCHEME: BitcoinKernel
+      DEVELOPER_DIR: "/Applications/Xcode_26.4.app/Contents/Developer"
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build BitcoinKernel for tvOS
+        run: |
+          xcrun xcodebuild \
+            -skipMacroValidation \
+            -skipPackagePluginValidation \
+            build \
+            -scheme "$SCHEME" \
+            -destination generic/platform=tvOS

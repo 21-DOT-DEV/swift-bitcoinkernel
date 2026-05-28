@@ -1,18 +1,18 @@
 //
 //  SyncViewPresenterTests.swift
-//  21-DOT-DEV/Bitcoin
+//  21-DOT-DEV/swift-bitcoinkernel
 //
+//  Copyright (c) 2022-present Timechain Software Initiative, Inc.
+//  Distributed under the MIT software license
+//
+//  See the accompanying file LICENSE for information
+//
+
 //  Drives the display-logic layer of SyncView. Pure tests — the
 //  presenter is a value type that consumes a SyncSnapshot plus a
 //  couple of context flags and produces the strings / booleans the
 //  view binds to, so the SwiftUI tree itself needs no runtime
 //  inspection to get solid coverage.
-//
-//  Copyright (c) 2022 21 Development Innovations LLC
-//  Distributed under the MIT software license
-//
-//  See the accompanying file LICENSE for information
-//
 
 import BitcoinKernel
 import Foundation

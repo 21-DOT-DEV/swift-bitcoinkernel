@@ -6,11 +6,11 @@ This directory contains GitHub configuration and CI workflows.
 
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
-| `apple-builds.yml` | push/PR to `main` | macOS build+test (incl. wallet trait), iOS + visionOS cross-compile, DocC validation for Bitcoin + BitcoinKernel |
+| `apple-builds.yml` | push/PR to `main` | macOS build+test (incl. wallet trait), iOS + visionOS cross-compile of the umbrella scheme, tvOS cross-compile of the BitcoinKernel scheme only, DocC validation for Bitcoin + BitcoinKernel |
 | `docker-builds.yml` | push/PR to `main` | Linux build+test via `docker build .` |
 | `docc-release.yml` | release published or manual | Matrix build of DocC archives (Bitcoin + BitcoinKernel), upload to release assets |
 
-**Platform coverage**: macOS (build+test), iOS (build only), visionOS (build only). Linux via Docker. tvOS/watchOS are blocked by POSIX primitives (`fork`/`execvp`) and tracked in the roadmap.
+**Platform coverage**: macOS (build+test), iOS (build only), visionOS (build only), tvOS (BitcoinKernel only — `Bitcoin` depends on `bitcoind`'s `execvp()` call which is `__TVOS_PROHIBITED`). Linux via Docker. watchOS is blocked by additional POSIX prohibitions (`fork`, `execvp`, etc.) and not in the matrix.
 
 ## Boundaries (strict)
 
@@ -29,7 +29,7 @@ This directory contains GitHub configuration and CI workflows.
 
 - The private-repo `permissions: {}` failure mode (404 on checkout) only surfaces on GitHub runners, not locally. Always push a test branch to verify permission changes.
 - `docc-release.yml` uses a matrix strategy (`[Bitcoin, BitcoinKernel]`) with a separate `release` job for artifact collection. Adding a new DocC target requires updating both the matrix list and the `release` job's download+upload steps.
-- visionOS builds succeed but tvOS/watchOS fail — do not add them to the platform matrix without first adding `#if !TARGET_OS_TV` guards in vendored C++ sources.
+- The umbrella scheme (`BitcoinKernel-Package`) builds both products. On tvOS it fails because the `Bitcoin` product transitively uses `execvp()`; the tvOS job uses the per-product `BitcoinKernel` scheme to skip `Bitcoin`. Do not switch the tvOS job back to the umbrella scheme without first guarding the `execvp()` call (or removing the dependency on it) in `Sources/bitcoind/src/util/exec.cpp`. watchOS is similarly blocked and would also need `fork`/`exec` guards in vendored C++ sources.
 
 ## Validation
 
@@ -37,4 +37,5 @@ This directory contains GitHub configuration and CI workflows.
 - **Linux**: `docker build .`
 - **iOS cross-compile**: `xcrun xcodebuild -skipMacroValidation -skipPackagePluginValidation build -scheme "BitcoinKernel-Package" -destination generic/platform=iOS`
 - **visionOS cross-compile**: same as iOS, substitute `generic/platform=visionOS`
+- **tvOS cross-compile (BitcoinKernel only)**: same shape, but use `-scheme "BitcoinKernel"` and `generic/platform=tvOS`. The umbrella scheme fails on tvOS — see Gotchas.
 - **DocC validation**: `swift package generate-documentation --target Bitcoin --analyze --warnings-as-errors` (repeat for `BitcoinKernel`)

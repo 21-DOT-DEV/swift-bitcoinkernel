@@ -1,17 +1,17 @@
 //
 //  WaitFor.swift
-//  21-DOT-DEV/Bitcoin
+//  21-DOT-DEV/swift-bitcoinkernel
 //
-//  Shared async polling helper for state-convergence assertions. Swift
-//  Testing does not (as of this writing) ship a native primitive for
-//  waiting on an `@Observable` predicate to flip; `confirmation` is for
-//  discrete event callbacks, not state observation.
-//
-//  Copyright (c) 2026 21 Development Innovations LLC
+//  Copyright (c) 2026-present Timechain Software Initiative, Inc.
 //  Distributed under the MIT software license
 //
 //  See the accompanying file LICENSE for information
 //
+
+//  Shared async polling helper for state-convergence assertions. Swift
+//  Testing does not (as of this writing) ship a native primitive for
+//  waiting on an `@Observable` predicate to flip; `confirmation` is for
+//  discrete event callbacks, not state observation.
 
 import Foundation
 import Testing
