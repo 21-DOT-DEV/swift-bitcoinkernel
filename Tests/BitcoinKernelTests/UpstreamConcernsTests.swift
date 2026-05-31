@@ -16,9 +16,6 @@
 //  concern. Some tests are intentionally **expected to fail or abort** —
 //  they document the symptom so we can triage upstream filing.
 //
-//  See `upstream-issues/bitcoin/chainstate-wipedbs-empty-dir-abort.md` for
-//  the lead suspect (issue 1 below).
-//
 
 import Testing
 import BitcoinKernel
@@ -63,9 +60,9 @@ private func freshTmpDir() -> URL {
 // MARK: - Issue 1: SIGSEGV on (true, true) wipe after prior open
 
 /// Empirical wipe-flag matrix on **persistent** storage. The crashing
-/// combination is documented in
-/// `upstream-issues/bitcoin/chainstate-wipedbs-empty-dir-abort.md` and is
-/// NOT reproduced as a test here (it would SIGSEGV the test process).
+/// combination (full `(true, true)` wipe after a prior open) is NOT
+/// reproduced as a test here because it would SIGSEGV the test process.
+/// See bitcoin/bitcoin#35293.
 ///
 /// | Scenario                                    | Result   |
 /// |---------------------------------------------|----------|
@@ -145,7 +142,7 @@ func repeatedKernelLifecycle() async throws {
 
 // MARK: - Issue 1 crashing reproducer (opt-in, Xcode-only)
 
-/// **Reproducer for `upstream-issues/bitcoin/chainstate-get-best-entry-null-after-wipe.md`**.
+/// **Reproducer for [bitcoin/bitcoin#35293](https://github.com/bitcoin/bitcoin/issues/35293)**.
 ///
 /// Disabled by default because it kills the test process. Failure mode
 /// depends on which fix layer is in place:
@@ -189,7 +186,7 @@ func repeatedKernelLifecycle() async throws {
 /// 6. On SIGSEGV, Xcode pauses in the Debug Navigator. The call stack on
 ///    the left pane is already symbolicated; `bt all` in the LLDB console
 ///    prints every thread.
-/// 7. Copy the stack into the upstream-issues report, then restore
+/// 7. Copy the stack into bitcoin/bitcoin#35293, then restore
 ///    `.disabled(...)` before committing.
 @Test(
     "CRASH — (true, true) wipe + bestEntry access traps (post-X2) / SIGSEGVs (pre-X2)",
@@ -220,6 +217,91 @@ func captureSegfaultForUpstream() throws {
     // SIGSEGV inside `ChainstateManager.init` on the second call.
     _ = try openOnce(wipeAll: true)
     // If execution reaches here, upstream may have fixed the bug.
+}
+
+// MARK: - Issue 1 recovery: documented wipe → importBlocks lifecycle
+
+/// Demonstrates the recovery path that bitcoin/bitcoin#35304 documents and
+/// that issue https://github.com/bitcoin/bitcoin/issues/35293 is about:
+/// after a `(true, true)` wipe leaves `m_best_header` null, calling
+/// `importBlocks(from: [])` completes the reindex and re-activates genesis,
+/// so `bestEntry` is observable again without trapping.
+///
+/// This is the same trigger sequence as `captureSegfaultForUpstream`, with the
+/// documented `importBlocks(from: [])` recovery inserted before the second
+/// `bestEntry` access. Uses persistent storage because the bug only manifests
+/// against an on-disk block tree.
+@Test("Wipe (true,true) recovers via importBlocks(from: []) before bestEntry")
+func wipeThenImportBlocksRecoversBestEntry() async throws {
+    let tmpDir = freshTmpDir()
+    defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+    // First open (persistent, no wipe). Accessing bestEntry materializes the
+    // on-disk block-index state that makes the later (true, true) wipe leave
+    // m_best_header null.
+    try await MainActor.run {
+        let ctx = try makeRegtestContext()
+        let mgr = try makeManager(context: ctx, dataDirectory: tmpDir.path, inMemory: false)
+        #expect(mgr.bestEntry.height == 0)
+    }
+
+    // Reopen with full wipe, then run the documented recovery before reading
+    // bestEntry. If empty-list import re-activates genesis, this does not trap.
+    try await MainActor.run {
+        let ctx = try makeRegtestContext()
+        let mgr = try makeManager(
+            context: ctx,
+            dataDirectory: tmpDir.path,
+            inMemory: false,
+            wipeBlockTree: true,
+            wipeChainstate: true
+        )
+        #expect(mgr.importBlocks(from: []), "empty-list import (reindex completion) should succeed")
+        #expect(mgr.bestEntry.height == 0, "bestEntry should be observable after reindex completion")
+    }
+}
+
+// MARK: - Issue 1 safety: skipping recovery traps (not SEGV), citing #35293
+
+/// Exit test: if a caller does the `(true, true)` wipe but skips the
+/// `importBlocks(from: [])` recovery and reads `bestEntry`, the wrapper must
+/// trap with a diagnostic (Swift `preconditionFailure`) rather than SEGV in the
+/// C accessor. Asserts the child process exits abnormally and that the emitted
+/// message points at https://github.com/bitcoin/bitcoin/issues/35293 so a stuck
+/// user can find the explanation.
+///
+/// Runs in a spawned subprocess, so the trap does not kill the test runner.
+/// This is the enabled counterpart to the opt-in `captureSegfaultForUpstream`.
+@Test("Skipping importBlocks recovery traps with a #35293 diagnostic")
+func bestEntryTrapsWhenRecoverySkipped() async throws {
+    let result = await #expect(processExitsWith: .failure, observing: [\.standardErrorContent]) {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+
+        // Same trigger as captureSegfaultForUpstream: a prior open whose
+        // bestEntry access materializes on-disk state, then a (true, true)
+        // wipe, then bestEntry WITHOUT the importBlocks recovery.
+        func openOnce(wipeAll: Bool) throws -> Int32 {
+            let params = ChainParameters(.regtest)
+            let opts = ContextOptions()
+            opts.setChainParams(params)
+            let ctx = try Context(options: opts)
+            let mopts = try ChainstateManagerOptions(context: ctx, dataDirectory: tmp.path)
+            if wipeAll { _ = mopts.setWipeDBs(blockTreeDB: true, chainstateDB: true) }
+            let mgr = try ChainstateManager(options: mopts)
+            return mgr.bestEntry.height
+        }
+
+        _ = try openOnce(wipeAll: false)
+        _ = try openOnce(wipeAll: true)  // bestEntry trap fires here
+    }
+
+    // The diagnostic must name the upstream issue.
+    if let stderrBytes = result?.standardErrorContent {
+        let message = String(decoding: stderrBytes, as: UTF8.self)
+        #expect(message.contains("35293"), "trap message should cite issue #35293")
+    }
 }
 
 // MARK: - Hypothesis 3 (rejected): deinit after data directory removed

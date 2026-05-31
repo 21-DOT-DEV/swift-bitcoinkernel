@@ -84,10 +84,10 @@ private final class KernelFactorySpy {
 
     func factory() -> KernelAppViewModel.KernelFactory {
         // Note: persistent storage (not in-memory). After a `(true, true)`
-        // wipe + reopen, accessing `bestEntry` SEGVs because
+        // wipe + reopen, accessing `bestEntry` SEGVs at the C layer because
         // `btck_chainstate_manager_get_best_entry` returns null and the C
-        // accessors don't null-guard — see
-        // `upstream-issues/bitcoin/chainstate-get-best-entry-null-after-wipe.md`.
+        // accessors don't null-guard. See
+        // bitcoin/bitcoin#35293 (https://github.com/bitcoin/bitcoin/issues/35293).
         // Tests using this spy must clean up `tmpDir` themselves.
         return { @Sendable [weak self] chain, dir, threads, reindex in
             await MainActor.run {
@@ -258,9 +258,8 @@ struct KernelAppViewModelReindexTests {
 
     /// Test that `requestReindex(.full)` invokes the factory with the
     /// expected `reindex` argument. Uses a recording-but-throwing factory
-    /// because reading `bestEntry` after a `(true, true)` reopen SEGVs —
-    /// see
-    /// [`upstream-issues/bitcoin/chainstate-get-best-entry-null-after-wipe.md`](../../../upstream-issues/bitcoin/chainstate-get-best-entry-null-after-wipe.md)
+    /// because reading `bestEntry` after a `(true, true)` reopen SEGVs. See
+    /// [bitcoin/bitcoin#35293](https://github.com/bitcoin/bitcoin/issues/35293)
     /// for the full report. The view-model contract is that it passes the
     /// right enum through; that's all this test needs to prove.
     @Test("requestReindex(.full) invokes the factory with reindex == .full")
