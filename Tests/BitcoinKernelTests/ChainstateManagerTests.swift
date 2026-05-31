@@ -333,7 +333,9 @@ import Foundation
     options.setChainstateDBInMemory(true)
 
     let manager = try ChainstateManager(options: options)
-    // Empty import list should succeed immediately
+    // An empty list is a valid call that drives the kernel's import-and-activate
+    // path (completing any pending reindex), not a short-circuit. On a freshly
+    // created manager with nothing to reindex it succeeds without doing work.
     let result = manager.importBlocks(from: [])
     #expect(result)
 }

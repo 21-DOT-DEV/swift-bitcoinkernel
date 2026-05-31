@@ -52,24 +52,23 @@ public final class ChainstateManager: @unchecked Sendable {
     /// promote to an owned ``BlockTreeEntrySnapshot`` for safe storage.
     /// Reads ``bestEntry`` repeatedly during a sync run to track progress.
     ///
-    /// Traps with `preconditionFailure` if the chainstate manager has no
-    /// best header — currently observable only after a `(true, true)` wipe
-    /// before genesis is re-loaded. See
-    /// `upstream-issues/bitcoin/chainstate-get-best-entry-null-after-wipe.md`
-    /// in the swift-bitcoinkernel repo. The trap converts what would otherwise
-    /// be a SIGSEGV inside `btck_block_tree_entry_get_height` into a
-    /// diagnosable Swift fatal error.
+    /// Traps with `preconditionFailure` if the chainstate manager has no best
+    /// header. This is currently observable only after a `(true, true)` wipe,
+    /// before the reindex is completed. Complete it by calling
+    /// ``importBlocks(from:)`` with an empty array, then read `bestEntry`. The
+    /// trap converts what would otherwise be a SIGSEGV inside
+    /// `btck_block_tree_entry_get_height` into a diagnosable Swift fatal error.
+    /// See [bitcoin/bitcoin#35293](https://github.com/bitcoin/bitcoin/issues/35293).
     public var bestEntry: BlockTreeEntry {
         guard let ptr = btck_chainstate_manager_get_best_entry(pointer) else {
             preconditionFailure(
                 """
-                ChainstateManager.bestEntry is nil. This happens after \
+                ChainstateManager.bestEntry is nil. This happens after a \
                 ChainstateManagerOptions.setWipeDBs(blockTreeDB: true, \
-                chainstateDB: true) reopen, before genesis has been \
-                re-loaded by processing at least one block. Process a \
-                block before reading bestEntry, or check the lifecycle \
-                policy in upstream-issues/bitcoin/\
-                chainstate-get-best-entry-null-after-wipe.md.
+                chainstateDB: true) reopen, before the reindex has been \
+                completed. Call importBlocks(from: []) to complete the reindex \
+                before reading bestEntry. Background: \
+                https://github.com/bitcoin/bitcoin/issues/35293.
                 """
             )
         }
@@ -181,20 +180,33 @@ public final class ChainstateManager: @unchecked Sendable {
         return BlockSpentOutputs(pointer: ptr)
     }
 
-    /// Imports blocks from on-disk block files (`blk00000.dat`-style).
+    /// Imports blocks from on-disk block files (`blk00000.dat`-style), and
+    /// completes a reindex requested by a database wipe.
     ///
-    /// Replays raw block files into the chainstate — typically used after
-    /// copying a block directory from another node to avoid re-downloading
-    /// historical blocks. This is a long-running operation; cancel via
+    /// Replays raw block files into the chainstate, typically after copying a
+    /// block directory from another node to avoid re-downloading historical
+    /// blocks. This is a long-running operation; cancel via
     /// ``Context/interrupt()``.
     ///
-    /// - Parameter filePaths: Absolute paths to block files. Empty list is
-    ///   a no-op that returns `true`.
-    /// - Returns: `true` if import completed successfully (or there was
-    ///   nothing to do); `false` if any file failed to import.
+    /// Passing an empty array is a valid call rather than a no-op: it runs the
+    /// kernel's import-and-activate path with no files, which is how you finish
+    /// the reindex set up by
+    /// ``ChainstateManagerOptions/setWipeDBs(blockTreeDB:chainstateDB:)`` before
+    /// reading ``bestEntry``. See [bitcoin/bitcoin#35293](https://github.com/bitcoin/bitcoin/issues/35293).
+    ///
+    /// - Parameter filePaths: Absolute paths to block files. An empty array
+    ///   completes a pending reindex without importing any external files.
+    /// - Returns: `true` if the import or reindex completion succeeded; `false`
+    ///   if any file failed to import.
     @discardableResult
     public func importBlocks(from filePaths: [String]) -> Bool {
-        guard !filePaths.isEmpty else { return true }
+        // An empty array still drives the kernel: ImportBlocks and chain
+        // re-activation run regardless of file count, which completes the
+        // reindex requested by a database wipe. The C call ignores the data
+        // and length pointers when the count is 0, so pass them as nil.
+        guard !filePaths.isEmpty else {
+            return btck_chainstate_manager_import_blocks(pointer, nil, nil, 0) == 0
+        }
 
         return withCStringPointers(filePaths[...], accumulated: []) { ptrs in
             var pointers: [UnsafePointer<CChar>?] = ptrs

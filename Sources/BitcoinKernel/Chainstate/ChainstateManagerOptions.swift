@@ -71,11 +71,18 @@ public final class ChainstateManagerOptions: @unchecked Sendable {
     /// Configures database wiping for reindex operations.
     ///
     /// Wiping forces the next ``ChainstateManager`` start to rebuild from
-    /// scratch — useful for recovering from local DB corruption or for
+    /// scratch. It is useful for recovering from local DB corruption or for
     /// applying new validation flags to a previously-validated chain.
     /// Wiping only the chainstate DB (`chainstateDB: true, blockTreeDB: false`)
     /// is the equivalent of Bitcoin Core's `-reindex-chainstate`; wiping
     /// both is the equivalent of `-reindex`.
+    ///
+    /// A wipe is not complete until the manager is created and the reindex is
+    /// finished by calling ``ChainstateManager/importBlocks(from:)`` (an empty
+    /// array is allowed and completes the reindex with no external files).
+    /// Until then a `(true, true)` wipe leaves the manager with no best header,
+    /// so reading ``ChainstateManager/bestEntry`` traps. See
+    /// [bitcoin/bitcoin#35293](https://github.com/bitcoin/bitcoin/issues/35293).
     ///
     /// - Parameters:
     ///   - blockTreeDB: Whether to wipe the block-index database.

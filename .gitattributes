@@ -37,7 +37,6 @@ Sources/crc32c/include/module.modulemap              linguist-vendored=false
 Vendor/**                   export-ignore linguist-vendored
 Projects/**                 export-ignore
 patches/**                  export-ignore
-upstream-issues/**          export-ignore
 .build/**                   export-ignore linguist-vendored
 .github/**                  export-ignore linguist-vendored
 .swiftpm/**                 export-ignore linguist-vendored
