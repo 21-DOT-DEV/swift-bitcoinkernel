@@ -46,4 +46,15 @@ jobs:
           ACTION: ${{ matrix.action }}
           APP: ${{ matrix.app }}
           PLATFORM: ${{ matrix.platform }}
-        run: swift package --disable-sandbox tuist "$ACTION" "$APP" -p Projects/ --platform "$PLATFORM"
+        # Signing: the apps use automatic signing, which needs a DEVELOPMENT_TEAM
+        # supplied locally by the gitignored Resources/Project/Local.xcconfig. CI
+        # runners have no team, and these unit tests need no signed/entitled
+        # binary, so disable signing via the `--` xcodebuild passthrough.
+        # --no-selective-testing (test only): force every suite to run regardless
+        # of Tuist's change-detection cache, so CI can never silently skip tests.
+        run: |
+          SELECTIVE=""
+          if [ "$ACTION" = "test" ]; then SELECTIVE="--no-selective-testing"; fi
+          swift package --disable-sandbox tuist "$ACTION" "$APP" -p Projects/ \
+            --platform "$PLATFORM" $SELECTIVE \
+            -- CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
