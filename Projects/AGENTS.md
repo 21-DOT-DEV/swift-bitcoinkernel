@@ -7,8 +7,9 @@ User-facing usage instructions live in [`README.md`](README.md). This file is de
 ## Commands
 
 - Generate workspace: `swift package --disable-sandbox tuist generate -p Projects/ --no-open`
-- Tuist build (matches CI): `swift package --disable-sandbox tuist build <Target> -p Projects/ --platform <macos|ios>`
-- Tuist test all: `swift package --disable-sandbox tuist test Bitcoin-Workspace -p Projects/ --platform macos`
+- Build an app: `swift package --disable-sandbox tuist build <NodeApp|KernelApp> -p Projects/ --platform <macos|ios>`
+- Test an app (matches CI): `swift package --disable-sandbox tuist test <NodeApp|KernelApp> -p Projects/ --platform <macos|ios>` — run per app on macOS and iOS by [`tuist-apps.yml`](../.github/workflows/tuist-apps.yml)
+- Test everything locally on macOS: `swift package --disable-sandbox tuist test Bitcoin-Workspace -p Projects/ --platform macos`
 - xcodebuild fallback: `xcodebuild test -workspace Projects/Bitcoin.xcworkspace -scheme <Target> -destination 'platform=macOS'`
 
 ## Non-obvious patterns
@@ -28,7 +29,7 @@ Both `NodeApp` and `KernelApp` declare `sources: ["Sources/<App>/**", "Sources/S
 ```swift
 packages: [
     .package(path: ".."),
-    .remote(url: "https://github.com/21-DOT-DEV/swift-tor.git", requirement: .exact("0.1.0")),
+    .remote(url: "https://github.com/21-DOT-DEV/swift-tor.git", requirement: .exact("0.1.1")),
 ]
 ```
 
@@ -109,7 +110,8 @@ When adding a new target, follow this pattern rather than putting all settings i
 ## Platforms
 
 - **macOS 15+** — primary; every target builds and runs in CI.
-- **iOS 18+** — both `NodeApp` and `KernelApp` declare `destinations: [.iPhone, .iPad, .mac]` in `Project.swift` and have iOS-specific UI paths (`#if !os(macOS)` blocks in `ConfigurationView.swift`, `CommandDetailView.swift`, etc.). iOS is not exercised in `.github/workflows/`, so treat builds as best-effort until a job lands. If iOS regressions surface (e.g. from the next Bitcoin Core subtree sync touching `<sys/random.h>`, `<net/route.h>`, or `<sys/sysctl.h>`), check `patches/bitcoin/ios-netif-guard.md` for the existing carve-out pattern.
+- **iOS 18+** — both `NodeApp` and `KernelApp` declare `destinations: [.iPhone, .iPad, .mac]` in `Project.swift` and have iOS-specific UI paths (`#if !os(macOS)` blocks in `ConfigurationView.swift`, `CommandDetailView.swift`, etc.). Both apps build and run their test bundles on the iOS Simulator on every push/PR via [`tuist-apps.yml`](../.github/workflows/tuist-apps.yml). If iOS regressions surface (e.g. from the next Bitcoin Core subtree sync touching `<sys/random.h>`, `<net/route.h>`, or `<sys/sysctl.h>`), check `patches/bitcoin/ios-netif-guard.md` for the existing carve-out pattern.
+- **visionOS 2+ / tvOS 18+** — staged as commented matrix rows in `tuist-apps.yml`. tvOS carries `KernelApp` only (the `Bitcoin` product's `execvp()` is `__TVOS_PROHIBITED`), mirroring the per-scheme split in `apple-builds.yml`.
 
 ## Boundaries
 
@@ -119,5 +121,6 @@ When adding a new target, follow this pattern rather than putting all settings i
 ## Maintenance
 
 - Update `README.md` (user-facing) and this file (maintainer-facing) together when the workspace structure changes.
-- When a new demo app target is added to `Project.swift`, also add it to `README.md`'s "Demo apps" table.
+- When a new demo app target is added to `Project.swift`, also add it to `README.md`'s "Demo apps" table and to `tuist-apps.yml`'s matrix.
+- When CI platform coverage for the apps changes, update `tuist-apps.yml`'s matrix and the Platforms section above together.
 - When a new SPM product is added to root `Package.swift`, decide whether either demo app should consume it.

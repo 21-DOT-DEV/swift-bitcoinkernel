@@ -1,6 +1,10 @@
 <!--
-Sync Impact Report:
-- Version: 1.0.0 → 2.0.0 (MAJOR — structural rewrite, platform scope redefinition, principle consolidation)
+Sync Impact Report (latest):
+- Version: 2.0.0 → 2.1.0 (MINOR — Tuist Projects guidance expanded: demo-app CI mandate + corrected commands)
+- Change Type: Amendment (Implementation Guidance → Tuist Projects Folder)
+- Scope: Projects/ demo apps (NodeApp, KernelApp) now build+test on macOS and iOS via .github/workflows/tuist-apps.yml; corrected stale example commands and Purpose; added a dependency-graph-resolution requirement. Companion repo change: Projects/Project.swift swift-tor pin 0.1.0 → 0.1.1 (aligns swift-event 0.2.1 with root, unbreaking tuist generate).
+
+Prior amendment (1.0.0 → 2.0.0, MAJOR — structural rewrite, platform scope redefinition, principle consolidation):
 - Change Type: Full rewrite
 - Scope: swift-bitcoinkernel package (/Users/csjones/Developer/swift-bitcoinkernel)
 - Structure: Seven core principles + implementation practices + governance, three-tier enforcement (MUST/SHOULD/MAY + explicit MUST NOT)
@@ -317,7 +321,7 @@ This repository defers to the org-level `SECURITY.md` for vulnerability reportin
 
 ### Tuist Projects Folder
 
-**Purpose**: `Projects/` hosts Tuist-managed targets for cross-platform integration validation (including XCFramework workflows) that exercise swift-bitcoinkernel beyond SPM's capabilities.
+**Purpose**: `Projects/` hosts a Tuist-managed Xcode workspace with two SwiftUI demo apps (`NodeApp`, `KernelApp`) and their test bundles, layered on the SPM package for cross-platform integration validation that exercises swift-bitcoinkernel in a real app context beyond SPM's capabilities.
 
 **Workflow** (from `Projects/AGENTS.md`):
 
@@ -325,14 +329,15 @@ This repository defers to the org-level `SECURITY.md` for vulnerability reportin
 # Generate
 swift package --disable-sandbox tuist generate -p Projects/ --no-open
 
-# Build / test (CI-matching)
-swift package --disable-sandbox tuist build Bitcoin -p Projects/ --platform ios
-swift package --disable-sandbox tuist build BitcoinKernel -p Projects/ --platform ios
-swift package --disable-sandbox tuist test Bitcoin-Workspace -p Projects/ --platform ios
+# Build or test a demo app on a platform (CI-matching)
+swift package --disable-sandbox tuist build NodeApp -p Projects/ --platform macos
+swift package --disable-sandbox tuist test KernelApp -p Projects/ --platform ios
 ```
 
 **Requirements**:
-- **MUST** keep `Projects/` schemes synchronized with the SPM targets they mirror.
+- **MUST** keep `Projects/` schemes synchronized with the SPM targets they consume.
+- **MUST** build and test both demo apps (`NodeApp`, `KernelApp`) on macOS and iOS in CI via `.github/workflows/tuist-apps.yml`; keep that workflow's platform matrix synchronized with this guidance.
+- **MUST** ensure the workspace's combined dependency graph resolves — the root package and `Projects/Project.swift`'s `swift-tor` pin MUST agree on shared transitive versions (e.g. `swift-event`).
 - **MUST** document the workflow in `Projects/README.md` and `Projects/AGENTS.md`.
 - **SHOULD** prefer Tuist-based builds over raw `xcodebuild` where available (matches CI).
 
@@ -483,11 +488,12 @@ Changes that affect consensus behavior, node lifecycle, resource safety at the C
 
 ## Version History
 
-**Version**: 2.0.0
+**Version**: 2.1.0
 **Ratified**: 2026-05-03
-**Last Amended**: 2026-05-03
+**Last Amended**: 2026-05-31
 
 **Changelog**:
+- **2.1.0** (2026-05-31): **MINOR** — expanded Tuist Projects Folder guidance (Implementation Guidance). Added a normative CI mandate to build and test both demo apps (`NodeApp`, `KernelApp`) on macOS and iOS via `.github/workflows/tuist-apps.yml`, plus a dependency-graph-resolution requirement. Corrected stale example commands (previously built the `Bitcoin`/`BitcoinKernel` products and tested `Bitcoin-Workspace`; now per-app schemes) and the Purpose line (dropped an inapplicable "XCFramework workflows" reference inherited from the sibling canon — `Projects/` hosts demo apps). Companion repo change: `Projects/Project.swift` `swift-tor` pin bumped `0.1.0 → 0.1.1` to align `swift-event` at `0.2.1` with the root package, unbreaking `tuist generate`.
 - **2.0.0** (2026-05-03): **MAJOR rewrite** adopting the 7-principle sibling canon (swift-secp256k1 / swift-tor / swift-event / swift-openssl). Structural changes: consolidated 8 principles → 7 (merged "RPC Client Design & Reliability" + "API Design & Swift Idioms" → "API Design & RPC Surface"); renamed "C++ Interoperability & Memory Safety" → "C++ Interop & Resource Safety" and "Node Lifecycle Management" → "Node Lifecycle & Shutdown Safety". New structural elements: runtime-dependency allowlist with MAJOR-amendment gate (Principle I); tiered platform model with Tier 1 (macOS 15+ / iOS 18+ / Linux) and Tier 2 (tvOS / visionOS / watchOS / Windows / Android) (Principle VI); local-patches discipline codified (Principle I + Implementation Guidance); org-level CONTRIBUTING.md / SECURITY.md deferral to 21-DOT-DEV/.github (Principle VII); Compliance Review Triggers table (Governance). Alignment corrections: platform scope now matches `Package.swift` (macOS 15+ / iOS 18+, Linux added per maintainer direction); Bitcoin Core pin updated to v31.0rc4; products corrected to `Bitcoin` + `BitcoinKernel` (internal C++ targets: `bitcoind`, `libbitcoinkernel`, `crc32c`, `leveldb`, `minisketch`, `secp256k1`); wallet documented as package trait rather than separate library; Swift tools version 6.3 / C++20 recorded in Technology Stack.
 - **1.0.0** (2025-12-05): Initial constitution with 8 core principles, three-tier enforcement, BDFL governance, tiered platform support, tiered RPC coverage model. Superseded by v2.0.0.
 
@@ -514,4 +520,4 @@ This constitution organizes swift-bitcoinkernel-specific concerns on top of the 
 - **swift-event v1.0.1** → two-layer API design (`BitcoinKernel` + `Bitcoin`), Swift 6 strict-concurrency reference, Swift API Design Guidelines citation, SemVer 2.0.0 citation
 - **swift-openssl v1.0.1** → org-level CONTRIBUTING.md / SECURITY.md deferrals, CI workflow enumeration pattern, Sync Impact Report format
 
-**Version**: 2.0.0 | **Ratified**: 2026-05-03 | **Last Amended**: 2026-05-03
+**Version**: 2.1.0 | **Ratified**: 2026-05-03 | **Last Amended**: 2026-05-31

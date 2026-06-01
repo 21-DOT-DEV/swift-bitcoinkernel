@@ -17,7 +17,7 @@
 //  `connectionProxyDictionary` keys for new code. The project targets
 //  iOS 18 / macOS 15 so the availability floor is comfortably satisfied.
 //
-//  Note: swift-tor 0.1.0 ships its own
+//  Note: swift-tor ships its own
 //  `URLSessionConfiguration.configuredForTor(socksEndpoint:)` helper,
 //  but that one uses the legacy `connectionProxyDictionary` shape. We
 //  intentionally diverge to use the modern `ProxyConfiguration` API —

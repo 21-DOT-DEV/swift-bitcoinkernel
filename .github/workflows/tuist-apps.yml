@@ -1,0 +1,49 @@
+name: Tuist Apps
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  apps:
+    name: ${{ matrix.app }} (${{ matrix.platform }})
+    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { app: NodeApp,   platform: macos, action: test }
+          - { app: KernelApp, platform: macos, action: test }
+          - { app: NodeApp,   platform: ios,   action: test }
+          - { app: KernelApp, platform: ios,   action: test }
+          # Roadmap — uncomment as each platform is brought up. `action` is a
+          # per-row knob: drop a flaky iOS-simulator `test` to `build` here
+          # without restructuring the matrix.
+          # - { app: NodeApp,   platform: visionos, action: test }
+          # - { app: KernelApp, platform: visionos, action: test }
+          # tvOS carries KernelApp only: the Bitcoin product's execvp() is
+          # __TVOS_PROHIBITED, so NodeApp cannot build on tvOS (mirrors the
+          # per-scheme split in apple-builds.yml's tvOS job).
+          # - { app: KernelApp, platform: tvos, action: build }
+    permissions:
+      contents: read
+    env:
+      DEVELOPER_DIR: "/Applications/Xcode_26.4.app/Contents/Developer"
+    steps:
+      - uses: actions/checkout@v6
+
+      # Kept separate from the build/test step so a generation failure (e.g. an
+      # SPM version conflict in Projects/Project.swift) is isolated in the log.
+      - name: Generate workspace
+        run: swift package --disable-sandbox tuist generate -p Projects/ --no-open
+
+      - name: ${{ matrix.action }} ${{ matrix.app }} (${{ matrix.platform }})
+        env:
+          ACTION: ${{ matrix.action }}
+          APP: ${{ matrix.app }}
+          PLATFORM: ${{ matrix.platform }}
+        run: swift package --disable-sandbox tuist "$ACTION" "$APP" -p Projects/ --platform "$PLATFORM"

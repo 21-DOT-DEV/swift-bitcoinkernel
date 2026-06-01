@@ -19,7 +19,7 @@ let project = Project(
     name: "Bitcoin",
     packages: [
         .package(path: ".."),
-        .remote(url: "https://github.com/21-DOT-DEV/swift-tor.git", requirement: .exact("0.1.0")),
+        .remote(url: "https://github.com/21-DOT-DEV/swift-tor.git", requirement: .exact("0.1.1")),
     ],
     settings: .settings(
         configurations: [
