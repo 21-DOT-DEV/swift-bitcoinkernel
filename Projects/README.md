@@ -24,7 +24,7 @@ Then pick a scheme (`NodeApp` or `KernelApp`) and ⌘R.
 | **KernelApp** | `BitcoinKernel` chain sync via `BlockchainSync` over `EsploraBlockSource`, with optional Tor-routed block downloads | `tuist build KernelApp -p Projects/ --platform macos` |
 
 > [!NOTE]
-> Tuist commands run via the SwiftPM plugin: prefix with `swift package --disable-sandbox`. The plugin matches what CI invokes, so reproducing CI failures locally is `tuist build <Target> -p Projects/`.
+> Tuist commands run via the SwiftPM plugin: prefix with `swift package --disable-sandbox`. CI ([`tuist-apps.yml`](../.github/workflows/tuist-apps.yml)) builds and tests both apps on macOS and the iOS Simulator with these commands, so a CI cell reproduces locally as `tuist test <App> -p Projects/ --platform <macos|ios>`.
 
 ### App test bundles (Tuist)
 
@@ -58,7 +58,9 @@ xcodebuild test \
 Both apps declare `destinations: [.iPhone, .iPad, .mac]` in `Project.swift` and have iOS-specific UI paths in their sources.
 
 - **macOS 15+** — primary; everything builds and runs.
-- **iOS 18+** — both apps target it. Day-to-day development and CI run on macOS; iOS builds are not exercised on every change, so treat them as best-effort until covered by a job in `.github/workflows/`.
+- **iOS 18+** — both apps build and run their test bundles on the iOS Simulator in CI ([`.github/workflows/tuist-apps.yml`](../.github/workflows/tuist-apps.yml)), alongside macOS.
+
+visionOS (both apps) and tvOS (`KernelApp` only — the `Bitcoin` product's `execvp()` is `__TVOS_PROHIBITED`) are planned; `tuist-apps.yml` has commented matrix rows ready to enable.
 
 ## Going deeper
 

@@ -1,6 +1,7 @@
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Apple Platforms](https://github.com/21-DOT-DEV/swift-bitcoinkernel/actions/workflows/apple-builds.yml/badge.svg)](https://github.com/21-DOT-DEV/swift-bitcoinkernel/actions/workflows/apple-builds.yml)
 [![Docker Builds](https://github.com/21-DOT-DEV/swift-bitcoinkernel/actions/workflows/docker-builds.yml/badge.svg)](https://github.com/21-DOT-DEV/swift-bitcoinkernel/actions/workflows/docker-builds.yml)
+[![Tuist Apps](https://github.com/21-DOT-DEV/swift-bitcoinkernel/actions/workflows/tuist-apps.yml/badge.svg)](https://github.com/21-DOT-DEV/swift-bitcoinkernel/actions/workflows/tuist-apps.yml)
 
 # ₿ swift-bitcoinkernel
 
@@ -17,6 +18,7 @@ Swift package for Bitcoin consensus validation, optionally embedding a full Bitc
 - [Installation](#installation)
 - [Package Traits](#package-traits)
 - [Usage Examples](#usage-examples)
+- [Demo Apps](#demo-apps)
 - [Documentation](#documentation)
 - [Contributing](#contributing)
 - [Security](#security)
@@ -164,9 +166,20 @@ Daemon.waitUntilStopped()
 
 *→ Full guide: [Getting Started — Bitcoin](https://docs.21.dev/documentation/bitcoin/gettingstarted)*
 
+## Demo Apps
+
+Two SwiftUI apps in the [`Projects/`](Projects/) Tuist workspace exercise the package end to end. `NodeApp` drives the embedded `bitcoind` lifecycle, the typed `RPCClient`, and an optional Tor SOCKS proxy. `KernelApp` runs a `BitcoinKernel` chain sync through `BlockchainSync` over an Esplora block source.
+
+```sh
+swift package --disable-sandbox tuist generate -p Projects/ --no-open
+open Projects/Bitcoin.xcworkspace
+```
+
+Pick the `NodeApp` or `KernelApp` scheme and run. [`Projects/README.md`](Projects/README.md) has the full tour, including the Tor wiring and the macOS/iOS build-and-test commands.
+
 ## Documentation
 
-The DocC catalogs under [`Sources/Bitcoin/Bitcoin.docc/`](Sources/Bitcoin/Bitcoin.docc/) and [`Sources/BitcoinKernel/BitcoinKernel.docc/`](Sources/BitcoinKernel/BitcoinKernel.docc/) cover the embedded daemon and consensus-validation surfaces:
+The DocC catalogs for [Bitcoin](https://docs.21.dev/documentation/bitcoin/) and [BitcoinKernel](https://docs.21.dev/documentation/bitcoinkernel/) cover the embedded daemon and consensus-validation surfaces:
 
 - [Getting Started — Bitcoin](https://docs.21.dev/documentation/bitcoin/gettingstarted) — full node walkthrough from `Daemon.start` through the first RPC round-trip
 - [Getting Started — BitcoinKernel](https://docs.21.dev/documentation/bitcoinkernel/gettingstarted) — boot `libbitcoinkernel` with a `Context`, `ChainstateManagerOptions`, and `ChainstateManager`

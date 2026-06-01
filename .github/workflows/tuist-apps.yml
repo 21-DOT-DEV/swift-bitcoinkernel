@@ -1,0 +1,92 @@
+name: Tuist Apps
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  apps:
+    name: ${{ matrix.app }} (${{ matrix.platform }})
+    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { app: NodeApp,   platform: macos, action: test }
+          - { app: KernelApp, platform: macos, action: test }
+          - { app: NodeApp,   platform: ios,   action: test }
+          - { app: KernelApp, platform: ios,   action: test }
+          # Roadmap — uncomment as each platform is brought up. `action` is a
+          # per-row knob: drop a flaky iOS-simulator `test` to `build` here
+          # without restructuring the matrix.
+          # - { app: NodeApp,   platform: visionos, action: test }
+          # - { app: KernelApp, platform: visionos, action: test }
+          # tvOS carries KernelApp only: the Bitcoin product's execvp() is
+          # __TVOS_PROHIBITED, so NodeApp cannot build on tvOS (mirrors the
+          # per-scheme split in apple-builds.yml's tvOS job).
+          # - { app: KernelApp, platform: tvos, action: build }
+    permissions:
+      contents: read
+    env:
+      DEVELOPER_DIR: "/Applications/Xcode_26.4.app/Contents/Developer"
+    steps:
+      - uses: actions/checkout@v6
+
+      # Kept separate from the build/test step so a generation failure (e.g. an
+      # SPM version conflict in Projects/Project.swift) is isolated in the log.
+      - name: Generate workspace
+        run: swift package --disable-sandbox tuist generate -p Projects/ --no-open
+
+      - name: ${{ matrix.action }} ${{ matrix.app }} (${{ matrix.platform }})
+        env:
+          ACTION: ${{ matrix.action }}
+          APP: ${{ matrix.app }}
+          PLATFORM: ${{ matrix.platform }}
+        # Signing: the apps use automatic signing, which needs a DEVELOPMENT_TEAM
+        # supplied locally by the gitignored Resources/Project/Local.xcconfig. CI
+        # runners have no team, and these unit tests need no signed/entitled
+        # binary, so disable signing via the `--` xcodebuild passthrough.
+        #
+        # --no-selective-testing (test only): force every suite to run regardless
+        # of Tuist's change-detection cache, so CI can never silently skip tests.
+        #
+        # iOS retry loop: the simulator test host intermittently segfaults at
+        # launch inside Apple's own UIApplicationMain preparation (EXC_BAD_ACCESS
+        # in CFBundleGetIdentifier / _UIKitUserDefaults → NSUserDefaults init),
+        # aborting the bundle before our tests connect ("Early unexpected exit …
+        # test runner crashed before establishing connection"). The crash report
+        # has zero frames from our targets — it's an Apple/CoreSimulator launch
+        # race (~5-10% per launch locally, higher under CI load), reproduced with
+        # a clean cache. xcodebuild does not restart the runner, and --retry-count
+        # only retries tests that ran, so the whole `tuist test` is re-invoked to
+        # relaunch the host. The retry is GATED on the crash signature: any other
+        # non-zero exit (a real test or build failure) fails fast and is never
+        # masked. macOS is single-attempt for the same reason.
+        run: |
+          SELECTIVE=""
+          if [ "$ACTION" = "test" ]; then SELECTIVE="--no-selective-testing"; fi
+          MAX=1
+          if [ "$PLATFORM" = "ios" ]; then MAX=5; fi
+          LOG="${RUNNER_TEMP:-/tmp}/tuist-$APP-$PLATFORM.log"
+          attempt=1
+          while true; do
+            echo "::group::$ACTION $APP ($PLATFORM) — attempt $attempt/$MAX"
+            swift package --disable-sandbox tuist "$ACTION" "$APP" -p Projects/ --platform "$PLATFORM" $SELECTIVE -- CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO 2>&1 | tee "$LOG"
+            rc=${PIPESTATUS[0]}
+            echo "::endgroup::"
+            if [ "$rc" -eq 0 ]; then break; fi
+            if ! grep -qE "Early unexpected exit|test runner crashed before establishing connection" "$LOG"; then
+              echo "::error::$APP ($PLATFORM) failed — not the launch-crash flake; not retrying"
+              exit "$rc"
+            fi
+            if [ "$attempt" -ge "$MAX" ]; then
+              echo "::error::$APP ($PLATFORM) hit the simulator launch-crash flake $MAX times"
+              exit 1
+            fi
+            echo "Simulator launch-crash flake — relaunching (attempt $((attempt + 1))/$MAX)"
+            attempt=$((attempt + 1))
+          done
