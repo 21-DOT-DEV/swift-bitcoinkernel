@@ -70,7 +70,7 @@ private func freshTmpDir() -> URL {
 /// | Prior open → `(false, true)` (chainstate)   | works    |
 /// | Prior open → `(true, false)` (block-tree)   | works    |
 /// | **Prior open → `(true, true)` (full)**      | SIGSEGV  |
-@Test("Wipe matrix — all safe combinations succeed")
+@Test("Wipe matrix — all safe combinations succeed", .kernelSerialized)
 func wipeMatrixSafeCombinations() async throws {
     try await MainActor.run {
         // Fresh dir + (true, true) — actually works on truly empty dir.
@@ -122,7 +122,7 @@ func wipeMatrixSafeCombinations() async throws {
 ///
 /// Result: 5 sequential cycles work fine — kept here as a regression
 /// guard in case future libbitcoinkernel changes regress this property.
-@Test("Five rapid Context+ChainstateManager create/destroy cycles in one process")
+@Test("Five rapid Context+ChainstateManager create/destroy cycles in one process", .kernelSerialized)
 func repeatedKernelLifecycle() async throws {
     for i in 0..<5 {
         let tmpDir = freshTmpDir()
@@ -190,6 +190,7 @@ func repeatedKernelLifecycle() async throws {
 ///    `.disabled(...)` before committing.
 @Test(
     "CRASH — (true, true) wipe + bestEntry access traps (post-X2) / SIGSEGVs (pre-X2)",
+    .tags(.exitTest),
     .disabled("Kills the test process via Swift preconditionFailure (post-X2) or SIGSEGV (pre-X2). Enable only in Xcode for diagnosis.")
 )
 func captureSegfaultForUpstream() throws {
@@ -231,7 +232,7 @@ func captureSegfaultForUpstream() throws {
 /// documented `importBlocks(from: [])` recovery inserted before the second
 /// `bestEntry` access. Uses persistent storage because the bug only manifests
 /// against an on-disk block tree.
-@Test("Wipe (true,true) recovers via importBlocks(from: []) before bestEntry")
+@Test("Wipe (true,true) recovers via importBlocks(from: []) before bestEntry", .kernelSerialized)
 func wipeThenImportBlocksRecoversBestEntry() async throws {
     let tmpDir = freshTmpDir()
     defer { try? FileManager.default.removeItem(at: tmpDir) }
@@ -272,7 +273,9 @@ func wipeThenImportBlocksRecoversBestEntry() async throws {
 ///
 /// Runs in a spawned subprocess, so the trap does not kill the test runner.
 /// This is the enabled counterpart to the opt-in `captureSegfaultForUpstream`.
-@Test("Skipping importBlocks recovery traps with a #35293 diagnostic")
+@Test("Skipping importBlocks recovery traps with a #35293 diagnostic",
+      .tags(.exitTest),
+      .enabled(if: ProcessInfo.processInfo.environment["RUN_EXIT_TESTS"] != nil))
 func bestEntryTrapsWhenRecoverySkipped() async throws {
     let result = await #expect(processExitsWith: .failure, observing: [\.standardErrorContent]) {
         let tmp = FileManager.default.temporaryDirectory
@@ -310,7 +313,7 @@ func bestEntryTrapsWhenRecoverySkipped() async throws {
 /// crash if the data dir was removed while the manager was alive.
 ///
 /// Result: deinit is graceful — kept as a regression guard.
-@Test("Manager deinit after data directory removed — persistent storage")
+@Test("Manager deinit after data directory removed — persistent storage", .kernelSerialized)
 func managerDeinitAfterDirRemoved() async throws {
     let tmpDir = freshTmpDir()
 
@@ -340,7 +343,7 @@ func managerDeinitAfterDirRemoved() async throws {
 /// LevelDB state, in-memory should work. If it's about process-global
 /// kernel state (logger, signal handlers, etc.), even in-memory will
 /// break.
-@Test("Five in-memory kernel cycles — should succeed if global state is clean")
+@Test("Five in-memory kernel cycles — should succeed if global state is clean", .kernelSerialized)
 func repeatedKernelLifecycleInMemoryOnly() async throws {
     for i in 0..<5 {
         let tmpDir = freshTmpDir()

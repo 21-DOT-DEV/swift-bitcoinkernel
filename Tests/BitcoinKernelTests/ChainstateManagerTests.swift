@@ -14,7 +14,7 @@ import Foundation
 
 // MARK: - BlockValidationState
 
-@Test func blockValidationStateLifecycle() {
+@Test(.kernelSerialized) func blockValidationStateLifecycle() {
     let state = BlockValidationState()
     #expect(state.validationMode == .valid)
     #expect(state.blockValidationResult == .unset)
@@ -22,7 +22,7 @@ import Foundation
 
 // MARK: - ChainstateManagerOptions
 
-@Test func chainstateManagerOptionsCreation() throws {
+@Test(.kernelSerialized) func chainstateManagerOptionsCreation() throws {
     let context = try Context()
     let tmpDir = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString).path
@@ -34,7 +34,7 @@ import Foundation
     _ = options // no crash = success
 }
 
-@Test func chainstateManagerOptionsWipeDBs() throws {
+@Test(.kernelSerialized) func chainstateManagerOptionsWipeDBs() throws {
     let context = try Context()
     let tmpDir = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString).path
@@ -46,7 +46,7 @@ import Foundation
 
 // MARK: - ChainstateManager (regtest, in-memory)
 
-@Test func chainstateManagerCreation() throws {
+@Test(.kernelSerialized) func chainstateManagerCreation() throws {
     let params = ChainParameters(.regtest)
     let ctxOpts = ContextOptions()
     ctxOpts.setChainParams(params)
@@ -63,7 +63,7 @@ import Foundation
     _ = manager // no crash = success
 }
 
-@Test func chainstateManagerBestEntry() throws {
+@Test(.kernelSerialized) func chainstateManagerBestEntry() throws {
     let params = ChainParameters(.regtest)
     let ctxOpts = ContextOptions()
     ctxOpts.setChainParams(params)
@@ -82,7 +82,7 @@ import Foundation
     #expect(bestEntry.height == 0)
 }
 
-@Test func chainstateManagerActiveChain() throws {
+@Test(.kernelSerialized) func chainstateManagerActiveChain() throws {
     let params = ChainParameters(.regtest)
     let ctxOpts = ContextOptions()
     ctxOpts.setChainParams(params)
@@ -100,7 +100,7 @@ import Foundation
     #expect(chain.height == 0)
 }
 
-@Test func chainstateManagerChainEntryAtHeight() throws {
+@Test(.kernelSerialized) func chainstateManagerChainEntryAtHeight() throws {
     let params = ChainParameters(.regtest)
     let ctxOpts = ContextOptions()
     ctxOpts.setChainParams(params)
@@ -126,7 +126,7 @@ import Foundation
     #expect(tooHigh == nil)
 }
 
-@Test func chainstateManagerChainContains() throws {
+@Test(.kernelSerialized) func chainstateManagerChainContains() throws {
     let params = ChainParameters(.regtest)
     let ctxOpts = ContextOptions()
     ctxOpts.setChainParams(params)
@@ -145,7 +145,7 @@ import Foundation
     #expect(chain.contains(bestEntry))
 }
 
-@Test func blockTreeEntryBlockHeader() throws {
+@Test(.kernelSerialized) func blockTreeEntryBlockHeader() throws {
     let params = ChainParameters(.regtest)
     let ctxOpts = ContextOptions()
     ctxOpts.setChainParams(params)
@@ -165,7 +165,7 @@ import Foundation
     #expect(header.version == 1)
 }
 
-@Test func blockTreeEntryPrevious() throws {
+@Test(.kernelSerialized) func blockTreeEntryPrevious() throws {
     let params = ChainParameters(.regtest)
     let ctxOpts = ContextOptions()
     ctxOpts.setChainParams(params)
@@ -184,7 +184,7 @@ import Foundation
     #expect(bestEntry.previous == nil)
 }
 
-@Test func blockTreeEntryEquality() throws {
+@Test(.kernelSerialized) func blockTreeEntryEquality() throws {
     let params = ChainParameters(.regtest)
     let ctxOpts = ContextOptions()
     ctxOpts.setChainParams(params)
@@ -203,7 +203,7 @@ import Foundation
     #expect(entry1.equals(entry2))
 }
 
-@Test func chainstateManagerLookupByHash() throws {
+@Test(.kernelSerialized) func chainstateManagerLookupByHash() throws {
     let params = ChainParameters(.regtest)
     let ctxOpts = ContextOptions()
     ctxOpts.setChainParams(params)
@@ -226,7 +226,7 @@ import Foundation
     #expect(found?.height == 0)
 }
 
-@Test func chainstateManagerLookupByUnknownHash() throws {
+@Test(.kernelSerialized) func chainstateManagerLookupByUnknownHash() throws {
     let params = ChainParameters(.regtest)
     let ctxOpts = ContextOptions()
     ctxOpts.setChainParams(params)
@@ -244,7 +244,7 @@ import Foundation
     #expect(manager.blockTreeEntry(byHash: unknownHash) == nil)
 }
 
-@Test func processGenesisBlockHeader() throws {
+@Test(.kernelSerialized) func processGenesisBlockHeader() throws {
     let params = ChainParameters(.regtest)
     let ctxOpts = ContextOptions()
     ctxOpts.setChainParams(params)
@@ -268,7 +268,7 @@ import Foundation
     #expect(state.validationMode == .valid)
 }
 
-@Test func processBlockRegtest() throws {
+@Test(.kernelSerialized) func processBlockRegtest() throws {
     let params = ChainParameters(.regtest)
     let ctxOpts = ContextOptions()
     ctxOpts.setChainParams(params)
@@ -294,7 +294,7 @@ import Foundation
     }
 }
 
-@Test func readBlockSpentOutputsAtGenesis() throws {
+@Test(.kernelSerialized) func readBlockSpentOutputsAtGenesis() throws {
     let params = ChainParameters(.regtest)
     let ctxOpts = ContextOptions()
     ctxOpts.setChainParams(params)
@@ -319,7 +319,7 @@ import Foundation
     }
 }
 
-@Test func importBlocksEmptyList() throws {
+@Test(.kernelSerialized) func importBlocksEmptyList() throws {
     let params = ChainParameters(.regtest)
     let ctxOpts = ContextOptions()
     ctxOpts.setChainParams(params)
@@ -342,7 +342,7 @@ import Foundation
 
 // MARK: - KernelError
 
-@Test func kernelErrorCases() {
+@Test(.kernelSerialized) func kernelErrorCases() {
     // Verify all error cases are distinct and matchable
     let errors: [KernelError] = [
         .contextCreationFailed,
@@ -364,7 +364,7 @@ import Foundation
 
 // MARK: - BlockTreeEntry blockHash
 
-@Test func blockTreeEntryBlockHash() throws {
+@Test(.kernelSerialized) func blockTreeEntryBlockHash() throws {
     let params = ChainParameters(.regtest)
     let ctxOpts = ContextOptions()
     ctxOpts.setChainParams(params)

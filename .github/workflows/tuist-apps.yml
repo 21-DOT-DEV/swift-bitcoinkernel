@@ -22,7 +22,8 @@ jobs:
           - { app: KernelApp, platform: ios,   action: test }
           # Roadmap — uncomment as each platform is brought up. `action` is a
           # per-row knob: drop a flaky iOS-simulator `test` to `build` here
-          # without restructuring the matrix.
+          # without restructuring the matrix. New platforms also need a
+          # `-destination` in the "Resolve destination" step below.
           # - { app: NodeApp,   platform: visionos, action: test }
           # - { app: KernelApp, platform: visionos, action: test }
           # tvOS carries KernelApp only: the Bitcoin product's execvp() is
@@ -33,60 +34,116 @@ jobs:
       contents: read
     env:
       DEVELOPER_DIR: "/Applications/Xcode_26.4.app/Contents/Developer"
+      WORKSPACE: Projects/Bitcoin.xcworkspace
+      DERIVED_DATA: .derivedData
     steps:
       - uses: actions/checkout@v6
 
-      # Kept separate from the build/test step so a generation failure (e.g. an
-      # SPM version conflict in Projects/Project.swift) is isolated in the log.
+      # Generate the Xcode workspace from the Tuist manifest. Kept separate so a
+      # generation failure (e.g. an SPM version conflict in Projects/Project.swift)
+      # is isolated in the log.
+      #
+      # We generate with Tuist but build/test with xcodebuild DIRECTLY (not
+      # `tuist xcodebuild`): the `swift package tuist …` plugin can't forward
+      # xcodebuild's single-dash flags, because SwiftPM's own CLI parser reads
+      # `-workspace`/`-scheme` as short-flag clusters and the `-c` inside grabs
+      # the value (and `--` leaks through to xcodebuild). See `.github/AGENTS.md`.
       - name: Generate workspace
         run: swift package --disable-sandbox tuist generate -p Projects/ --no-open
 
-      - name: ${{ matrix.action }} ${{ matrix.app }} (${{ matrix.platform }})
+      # macOS is a fixed destination; for the iOS Simulator we resolve an
+      # available iPhone by UDID at runtime, which is robust against
+      # simulator-name churn across Xcode versions. Add cases here when
+      # uncommenting the visionOS/tvOS matrix rows above.
+      - name: Resolve destination
         env:
-          ACTION: ${{ matrix.action }}
-          APP: ${{ matrix.app }}
           PLATFORM: ${{ matrix.platform }}
-        # Signing: the apps use automatic signing, which needs a DEVELOPMENT_TEAM
-        # supplied locally by the gitignored Resources/Project/Local.xcconfig. CI
-        # runners have no team, and these unit tests need no signed/entitled
-        # binary, so disable signing via the `--` xcodebuild passthrough.
-        #
-        # --no-selective-testing (test only): force every suite to run regardless
-        # of Tuist's change-detection cache, so CI can never silently skip tests.
-        #
-        # iOS retry loop: the simulator test host intermittently segfaults at
-        # launch inside Apple's own UIApplicationMain preparation (EXC_BAD_ACCESS
-        # in CFBundleGetIdentifier / _UIKitUserDefaults → NSUserDefaults init),
-        # aborting the bundle before our tests connect ("Early unexpected exit …
-        # test runner crashed before establishing connection"). The crash report
-        # has zero frames from our targets — it's an Apple/CoreSimulator launch
-        # race (~5-10% per launch locally, higher under CI load), reproduced with
-        # a clean cache. xcodebuild does not restart the runner, and --retry-count
-        # only retries tests that ran, so the whole `tuist test` is re-invoked to
-        # relaunch the host. The retry is GATED on the crash signature: any other
-        # non-zero exit (a real test or build failure) fails fast and is never
-        # masked. macOS is single-attempt for the same reason.
         run: |
-          SELECTIVE=""
-          if [ "$ACTION" = "test" ]; then SELECTIVE="--no-selective-testing"; fi
+          case "$PLATFORM" in
+            macos)
+              echo "DESTINATION=platform=macOS" >> "$GITHUB_ENV" ;;
+            ios)
+              UDID=$(xcrun simctl list devices available | grep -E 'iPhone 1[6-9]' | grep -oE '[0-9A-Fa-f-]{36}' | head -1)
+              [ -z "$UDID" ] && UDID=$(xcrun simctl list devices available | grep 'iPhone' | grep -oE '[0-9A-Fa-f-]{36}' | head -1)
+              if [ -z "$UDID" ]; then echo "::error::no available iPhone simulator on the runner"; exit 1; fi
+              echo "DESTINATION=platform=iOS Simulator,id=$UDID" >> "$GITHUB_ENV" ;;
+            visionos)
+              UDID=$(xcrun simctl list devices available | grep 'Apple Vision' | grep -oE '[0-9A-Fa-f-]{36}' | head -1)
+              if [ -z "$UDID" ]; then echo "::error::no available visionOS simulator on the runner"; exit 1; fi
+              echo "DESTINATION=platform=visionOS Simulator,id=$UDID" >> "$GITHUB_ENV" ;;
+            tvos)
+              echo "DESTINATION=generic/platform=tvOS" >> "$GITHUB_ENV" ;;
+            *)
+              echo "::error::unhandled platform '$PLATFORM' — add a -destination case"; exit 1 ;;
+          esac
+
+      # Compile the app (and, for `test` rows, its test bundle) once. Signing is
+      # disabled: CI runners have no DEVELOPMENT_TEAM (supplied locally by the
+      # gitignored Resources/Project/Local.xcconfig), and these unit tests need no
+      # signed/entitled binary. The validation skips quiet the dev-plugin
+      # (tuist/subtree/docc) and macro prompts the package pulls on untagged refs.
+      - name: Build ${{ matrix.app }} (${{ matrix.platform }})
+        env:
+          SCHEME: ${{ matrix.app }}
+          ACTION: ${{ matrix.action }}
+        run: |
+          XCACTION=build
+          if [ "$ACTION" = "test" ]; then XCACTION=build-for-testing; fi
+          xcodebuild "$XCACTION" \
+            -skipMacroValidation -skipPackagePluginValidation \
+            -workspace "$WORKSPACE" -scheme "$SCHEME" \
+            -destination "$DESTINATION" -derivedDataPath "$DERIVED_DATA" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+
+      # Run the pre-built tests WITHOUT recompiling — the point of the
+      # build-for-testing split: the iOS retry below re-runs only this step.
+      #
+      # iOS retry loop: the simulator test host intermittently segfaults at launch
+      # inside Apple's own UIApplicationMain prep (EXC_BAD_ACCESS in
+      # CFBundleGetIdentifier / _UIKitUserDefaults → NSUserDefaults init), aborting
+      # the bundle before our tests connect ("Early unexpected exit … test runner
+      # crashed before establishing connection"). The crash report has zero frames
+      # from our targets — an Apple/CoreSimulator launch race (~5-10% per launch
+      # locally, higher under CI load). xcodebuild does not relaunch the host and
+      # --retry-count only retries tests that ran, so we re-invoke
+      # test-without-building (no rebuild — fast). The retry is GATED on that crash
+      # signature: any other non-zero exit (a real test/build failure) fails fast
+      # and is never masked. macOS is single-attempt.
+      #
+      # The app test bundles are Swift Testing suites — results print as `◇`/`✔`
+      # lines and failures gate via the exit code. xcodebuild's legacy "Executed
+      # 0 tests" summary counts only XCTest cases (we have none); it does NOT mean
+      # tests were skipped.
+      - name: Test ${{ matrix.app }} (${{ matrix.platform }})
+        if: matrix.action == 'test'
+        env:
+          SCHEME: ${{ matrix.app }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
           MAX=1
           if [ "$PLATFORM" = "ios" ]; then MAX=5; fi
-          LOG="${RUNNER_TEMP:-/tmp}/tuist-$APP-$PLATFORM.log"
+          LOG="${RUNNER_TEMP:-/tmp}/twb-$SCHEME-$PLATFORM.log"
           attempt=1
           while true; do
-            echo "::group::$ACTION $APP ($PLATFORM) — attempt $attempt/$MAX"
-            swift package --disable-sandbox tuist "$ACTION" "$APP" -p Projects/ --platform "$PLATFORM" $SELECTIVE -- CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO 2>&1 | tee "$LOG"
+            echo "::group::test-without-building $SCHEME ($PLATFORM) — attempt $attempt/$MAX"
+            set +e
+            xcodebuild test-without-building \
+              -skipMacroValidation -skipPackagePluginValidation \
+              -workspace "$WORKSPACE" -scheme "$SCHEME" \
+              -destination "$DESTINATION" -derivedDataPath "$DERIVED_DATA" \
+              CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO 2>&1 | tee "$LOG"
             rc=${PIPESTATUS[0]}
+            set -e
             echo "::endgroup::"
             if [ "$rc" -eq 0 ]; then break; fi
             if ! grep -qE "Early unexpected exit|test runner crashed before establishing connection" "$LOG"; then
-              echo "::error::$APP ($PLATFORM) failed — not the launch-crash flake; not retrying"
+              echo "::error::$SCHEME ($PLATFORM) failed — not the launch-crash flake; not retrying"
               exit "$rc"
             fi
             if [ "$attempt" -ge "$MAX" ]; then
-              echo "::error::$APP ($PLATFORM) hit the simulator launch-crash flake $MAX times"
+              echo "::error::$SCHEME ($PLATFORM) hit the simulator launch-crash flake $MAX times"
               exit 1
             fi
-            echo "Simulator launch-crash flake — relaunching (attempt $((attempt + 1))/$MAX)"
+            echo "Simulator launch-crash flake — re-running tests without rebuild (attempt $((attempt + 1))/$MAX)"
             attempt=$((attempt + 1))
           done

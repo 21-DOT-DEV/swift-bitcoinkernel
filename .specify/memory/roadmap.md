@@ -141,7 +141,7 @@ These are not committed phases — they're areas to monitor and potentially inco
 
 ### Linux Test Coverage Gaps
 
-**Status**: A handful of test files are gated to Apple platforms only; the rest of the suite runs on Linux CI. Each gap has a clean follow-up path.
+**Status**: One test file (`RegtestChainBuilder`, Gap 1) is gated to Apple platforms; Gaps 2 and 3 are resolved (see below) and the rest of the suite runs on Linux CI.
 
 **Gap 1 — `RegtestChainBuilder` (CryptoKit)**
 
@@ -151,19 +151,19 @@ These are not committed phases — they're areas to monitor and potentially inco
 - Alternative: expose libbitcoinkernel's internal `CSHA256` via a new C bridge target (precedent: [`swift-secp256k1`'s `Utility.h`](https://github.com/21-DOT-DEV/swift-secp256k1/blob/main/Sources/libsecp256k1/include/Utility.h)). Avoids the dep but adds C++→C wrapper scaffolding for one test helper.
 - Impact: ~12 integration tests skipped on Linux. Unit coverage of `BlockchainSync` itself remains via mocks; what's lost is end-to-end validation through `processBlock`.
 
-**Gap 2 — `HTTPStub` (URLProtocol stubbing on Linux)**
+**Gap 2 — `HTTPStub` (URLProtocol stubbing on Linux) — RESOLVED (2026-06-01)**
 
-- Files: `Tests/BitcoinKernelTests/BlockSourceTests.swift` — guarded by `#if !os(Linux)` (helpers + tests, except the literal-URL accessor test which has no network dependency).
-- Cause: `HTTPStub` relies on `URLProtocol.registerClass` to intercept HTTP traffic. Apple's URLSession honors registered URLProtocols; Linux's FoundationNetworking does not, so stubbed requests escape to real DNS and fail.
-- Recommended fix: refactor `EsploraBlockSource` to inject an HTTP client protocol (`func get(URLRequest) async throws -> (Data, HTTPURLResponse)`) instead of holding a `URLSession` directly. Tests substitute a Sendable mock conforming to the protocol; production code passes `URLSession.shared` wrapped in a thin adapter. Removes the URLProtocol intercept entirely and makes the suite cross-platform without third-party deps.
-- Impact: ~12 tests skipped on Linux covering retry, pacing, and Retry-After honoring of the Esplora HTTP layer. The production retry-policy logic is the most complex part of `EsploraBlockSource` — losing Linux coverage here is the most material gap of the three.
+- Files: `Tests/BitcoinKernelTests/BlockSourceTests.swift` — no longer platform-gated.
+- Cause: the old `HTTPStub` relied on `URLProtocol` interception. When that silently failed (a no-op on Linux's FoundationNetworking, and flaky even on Apple), stubbed requests escaped to real DNS against synthetic hostnames; because `EsploraBlockSource` treats DNS failures as retryable, it retried until the test hung.
+- Fix (shipped): exactly the recommended refactor. `EsploraBlockSource` now depends on a public `HTTPDataFetching` protocol (`func data(from: URL) async throws -> (Data, URLResponse)`); `URLSession` conforms, and the public `init(endpoint:urlSession:...)` is unchanged. Tests inject `MockHTTPClient` (`Tests/BitcoinKernelTests/Support/MockHTTPClient.swift`), a per-instance in-memory double — no `URLProtocol`, no network, deterministic and identical on every platform. The old `HTTPStub` was deleted.
+- Impact: the ~12 retry/pacing/Retry-After tests now run on Linux too; the most complex part of `EsploraBlockSource` regained cross-platform coverage with no third-party deps.
 
-**Gap 3 — `LoggingConnection` (libbitcoinkernel process-singleton logger on Linux)**
+**Gap 3 — Process-global kernel state under single-process parallel tests — RESOLVED (2026-06-01)**
 
-- File: `Tests/BitcoinKernelTests/LoggingTests.swift` — `loggingConnectionReceivesMessages()` is guarded by `#if !os(Linux)`.
-- Cause: libbitcoinkernel's `BCLog::Logger::StartLogging()` asserts `m_buffering == true`. The first connection succeeds (sets `m_buffering = false`); on Apple, `swift test` invocations that exercise the logger run in fresh xctest processes so the global state is reset. On Linux all tests share one process, so the assertion fires when a later test causes the kernel to call into logging while another test's connection lifecycle has already flipped the flag.
-- Recommended fix: make Swift's `LoggingConnection` a process-wide singleton (`static let shared`) instead of one-instance-per-test, and remove the destroy/recreate path from tests. Aligns with Bitcoin Core's process-scoped intent for the C-API.
-- Impact: 1 test skipped on Linux. Functional coverage of the `LoggingConnection` public API stays on Apple. The production code paths that emit kernel log lines run on Linux as part of every other kernel test in the suite, so the logging callback contract is exercised indirectly.
+- File: `Tests/BitcoinKernelTests/LoggingTests.swift` — `loggingConnectionReceivesMessages()` is no longer platform-gated.
+- Cause (corrected): the premise that Apple gives each test a fresh xctest process is false under swift-testing, which runs the whole bundle in one process (like Linux). The fault is broader than the logger — libbitcoinkernel's process-global state isn't safe under concurrent in-process lifecycles. Two symptoms: (a) the kernel's `StartLogging` (via `btck_logging_connection_create`) and the embedded `bitcoind`'s `StartLogging` both `assert(m_buffering)` on the one `LogInstance`, so running both in a process SIGABRTs (surfaced by `swift test --traits wallet`); (b) parallel `Context`/`ChainstateManager` create/destroy cycles spin/livelock on `cs_main`/chainstate.
+- Fix (shipped): handled in test code, not with `--no-parallel`. Tests that create a `Context`/`ChainstateManager` or mutate the global logger carry the `.kernelSerialized` trait (`Tests/BitcoinKernelTests/Support/KernelSerialization.swift`) — a `TestScoping` trait whose shared `AsyncSemaphore` serializes them against each other across all files and suites while everything else stays parallel (`.serialized` can't, since it only orders tests within one suite). The logging-test callback is also lock-guarded. The package therefore runs as ONE parallel `swift test`; only the `Bitcoin Integration` daemon suite is split into its own invocation, because the embedded `bitcoind` holds the global logger open for its lifetime and can't share a process. (The earlier "make `LoggingConnection` a `static let shared` singleton" idea was rejected: a never-destroyed connection would make the daemon's `StartLogging` assert.)
+- Impact: the Linux-gated test is re-enabled; `LoggingConnection` API coverage now runs on every platform.
 
 ### Test-Time Clock Injection (`swift-clocks`)
 

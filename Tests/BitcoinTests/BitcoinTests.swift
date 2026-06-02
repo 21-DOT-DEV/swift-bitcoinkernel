@@ -99,12 +99,14 @@ final class BitcoinTests {
         #expect(bitcoin_rpc_ready() == 1, "Direct bridge should be active after bootstrap")
     }
 
-    @Test("getBlockVerbose returns genesis block")
-    func getGenesisBlock() async throws {
+    @Test("getBlockHash returns the mainnet genesis hash")
+    func genesisBlockHash() async throws {
+        // A pruned node keeps the block index (height → hash) but discards old
+        // block *data*, so getBlockVerbose(genesis) fails with "Block not
+        // available (pruned data)". getBlockHash works regardless and still
+        // proves the RPC bridge round-trips against a known value.
         let client = DaemonFixture.makeClient()
-        let block = try await client.getBlockVerbose(
-            hash: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
-        )
-        #expect(block.height == 0)
+        let hash = try await client.getBlockHash(height: 0)
+        #expect(hash == "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f")
     }
 }

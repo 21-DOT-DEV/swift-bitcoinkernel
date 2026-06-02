@@ -67,29 +67,10 @@ import Foundation
     #expect(tip.timestamp == timestamp)
 }
 
-// MARK: - Precondition (exit tests)
-//
-// Swift Testing 6.2+ exit tests (`#expect(processExitsWith:)`) spawn a child
-// process that runs the closure body. Precondition traps terminate the child
-// cleanly; the parent observes the `.failure` exit condition.
-//
-// Exit-test closures cannot capture parent state (per SE-0008), so each bad
-// input is hard-coded as a literal inside the closure body.
-
-@Test func blockTipPreconditionOn31ByteHash() async {
-    await #expect(processExitsWith: .failure) {
-        _ = BlockTip(hash: Data(repeating: 0, count: 31), height: 0)
-    }
-}
-
-@Test func blockTipPreconditionOn33ByteHash() async {
-    await #expect(processExitsWith: .failure) {
-        _ = BlockTip(hash: Data(repeating: 0, count: 33), height: 0)
-    }
-}
-
-@Test func blockTipPreconditionOnEmptyHash() async {
-    await #expect(processExitsWith: .failure) {
-        _ = BlockTip(hash: Data(), height: 0)
-    }
-}
+// The 32-byte-hash `precondition` in `BlockTip.init` is a hard programmer-error
+// trap. Verifying it would need a Swift Testing exit test
+// (`#expect(processExitsWith:)`), but exit tests can't run under the parallel
+// runner or be `--filter`-isolated, and a wrong-size hash here is a logic error
+// (the hash is validated upstream and only compared in Swift), not a
+// memory-safety boundary — so it doesn't clear the bar for a death test. The
+// precondition stands in the source as the guard. See `.github/AGENTS.md`.

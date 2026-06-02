@@ -23,7 +23,7 @@ import Foundation
 // consensus validation. If they go green, Cycle A2.2 integration tests
 // can rely on synthetic chains.
 
-@Test func regtestChainBuilderProducesKernelAcceptedSingleBlock() throws {
+@Test(.kernelSerialized) func regtestChainBuilderProducesKernelAcceptedSingleBlock() throws {
     let params = ChainParameters(.regtest)
     let ctxOpts = ContextOptions()
     ctxOpts.setChainParams(params)
@@ -57,7 +57,7 @@ import Foundation
     #expect(manager.bestEntry.height == 1)
 }
 
-@Test func regtestChainBuilderProducesFiveLinkedBlocks() throws {
+@Test(.kernelSerialized) func regtestChainBuilderProducesFiveLinkedBlocks() throws {
     let params = ChainParameters(.regtest)
     let ctxOpts = ContextOptions()
     ctxOpts.setChainParams(params)
@@ -93,7 +93,7 @@ import Foundation
     #expect(manager.bestEntry.blockHash.data == chain.last?.hash)
 }
 
-@Test func regtestChainBuilderSubsidyMatchesBitcoinCore() {
+@Test(.kernelSerialized) func regtestChainBuilderSubsidyMatchesBitcoinCore() {
     // Regtest starts at 50 BTC, halves every 150 blocks.
     #expect(RegtestChainBuilder.subsidy(atHeight: 0) == 5_000_000_000)
     #expect(RegtestChainBuilder.subsidy(atHeight: 1) == 5_000_000_000)

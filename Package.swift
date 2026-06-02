@@ -112,7 +112,7 @@ extension Package.Dependency {
     static var developmentDependencies: [Package.Dependency] {
         guard Context.gitInformation?.currentTag == nil else { return [] }
         return [
-            .package(url: "https://github.com/21-DOT-DEV/swift-plugin-tuist.git", exact: "4.20.0"),
+            .package(url: "https://github.com/21-DOT-DEV/swift-plugin-tuist.git", exact: "4.195.11"),
             .package(url: "https://github.com/21-DOT-DEV/swift-plugin-subtree.git", exact: "0.0.15"),
             .package(url: "https://github.com/apple/swift-docc-plugin", from: "1.5.0"),
         ]

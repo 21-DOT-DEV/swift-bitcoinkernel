@@ -23,13 +23,10 @@ import Foundation
     #expect(URL.blockstreamInfoTestnet.absoluteString == "https://blockstream.info/testnet/api")
 }
 
-// All tests below this line use `HTTPStub`, which relies on
-// `URLProtocol.registerClass` to intercept HTTP traffic. That mechanism
-// works on Apple's URLSession but is a no-op on Linux's
-// FoundationNetworking — registered protocols are not consulted, so
-// requests escape to the real network and fail with DNS errors against
-// the synthetic `.test` hostnames. See `roadmap.md` "Linux Test Coverage".
-#if !os(Linux)
+// The tests below drive `EsploraBlockSource` through `MockHTTPClient`, an
+// in-memory `HTTPDataFetching` double: no `URLProtocol`, no `URLSession`, and no
+// network. They're deterministic and parallel-safe, and they run on every
+// platform — including Linux, where `URLProtocol` interception is a no-op.
 
 // MARK: - Helpers
 
@@ -37,17 +34,17 @@ import Foundation
 private let sampleBlockHashDisplayHex =
     "00000000000000000001a3bb48a04df6dd6e48ea74d30ba59be6b6c9a4e85d5e"
 
-/// Build a source wired to an `HTTPStub`, using short delays so retry/backoff
+/// Build a source wired to a `MockHTTPClient`, using short delays so retry/backoff
 /// and pacing tests complete quickly without sacrificing coverage.
 private func makeSource(
-    stub: HTTPStub,
+    client: MockHTTPClient,
     minimumInterRequestDelay: Duration = .milliseconds(50),
     maximumRetries: Int = 5,
     baseRetryDelay: Duration = .milliseconds(10)
 ) -> EsploraBlockSource {
     EsploraBlockSource(
-        endpoint: stub.baseURL,
-        urlSession: stub.makeSession(),
+        endpoint: client.baseURL,
+        httpClient: client,
         minimumInterRequestDelay: minimumInterRequestDelay,
         maximumRetries: maximumRetries,
         baseRetryDelay: baseRetryDelay
@@ -57,11 +54,11 @@ private func makeSource(
 // MARK: - Parsing / happy path
 
 @Test func bestTipParsesHeightFromTextResponse() async throws {
-    let stub = HTTPStub()
-    stub.enqueue(.ok(body: "800000"))
-    stub.enqueue(.ok(body: sampleBlockHashDisplayHex))
+    let client = MockHTTPClient()
+    client.enqueue(.ok(body: "800000"))
+    client.enqueue(.ok(body: sampleBlockHashDisplayHex))
 
-    let source = makeSource(stub: stub)
+    let source = makeSource(client: client)
     let tip = try await source.bestTip()
 
     #expect(tip.height == 800_000)
@@ -71,30 +68,30 @@ private func makeSource(
     #expect(tip.hash == Data(displayBytes.reversed()))
     #expect(tip.timestamp == nil)
     // Exactly two requests: height, then hash.
-    #expect(stub.records.count == 2)
-    #expect(stub.records[0].url.path.hasSuffix("/blocks/tip/height"))
-    #expect(stub.records[1].url.path.hasSuffix("/blocks/tip/hash"))
+    #expect(client.records.count == 2)
+    #expect(client.records[0].url.path.hasSuffix("/blocks/tip/height"))
+    #expect(client.records[1].url.path.hasSuffix("/blocks/tip/hash"))
 }
 
 @Test func blockHashAtHeightParsesHex() async throws {
-    let stub = HTTPStub()
-    stub.enqueue(.ok(body: sampleBlockHashDisplayHex))
+    let client = MockHTTPClient()
+    client.enqueue(.ok(body: sampleBlockHashDisplayHex))
 
-    let source = makeSource(stub: stub)
+    let source = makeSource(client: client)
     let hash = try await source.blockHash(atHeight: 123_456)
 
     #expect(hash.count == 32)
     let displayBytes = dataFromHex(sampleBlockHashDisplayHex)
     #expect(hash == Data(displayBytes.reversed()))
-    #expect(stub.records.first?.url.path.hasSuffix("/block-height/123456") == true)
+    #expect(client.records.first?.url.path.hasSuffix("/block-height/123456") == true)
 }
 
 @Test func blockHeaderParsesHexBytes() async throws {
-    let stub = HTTPStub()
+    let client = MockHTTPClient()
     // Esplora returns the 80-byte header as 160 hex chars (ASCII text body).
-    stub.enqueue(.ok(body: genesisHeaderHex))
+    client.enqueue(.ok(body: genesisHeaderHex))
 
-    let source = makeSource(stub: stub)
+    let source = makeSource(client: client)
     let hashInternal = dataFromHex(genesisBlockHashHex)
     let header = try await source.blockHeader(for: hashInternal)
 
@@ -104,40 +101,40 @@ private func makeSource(
     #expect(header.nonce == 2083236893)
     // URL path must embed the display-order hex (reversed from internal).
     let displayHex = Data(hashInternal.reversed()).map { String(format: "%02x", $0) }.joined()
-    #expect(stub.records.first?.url.path.hasSuffix("/block/\(displayHex)/header") == true)
+    #expect(client.records.first?.url.path.hasSuffix("/block/\(displayHex)/header") == true)
 }
 
 @Test func blockParsesRawBinary() async throws {
-    let stub = HTTPStub()
-    stub.enqueue(.ok(data: dataFromHex(genesisBlockHex)))
+    let client = MockHTTPClient()
+    client.enqueue(.ok(data: dataFromHex(genesisBlockHex)))
 
-    let source = makeSource(stub: stub)
+    let source = makeSource(client: client)
     let hashInternal = dataFromHex(genesisBlockHashHex)
     let block = try await source.block(for: hashInternal)
 
     #expect(block.transactionCount == 1)
     let displayHex = Data(hashInternal.reversed()).map { String(format: "%02x", $0) }.joined()
-    #expect(stub.records.first?.url.path.hasSuffix("/block/\(displayHex)/raw") == true)
+    #expect(client.records.first?.url.path.hasSuffix("/block/\(displayHex)/raw") == true)
 }
 
 // MARK: - Error mapping
 
 @Test func bestTipFailsOnNonNumericHeight() async {
-    let stub = HTTPStub()
-    stub.enqueue(.ok(body: "not-a-number"))
+    let client = MockHTTPClient()
+    client.enqueue(.ok(body: "not-a-number"))
 
-    let source = makeSource(stub: stub)
+    let source = makeSource(client: client)
     await #expect(throws: BlockSourceError.self) {
         _ = try await source.bestTip()
     }
 }
 
 @Test func blockFailsOnCorruptedBody() async {
-    let stub = HTTPStub()
+    let client = MockHTTPClient()
     // Random 100 bytes — not a valid consensus-encoded block.
-    stub.enqueue(.ok(data: Data((0..<100).map { UInt8($0 & 0xFF) })))
+    client.enqueue(.ok(data: Data((0..<100).map { UInt8($0 & 0xFF) })))
 
-    let source = makeSource(stub: stub)
+    let source = makeSource(client: client)
     let hashInternal = dataFromHex(genesisBlockHashHex)
     await #expect(throws: BlockSourceError.self) {
         _ = try await source.block(for: hashInternal)
@@ -145,10 +142,10 @@ private func makeSource(
 }
 
 @Test func notFoundMapsTo404() async {
-    let stub = HTTPStub()
-    stub.enqueue(.notFound())
+    let client = MockHTTPClient()
+    client.enqueue(.notFound())
 
-    let source = makeSource(stub: stub)
+    let source = makeSource(client: client)
     do {
         _ = try await source.blockHash(atHeight: 999_999_999)
         Issue.record("expected throw")
@@ -164,28 +161,28 @@ private func makeSource(
 // MARK: - Retry / backoff
 
 @Test func retriesOn500WithExponentialBackoff() async throws {
-    let stub = HTTPStub()
-    stub.enqueue(.serverError())       // attempt 1 → 500
-    stub.enqueue(.serverError())       // attempt 2 → 500
-    stub.enqueue(.ok(body: "42"))      // attempt 3 → 200
-    stub.enqueue(.ok(body: sampleBlockHashDisplayHex))
+    let client = MockHTTPClient()
+    client.enqueue(.serverError())       // attempt 1 → 500
+    client.enqueue(.serverError())       // attempt 2 → 500
+    client.enqueue(.ok(body: "42"))      // attempt 3 → 200
+    client.enqueue(.ok(body: sampleBlockHashDisplayHex))
 
-    let source = makeSource(stub: stub)
+    let source = makeSource(client: client)
     let tip = try await source.bestTip()
 
     #expect(tip.height == 42)
     // Three hits to /blocks/tip/height (2 failed + 1 success), then 1 for /hash = 4 total.
-    #expect(stub.records.count == 4)
-    let heightHits = stub.records.filter { $0.url.path.hasSuffix("/blocks/tip/height") }
+    #expect(client.records.count == 4)
+    let heightHits = client.records.filter { $0.url.path.hasSuffix("/blocks/tip/height") }
     #expect(heightHits.count == 3)
 }
 
 @Test func honorsRetryAfterOn429() async throws {
-    let stub = HTTPStub()
-    stub.enqueue(.rateLimited(retryAfterSeconds: 1))
-    stub.enqueue(.ok(body: sampleBlockHashDisplayHex))
+    let client = MockHTTPClient()
+    client.enqueue(.rateLimited(retryAfterSeconds: 1))
+    client.enqueue(.ok(body: sampleBlockHashDisplayHex))
 
-    let source = makeSource(stub: stub, baseRetryDelay: .milliseconds(10))
+    let source = makeSource(client: client, baseRetryDelay: .milliseconds(10))
 
     let start = ContinuousClock.now
     _ = try await source.blockHash(atHeight: 1)
@@ -197,31 +194,31 @@ private func makeSource(
     // asserting precisely on wall-clock.
     #expect(elapsed >= .milliseconds(900))
     #expect(elapsed < .seconds(5))
-    #expect(stub.records.count == 2)
+    #expect(client.records.count == 2)
 }
 
 @Test func givesUpAfterMaxRetries() async {
-    let stub = HTTPStub()
+    let client = MockHTTPClient()
     // maximumRetries=2 → at most 3 total attempts before giving up.
-    for _ in 0..<10 { stub.enqueue(.serverError()) }
+    for _ in 0..<10 { client.enqueue(.serverError()) }
 
-    let source = makeSource(stub: stub, maximumRetries: 2, baseRetryDelay: .milliseconds(1))
+    let source = makeSource(client: client, maximumRetries: 2, baseRetryDelay: .milliseconds(1))
     await #expect(throws: BlockSourceError.self) {
         _ = try await source.blockHash(atHeight: 1)
     }
-    #expect(stub.records.count == 3)
+    #expect(client.records.count == 3)
 }
 
 // MARK: - Pacing
 
 @Test func requestsArePacedByMinimumDelay() async throws {
-    let stub = HTTPStub()
+    let client = MockHTTPClient()
     for _ in 0..<5 {
-        stub.enqueue(.ok(body: sampleBlockHashDisplayHex))
+        client.enqueue(.ok(body: sampleBlockHashDisplayHex))
     }
 
     let delay = Duration.milliseconds(50)
-    let source = makeSource(stub: stub, minimumInterRequestDelay: delay)
+    let source = makeSource(client: client, minimumInterRequestDelay: delay)
 
     let start = ContinuousClock.now
     for height in 0..<5 {
@@ -235,14 +232,14 @@ private func makeSource(
 }
 
 @Test func concurrentRequestsSerializeThroughPacer() async throws {
-    let stub = HTTPStub()
+    let client = MockHTTPClient()
     let count = 10
     for _ in 0..<count {
-        stub.enqueue(.ok(body: sampleBlockHashDisplayHex))
+        client.enqueue(.ok(body: sampleBlockHashDisplayHex))
     }
 
     let delay = Duration.milliseconds(50)
-    let source = makeSource(stub: stub, minimumInterRequestDelay: delay)
+    let source = makeSource(client: client, minimumInterRequestDelay: delay)
 
     let testStart = ContinuousClock.now
     try await withThrowingTaskGroup(of: Void.self) { group in
@@ -266,7 +263,5 @@ private func makeSource(
     let expectedMinimum = delay * (count - 1)
     #expect(testElapsed >= expectedMinimum,
             "10 concurrent requests finished in \(testElapsed); expected ≥ \(expectedMinimum)")
-    #expect(stub.records.count == count)
+    #expect(client.records.count == count)
 }
-
-#endif // !os(Linux)

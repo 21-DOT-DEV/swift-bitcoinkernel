@@ -8,10 +8,11 @@
 //  See the accompanying file LICENSE for information
 //
 
+import Foundation
 import Testing
 import BitcoinKernel
 
-@Test func loggingGlobalFunctions() {
+@Test(.kernelSerialized) func loggingGlobalFunctions() {
     // Verify global logging configuration functions don't crash.
     setLoggingOptions(timestamps: true, sourceLocations: true)
     setLogLevel(category: .all, level: .info)
@@ -20,26 +21,28 @@ import BitcoinKernel
     setLoggingOptions() // reset to defaults
 }
 
-// libbitcoinkernel's logger is process-scoped: creating a `LoggingConnection`
-// flips internal state (`m_buffering = false`) the first time it runs in
-// a process. On Linux, swift-testing runs all tests in a single process
-// and tests later in the run also bring up kernel state that asserts
-// `m_buffering`. The destroy-path resets the flag, but the lock window
-// across parallel tests still races. On Apple this is masked because
-// each test bundle gets a fresh xctest invocation. See `roadmap.md`
-// "Linux Test Coverage" — Gap 3.
-#if !os(Linux)
-@Test func loggingConnectionReceivesMessages() throws {
-    var messages: [String] = []
-    let connection = try LoggingConnection { message in
-        messages.append(message)
+// libbitcoinkernel's logger is a process-global singleton. Creating a
+// `LoggingConnection` calls `StartLogging` (which asserts `m_buffering`), and the
+// embedded `bitcoind` init does the same on the SAME `LogInstance`. This test
+// carries `.kernelSerialized` so it never overlaps another kernel-touching test
+// (see `Support/KernelSerialization.swift`), and the daemon integration suite
+// runs in its own process (see `.github/AGENTS.md`) — so neither this connection
+// nor a concurrent test can race the global logger. The callback funnels through
+// a lock because the kernel may invoke it from internal threads even for a
+// single connection.
+@Test(.kernelSerialized) func loggingConnectionReceivesMessages() throws {
+    final class Sink: @unchecked Sendable {
+        private let lock = NSLock()
+        private(set) var messages: [String] = []
+        func append(_ message: String) { lock.lock(); defer { lock.unlock() }; messages.append(message) }
     }
-    // Creating a context triggers internal log messages.
-    enableLogCategory(.all)
+    let sink = Sink()
+    let connection = try LoggingConnection { sink.append($0) }
+    // Creating a context triggers internal log messages through the callback.
+    enableLogCategory(.validation)
     let _ = try Context()
-    // The connection existing is sufficient — we verify no crash.
-    // Logging output depends on kernel internals; just verify the
-    // callback mechanism works without crashing.
+    disableLogCategory(.validation)
+    // We just verify the callback mechanism runs without crashing.
     _ = connection
+    _ = sink
 }
-#endif
