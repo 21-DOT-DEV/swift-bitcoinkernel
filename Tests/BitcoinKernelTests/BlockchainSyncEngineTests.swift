@@ -57,7 +57,7 @@ private func registerChain(
 
 // MARK: - Happy-path sync
 
-@Test func syncFromGenesisToSyntheticChain() async throws {
+@Test(.kernelSerialized) func syncFromGenesisToSyntheticChain() async throws {
     let (context, manager, tmpDir) = try await MainActor.run { try makeRegtestKernel() }
     defer { try? FileManager.default.removeItem(at: tmpDir) }
 
@@ -87,7 +87,7 @@ private func registerChain(
     }
 }
 
-@Test func syncFinishesImmediatelyWhenAlreadyAtRemoteTip() async throws {
+@Test(.kernelSerialized) func syncFinishesImmediatelyWhenAlreadyAtRemoteTip() async throws {
     let (context, manager, tmpDir) = try await MainActor.run { try makeRegtestKernel() }
     defer { try? FileManager.default.removeItem(at: tmpDir) }
 
@@ -112,7 +112,7 @@ private func registerChain(
 
 // MARK: - Fork-point failure
 
-@Test func syncFailsOnForkAtResumeHeight() async throws {
+@Test(.kernelSerialized) func syncFailsOnForkAtResumeHeight() async throws {
     let (context, manager, tmpDir) = try await MainActor.run { try makeRegtestKernel() }
     defer { try? FileManager.default.removeItem(at: tmpDir) }
 
@@ -151,7 +151,7 @@ private func registerChain(
 
 // MARK: - Cancellation
 
-@Test func cancellationEndsSequenceSilently() async throws {
+@Test(.kernelSerialized) func cancellationEndsSequenceSilently() async throws {
     let (context, manager, tmpDir) = try await MainActor.run { try makeRegtestKernel() }
     defer { try? FileManager.default.removeItem(at: tmpDir) }
 
@@ -193,7 +193,7 @@ private func registerChain(
 
 // MARK: - Progress semantics
 
-@Test func verificationProgressMonotonicallyIncreases() async throws {
+@Test(.kernelSerialized) func verificationProgressMonotonicallyIncreases() async throws {
     let (context, manager, tmpDir) = try await MainActor.run { try makeRegtestKernel() }
     defer { try? FileManager.default.removeItem(at: tmpDir) }
 
@@ -217,7 +217,7 @@ private func registerChain(
     #expect(progresses.last == 1.0)
 }
 
-@Test func foundationProgressReflectsCompletion() async throws {
+@Test(.kernelSerialized) func foundationProgressReflectsCompletion() async throws {
     let (context, manager, tmpDir) = try await MainActor.run { try makeRegtestKernel() }
     defer { try? FileManager.default.removeItem(at: tmpDir) }
 
@@ -240,7 +240,7 @@ private func registerChain(
 
 // MARK: - Growing remote tip
 
-@Test func growingRemoteTipExtendsTotalUnitCount() async throws {
+@Test(.kernelSerialized) func growingRemoteTipExtendsTotalUnitCount() async throws {
     let (context, manager, tmpDir) = try await MainActor.run { try makeRegtestKernel() }
     defer { try? FileManager.default.removeItem(at: tmpDir) }
 
@@ -280,7 +280,7 @@ private func registerChain(
 
 // MARK: - BlockSource failure → .failed state
 
-@Test func blockSourceFailureBecomesFailedState() async throws {
+@Test(.kernelSerialized) func blockSourceFailureBecomesFailedState() async throws {
     let (context, manager, tmpDir) = try await MainActor.run { try makeRegtestKernel() }
     defer { try? FileManager.default.removeItem(at: tmpDir) }
 

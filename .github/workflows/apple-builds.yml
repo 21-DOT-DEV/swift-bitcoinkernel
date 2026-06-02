@@ -24,8 +24,22 @@ jobs:
       DEVELOPER_DIR: "/Applications/Xcode_26.4.app/Contents/Developer"
     steps:
       - uses: actions/checkout@v6
-      - name: Build and test
-        run: swift test ${{ matrix.traits && format('--traits {0}', matrix.traits) || '' }}
+      # Two invocations. The first runs the package in PARALLEL: the
+      # `.kernelSerialized` trait serializes libbitcoinkernel's process-global
+      # state tests in-process (Tests/BitcoinKernelTests/Support/KernelSerialization.swift),
+      # and the Esplora tests use an in-memory HTTP double, so `--no-parallel` is
+      # not needed. The one exit test (`#expect(processExitsWith:)`, the #35293
+      # trap guard) gates itself off with `.enabled(if: env["RUN_EXIT_TESTS"])`,
+      # so it auto-skips here; run it on demand via `RUN_EXIT_TESTS=1 swift test
+      # --no-parallel` (exit tests can't run under the parallel runner or be
+      # `--filter`-isolated). The second invocation isolates the embedded-bitcoind
+      # suite in its own process — it holds the global BCLog logger open and can't
+      # share a process with kernel LoggingConnection tests (the original
+      # `--traits wallet` SIGABRT). See `.github/AGENTS.md`.
+      - name: Test — package (parallel; kernel-state tests gated in-process)
+        run: swift test --skip 'BitcoinTests\.BitcoinTests/' ${{ matrix.traits && format('--traits {0}', matrix.traits) || '' }}
+      - name: Test — Bitcoin Integration daemon (isolated process)
+        run: swift test --filter 'BitcoinTests\.BitcoinTests/' ${{ matrix.traits && format('--traits {0}', matrix.traits) || '' }}
       - name: Validate DocC catalog (Bitcoin)
         if: matrix.name == 'default'
         run: swift package generate-documentation --target Bitcoin --analyze --warnings-as-errors

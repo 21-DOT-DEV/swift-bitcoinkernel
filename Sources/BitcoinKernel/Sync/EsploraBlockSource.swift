@@ -44,7 +44,7 @@ import FoundationNetworking
 /// happens inside the implementation at the HTTP boundary.
 public struct EsploraBlockSource: BlockSource {
     private let endpoint: URL
-    private let urlSession: URLSession
+    private let httpClient: any HTTPDataFetching
     private let pacer: RequestPacer
     private let maximumRetries: Int
     private let baseRetryDelay: Duration
@@ -79,8 +79,34 @@ public struct EsploraBlockSource: BlockSource {
         maximumRetries: Int = 5,
         baseRetryDelay: Duration = .milliseconds(500)
     ) {
+        self.init(
+            endpoint: endpoint,
+            httpClient: urlSession,
+            minimumInterRequestDelay: minimumInterRequestDelay,
+            maximumRetries: maximumRetries,
+            baseRetryDelay: baseRetryDelay
+        )
+    }
+
+    /// Create a new Esplora-backed block source over a custom HTTP client.
+    ///
+    /// Most callers want
+    /// ``init(endpoint:urlSession:minimumInterRequestDelay:maximumRetries:baseRetryDelay:)``.
+    /// This overload accepts any ``HTTPDataFetching`` conformer, which lets you
+    /// route requests through an alternative HTTP stack or, in tests, a
+    /// deterministic in-memory double with no real networking.
+    ///
+    /// - Parameters: as the `urlSession` overload, except `httpClient` is the
+    ///   ``HTTPDataFetching`` used to fetch bytes.
+    public init(
+        endpoint: URL,
+        httpClient: any HTTPDataFetching,
+        minimumInterRequestDelay: Duration = .milliseconds(100),
+        maximumRetries: Int = 5,
+        baseRetryDelay: Duration = .milliseconds(500)
+    ) {
         self.endpoint = endpoint
-        self.urlSession = urlSession
+        self.httpClient = httpClient
         self.maximumRetries = maximumRetries
         self.baseRetryDelay = baseRetryDelay
         self.pacer = RequestPacer(minimumDelay: minimumInterRequestDelay)
@@ -170,7 +196,7 @@ public struct EsploraBlockSource: BlockSource {
             try await Task.sleep(until: slot, clock: .continuous)
 
             do {
-                let (data, response) = try await urlSession.data(from: url)
+                let (data, response) = try await httpClient.data(from: url)
 
                 guard let http = response as? HTTPURLResponse else {
                     throw BlockSourceError.invalidResponse("non-HTTP response")

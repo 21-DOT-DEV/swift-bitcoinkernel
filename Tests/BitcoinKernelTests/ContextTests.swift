@@ -11,13 +11,13 @@
 import Testing
 import BitcoinKernel
 
-@Test func contextCreateWithDefaults() throws {
+@Test(.kernelSerialized) func contextCreateWithDefaults() throws {
     // Default context (mainnet, no callbacks) — verifies create + destroy lifecycle.
     let context = try Context()
     #expect(context.interrupt())
 }
 
-@Test func contextWithChainParams() throws {
+@Test(.kernelSerialized) func contextWithChainParams() throws {
     let params = ChainParameters(.regtest)
     let options = ContextOptions()
     options.setChainParams(params)
@@ -26,7 +26,7 @@ import BitcoinKernel
     // All objects auto-destroyed by ARC when scope ends.
 }
 
-@Test func contextAllChainTypes() throws {
+@Test(.kernelSerialized) func contextAllChainTypes() throws {
     for chainType in [ChainType.mainnet, .testnet, .testnet4, .signet, .regtest] {
         let params = ChainParameters(chainType)
         let options = ContextOptions()
@@ -36,20 +36,20 @@ import BitcoinKernel
     }
 }
 
-@Test func chainParametersLifecycle() {
+@Test(.kernelSerialized) func chainParametersLifecycle() {
     // Verifies create + destroy via ARC — no crash = success.
     let _ = ChainParameters(.mainnet)
     let _ = ChainParameters(.regtest)
 }
 
-@Test func contextOptionsLifecycle() {
+@Test(.kernelSerialized) func contextOptionsLifecycle() {
     // Verifies create + destroy via ARC — no crash = success.
     let _ = ContextOptions()
 }
 
 // MARK: - Notification Callbacks
 
-@Test func contextWithNotificationCallbacks() throws {
+@Test(.kernelSerialized) func contextWithNotificationCallbacks() throws {
     let notifications = NotificationCallbacks(
         fatalError: { message in
             // Would be called on unrecoverable error — just verify wiring.
@@ -62,7 +62,7 @@ import BitcoinKernel
     #expect(context.interrupt())
 }
 
-@Test func contextWithAllNotificationCallbacks() throws {
+@Test(.kernelSerialized) func contextWithAllNotificationCallbacks() throws {
     let notifications = NotificationCallbacks(
         blockTip: { state, entry, progress in
             _ = (state, entry, progress)
@@ -92,7 +92,7 @@ import BitcoinKernel
     #expect(context.interrupt())
 }
 
-@Test func contextWithValidationInterfaceCallbacks() throws {
+@Test(.kernelSerialized) func contextWithValidationInterfaceCallbacks() throws {
     let validation = ValidationInterfaceCallbacks(
         blockChecked: { block, state in
             _ = (block, state)
@@ -107,7 +107,7 @@ import BitcoinKernel
     #expect(context.interrupt())
 }
 
-@Test func contextWithBothCallbackTypes() throws {
+@Test(.kernelSerialized) func contextWithBothCallbackTypes() throws {
     let notifications = NotificationCallbacks(fatalError: { _ in })
     let validation = ValidationInterfaceCallbacks(blockChecked: { _, _ in })
 
@@ -120,7 +120,7 @@ import BitcoinKernel
     #expect(context.interrupt())
 }
 
-@Test func contextOptionsSetChainParamsDoesNotRetain() throws {
+@Test(.kernelSerialized) func contextOptionsSetChainParamsDoesNotRetain() throws {
     // The C API copies params internally, so the Swift ChainParameters
     // object can be deallocated before the context is created.
     let options = ContextOptions()

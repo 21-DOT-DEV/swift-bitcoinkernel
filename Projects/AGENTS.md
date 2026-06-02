@@ -7,10 +7,10 @@ User-facing usage instructions live in [`README.md`](README.md). This file is de
 ## Commands
 
 - Generate workspace: `swift package --disable-sandbox tuist generate -p Projects/ --no-open`
-- Build an app: `swift package --disable-sandbox tuist build <NodeApp|KernelApp> -p Projects/ --platform <macos|ios>`
-- Test an app (matches CI): `swift package --disable-sandbox tuist test <NodeApp|KernelApp> -p Projects/ --platform <macos|ios>` — run per app on macOS and iOS by [`tuist-apps.yml`](../.github/workflows/tuist-apps.yml)
+- Build an app (local): `swift package --disable-sandbox tuist build <NodeApp|KernelApp> -p Projects/ --platform <macos|ios>`
+- Test an app (local): `swift package --disable-sandbox tuist test <NodeApp|KernelApp> -p Projects/ --platform <macos|ios>`
 - Test everything locally on macOS: `swift package --disable-sandbox tuist test Bitcoin-Workspace -p Projects/ --platform macos`
-- xcodebuild fallback: `xcodebuild test -workspace Projects/Bitcoin.xcworkspace -scheme <Target> -destination 'platform=macOS'`
+- **What CI runs** ([`tuist-apps.yml`](../.github/workflows/tuist-apps.yml)): `tuist generate`, then `xcodebuild` directly on the generated workspace — `build-for-testing` then `test-without-building`, per app × platform. The split lets the iOS launch-crash retry re-run the tests without recompiling. CI uses `xcodebuild` rather than `tuist xcodebuild` because the `swift package tuist …` plugin can't forward xcodebuild's single-dash flags (SwiftPM's parser reads `-workspace`/`-scheme` as short-flag clusters and the `-c` inside grabs the value). Reproduce a CI build locally with `xcodebuild build-for-testing -skipMacroValidation -skipPackagePluginValidation -workspace Projects/Bitcoin.xcworkspace -scheme <NodeApp|KernelApp> -destination 'platform=macOS' -derivedDataPath .derivedData CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO`, then the same with `test-without-building`.
 
 ## Non-obvious patterns
 
