@@ -20,7 +20,7 @@ The Swift seam is plain C: `libbitcoinkernel` exposes a `btck_*`-prefixed API vi
 
 - Swift 6.3 toolchain (Xcode 26.4 or later), matching the package's `swift-tools-version` and the version pinned by CI.
 - iOS 18.0+, macOS 15.0+, tvOS 18.0+, or visionOS 2.0+ deployment target, matching the package's declared minimums.
-- Approximately 50 MB of free storage for a regtest data directory. Larger chains require substantially more disk; see [iOS-specific caveats](#iOS-specific-caveats) below.
+- Approximately 50 MB of free storage for a regtest data directory. Larger chains require substantially more disk; see [iOS-specific caveats](#ios-specific-caveats) below.
 
 ### How the target compiles for iOS
 

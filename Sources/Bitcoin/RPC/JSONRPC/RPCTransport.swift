@@ -13,7 +13,7 @@ import Foundation
 /// Abstracts the raw data transport for JSON-RPC calls.
 ///
 /// Conforming types handle sending a JSON-RPC request and returning the raw
-/// response `Data`. Decoding is handled by `RPCClient`, not the transport.
+/// response `Data`. Decoding is handled by ``RPCClient``, not the transport.
 ///
 /// - Important: `send(_:path:)` is a **required** method with no default
 ///   implementation. All conformances must handle the `path` parameter

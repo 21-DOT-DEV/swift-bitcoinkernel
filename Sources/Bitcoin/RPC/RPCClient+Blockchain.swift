@@ -75,7 +75,7 @@ extension RPCClient {
     /// Returns per-block statistics.
     ///
     /// - Parameters:
-    ///   - hashOrHeight: Either a block hash (String) or height (Int) wrapped in `RPCParam`.
+    ///   - hashOrHeight: Either a block hash (String) or height (Int) wrapped in ``RPCParam``.
     ///   - stats: Optional array of stat names to return. If empty, returns all.
     public func getBlockStats(hashOrHeight: RPCParam, stats: [String]? = nil) async throws -> BlockStats {
         var params: [RPCParam] = [hashOrHeight]

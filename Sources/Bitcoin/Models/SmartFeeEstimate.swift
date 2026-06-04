@@ -10,7 +10,7 @@
 
 /// Result of `estimatesmartfee`.
 ///
-/// `feerate` is in **BTC/kvB** (a rate, not an amount — `Double`, not `BTCAmount`).
+/// `feerate` is in **BTC/kvB** (a rate, not an amount — `Double`, not ``BTCAmount``).
 ///
 /// - Note: Targets Bitcoin Core v31.x.
 public struct SmartFeeEstimate: Codable, Sendable, Equatable {

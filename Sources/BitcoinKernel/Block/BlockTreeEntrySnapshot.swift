@@ -19,7 +19,7 @@
 /// (``NotificationCallbacks/blockTip``,
 /// ``ValidationInterfaceCallbacks/blockConnected`` etc.), where the
 /// underlying C pointer is only valid during the callback invocation.
-/// Promote any `BlockTreeEntry` to a snapshot before escaping the
+/// Promote any ``BlockTreeEntry`` to a snapshot before escaping the
 /// callback scope.
 public struct BlockTreeEntrySnapshot: Sendable {
     /// The block's height above genesis (`0` for genesis).

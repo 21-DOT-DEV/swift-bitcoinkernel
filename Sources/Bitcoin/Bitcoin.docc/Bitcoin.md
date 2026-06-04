@@ -41,9 +41,12 @@ print("Chain: \(info.chain), Height: \(info.blocks)")
 
 ## Topics
 
-### Essentials
+### Getting Started
 
 - <doc:GettingStarted>
+
+### Essentials
+
 - ``Bitcoin``
 
 ### Daemon Lifecycle

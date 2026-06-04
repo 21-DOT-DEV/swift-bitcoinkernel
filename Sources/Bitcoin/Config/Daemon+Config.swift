@@ -12,10 +12,10 @@
 
 extension Daemon {
 
-    /// Validates a `BitcoinConfig` and starts the daemon with its arguments.
+    /// Validates a ``BitcoinConfig`` and starts the daemon with its arguments.
     ///
     /// Validation is performed before any daemon process is started. If a
-    /// fatal `ConfigError` is thrown, the daemon is never started and
+    /// fatal ``ConfigError`` is thrown, the daemon is never started and
     /// `Daemon.waitUntilStopped()` must **not** be called.
     ///
     /// Non-fatal warnings are printed to stdout with an `⚠️` prefix.
@@ -28,7 +28,7 @@ extension Daemon {
     /// ```
     ///
     /// - Parameter config: The validated configuration to start the daemon with.
-    /// - Throws: `ConfigError` if the configuration contains a fatal conflict.
+    /// - Throws: ``ConfigError`` if the configuration contains a fatal conflict.
     public static func start<N: BitcoinNetwork>(with config: BitcoinConfig<N>) throws(ConfigError) {
         let warnings = try config.validate()
         for warning in warnings {

@@ -12,7 +12,7 @@ import Foundation
 
 // MARK: - ConfigError
 
-/// A fatal conflict in a `BitcoinConfig` that prevents the daemon from
+/// A fatal conflict in a ``BitcoinConfig`` that prevents the daemon from
 /// starting correctly.
 public enum ConfigError: Error, Sendable, CustomStringConvertible, LocalizedError, CaseIterable, Equatable {
     /// `txindex=1` and `prune=<size>` are mutually exclusive.
@@ -40,7 +40,7 @@ public enum ConfigError: Error, Sendable, CustomStringConvertible, LocalizedErro
 
 // MARK: - ConfigWarning
 
-/// A non-fatal issue in a `BitcoinConfig` that may indicate misconfiguration.
+/// A non-fatal issue in a ``BitcoinConfig`` that may indicate misconfiguration.
 public enum ConfigWarning: Sendable, CustomStringConvertible, CaseIterable, Equatable, Hashable {
     /// `rpcbind` is set but `rpcallowip` is not — Bitcoin Core ignores rpcbind
     /// unless at least one allowed IP is specified.
@@ -100,7 +100,7 @@ extension BitcoinConfig {
     /// Checks `ConfigFlags` in O(1) — no string parsing.
     ///
     /// - Returns: A (possibly empty) array of non-fatal warnings.
-    /// - Throws: A `ConfigError` if a fatal conflict is detected.
+    /// - Throws: A ``ConfigError`` if a fatal conflict is detected.
     public func validate() throws(ConfigError) -> [ConfigWarning] {
         var warnings: [ConfigWarning] = []
 

@@ -11,7 +11,7 @@
 /// Active state of the transaction memory pool from `getmempoolinfo`.
 ///
 /// Fee rate fields (`mempoolminfee`, `minrelaytxfee`, `incrementalrelayfee`)
-/// are in **BTC/kvB** (not satoshis, not `BTCAmount`).
+/// are in **BTC/kvB** (not satoshis, not ``BTCAmount``).
 ///
 /// - Note: Targets Bitcoin Core v31.x. Fields marked optional were added in v24+.
 public struct MempoolInfo: Codable, Sendable, Equatable {
