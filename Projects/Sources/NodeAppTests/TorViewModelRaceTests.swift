@@ -73,12 +73,10 @@ struct TorViewModelRaceTests {
         )
 
         vm.start()
-        try await Task.sleep(for: .milliseconds(50))
+        try await waitFor(timeout: .milliseconds(500)) { vm.displayState == .starting }
         vm.stop()
         vm.stop()
-        try await Task.sleep(for: .milliseconds(200))
-
-        #expect(vm.displayState == .disabled)
+        try await waitFor(timeout: .seconds(1)) { vm.displayState == .disabled }
     }
 
     @Test("Rapid toggle OFF→ON during .stopping queues restart")
@@ -116,29 +114,26 @@ struct TorViewModelRaceTests {
         )
 
         vm.start()
-        try await Task.sleep(for: .milliseconds(30))
+        try await waitFor(timeout: .milliseconds(500)) { vm.displayState == .starting }
         vm.stop()               // .stopping
         vm.start()              // pending = true
         vm.stop()               // pending cleared
-        try await Task.sleep(for: .milliseconds(300))
-
-        #expect(vm.displayState == .disabled)
+        try await waitFor(timeout: .seconds(1)) { vm.displayState == .disabled }
     }
 
     @Test("start() failure surfaces as .failed, not .running")
     func startFailureSetsFailed() async throws {
         let vm = TorViewModel(
             subsystem: "test",
-            backoffSchedule: [.milliseconds(500)],   // long enough to observe .failed
+            backoffSchedule: [.seconds(30)],   // long so the retry can't bump failureCount mid-assert
             makeSession: { _ in FakeTorSession(mode: .startThrows) }
         )
 
         vm.start()
-        try await Task.sleep(for: .milliseconds(150))
-
-        #expect(vm.displayState == .failed)
+        try await waitFor(timeout: .seconds(2)) {
+            vm.displayState == .failed && vm.failureCount == 1
+        }
         #expect(vm.socksEndpoint == nil)
-        #expect(vm.failureCount == 1)
     }
 
     @Test("Calling start() from .starting is ignored")
@@ -151,15 +146,13 @@ struct TorViewModelRaceTests {
         )
 
         vm.start()
-        try await Task.sleep(for: .milliseconds(30))
-        #expect(vm.displayState == .starting)
+        try await waitFor(timeout: .milliseconds(500)) { vm.displayState == .starting }
 
         vm.start()
-        #expect(vm.displayState == .starting)
+        #expect(vm.displayState == .starting)   // start() from .starting is ignored
 
         vm.stop()
-        try await Task.sleep(for: .milliseconds(200))
-        #expect(vm.displayState == .disabled)
+        try await waitFor(timeout: .seconds(1)) { vm.displayState == .disabled }
     }
 
     @Test("stop() from .disabled is a no-op")
@@ -243,8 +236,7 @@ struct TorViewModelRaceTests {
         )
 
         vm.start()
-        try await Task.sleep(for: .milliseconds(150))
-        #expect(vm.displayState == .failed)
+        try await waitFor(timeout: .seconds(2)) { vm.displayState == .failed }
         #expect(await throwingSession.stopCalled == true)
     }
 
@@ -262,13 +254,12 @@ struct TorViewModelRaceTests {
         #expect(vm.sessionID == nil)
 
         vm.start()
-        try await Task.sleep(for: .milliseconds(30))
+        try await waitFor(timeout: .milliseconds(500)) { vm.sessionID != nil }
         let id1 = vm.sessionID
         #expect(id1 != nil)
 
         vm.stop()
-        try await Task.sleep(for: .milliseconds(200))
-        #expect(vm.sessionID == nil)
+        try await waitFor(timeout: .seconds(1)) { vm.sessionID == nil }
     }
 
     @Test("sessionID changes on every performStart")
@@ -281,13 +272,13 @@ struct TorViewModelRaceTests {
         )
 
         vm.start()
-        try await Task.sleep(for: .milliseconds(30))
+        try await waitFor(timeout: .milliseconds(500)) { vm.sessionID != nil }
         let id1 = vm.sessionID
 
         vm.stop()
-        try await Task.sleep(for: .milliseconds(200))
+        try await waitFor(timeout: .seconds(1)) { vm.sessionID == nil }
         vm.start()
-        try await Task.sleep(for: .milliseconds(30))
+        try await waitFor(timeout: .milliseconds(500)) { vm.sessionID != nil }
         let id2 = vm.sessionID
 
         #expect(id1 != nil)
@@ -302,24 +293,26 @@ struct TorViewModelRaceTests {
         // Schedule of N delays → N retries after the initial attempt,
         // so total attempts = N + 1 before give-up.
         let schedule: [Duration] = [.milliseconds(30), .milliseconds(60), .milliseconds(90)]
+        let factory = SessionFactory(
+            (0...schedule.count).map { _ in FakeTorSession(mode: .startThrows) }
+        )
         let vm = TorViewModel(
             subsystem: "test",
             backoffSchedule: schedule,
-            makeSession: { _ in FakeTorSession(mode: .startThrows) }
+            makeSession: factory.make()
         )
 
         vm.start()
-        try await Task.sleep(for: .milliseconds(10))
+        // Poll for the terminal state: asserting the moving failureCount at a
+        // single mid-cascade instant is racy (it climbs 1→2→3→4). The first
+        // failure == 1 is covered deterministically by startFailureSetsFailed;
+        // here we prove the injected schedule drove every retry to exhaustion.
+        try await waitFor(timeout: .seconds(2)) {
+            vm.failureCount == schedule.count + 1 && vm.nextRetryAt == nil
+        }
         #expect(vm.displayState == .failed)
-        #expect(vm.failureCount == 1)
-        #expect(vm.nextRetryAt != nil)
-
-        // Advance through all three scheduled retries (≈ 30 + 60 + 90 ms),
-        // leaving a generous margin for the 4th attempt to fire and fail.
-        try await Task.sleep(for: .milliseconds(400))
-        #expect(vm.failureCount == schedule.count + 1)       // initial + N retries
-        #expect(vm.nextRetryAt == nil)                       // exhausted
-        #expect(vm.displayState == .failed)
+        // One session vended per attempt → initial + N retries actually fired.
+        #expect(factory.callCount == schedule.count + 1)
     }
 
     @Test("retry() resets counter and performs a fresh start")
@@ -371,16 +364,15 @@ struct TorViewModelRaceTests {
         )
 
         vm.start()
-        try await Task.sleep(for: .milliseconds(10))
-        #expect(vm.failureCount == 1)
-
-        // Let the auto-retry fire.
-        try await Task.sleep(for: .milliseconds(50))
-        #expect(vm.displayState == .starting)
+        // First attempt throws, then the backoff retry starts the working
+        // session: .starting with failureCount still 1 (the reset happens only
+        // on a successful bootstrap). This plateau holds until releaseBootstrap().
+        try await waitFor(timeout: .seconds(2)) {
+            vm.displayState == .starting && vm.failureCount == 1
+        }
 
         await workingFake.releaseBootstrap()
-        try await Task.sleep(for: .milliseconds(150))
-        #expect(vm.displayState == .running)
+        try await waitFor(timeout: .seconds(1)) { vm.displayState == .running }
         #expect(vm.failureCount == 0)
     }
 
@@ -393,12 +385,21 @@ struct TorViewModelRaceTests {
         )
 
         vm.start()
-        try await Task.sleep(for: .milliseconds(150))
-        #expect(vm.displayState == .failed)
-        #expect(vm.nextRetryAt != nil)
+        // Poll for convergence rather than sampling at a fixed instant: the
+        // .failed transition lands through `await session.stop()` then a
+        // `MainActor.run` hop, which a loaded CI host can delay well past any
+        // single Task.sleep deadline (observed ~1.3s on macos-26 runners).
+        try await waitFor(timeout: .seconds(2)) {
+            vm.displayState == .failed && vm.nextRetryAt != nil
+        }
 
         vm.stop()
-        #expect(vm.displayState == .disabled)
+        // stop() from .failed (the catch block already released the session)
+        // runs the synchronous teardown path, so .disabled is reached without
+        // a hop — but poll anyway to stay robust if that path ever changes.
+        try await waitFor(timeout: .seconds(2)) {
+            vm.displayState == .disabled
+        }
         #expect(vm.failureCount == 0)
         #expect(vm.nextRetryAt == nil)
     }
@@ -417,9 +418,9 @@ struct TorViewModelRaceTests {
         )
 
         vm.start()
-        try await Task.sleep(for: .milliseconds(150))
-        #expect(vm.displayState == .failed)
-        #expect(vm.nextRetryAt != nil)
+        try await waitFor(timeout: .seconds(2)) {
+            vm.displayState == .failed && vm.nextRetryAt != nil
+        }
         let countBefore = factory.callCount
 
         vm.start()      // should be ignored — retry is scheduled
