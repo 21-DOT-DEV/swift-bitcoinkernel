@@ -83,6 +83,12 @@ final class TorViewModel {
     private let backoffSchedule: [Duration]
     private let makeSession: @Sendable (TorConfiguration) -> any TorSession
 
+    /// Clock driving the auto-retry backoff. Defaults to `ContinuousClock`;
+    /// tests inject a `TestClock` to advance backoff deterministically rather
+    /// than waiting real time (Point-Free swift-clocks). Production code uses
+    /// only the stdlib `Clock` protocol, so swift-clocks stays a test dependency.
+    private let clock: any Clock<Duration>
+
     private var session: (any TorSession)?
     private var startTask: Task<Void, Never>?
     private var stopTask: Task<Void, Never>?
@@ -110,11 +116,13 @@ final class TorViewModel {
     init(
         subsystem: String = "dev.21.Bitcoin",
         backoffSchedule: [Duration] = [.seconds(5), .seconds(30), .seconds(120)],
+        clock: any Clock<Duration> = ContinuousClock(),
         makeSession: @escaping @Sendable (TorConfiguration) -> any TorSession = { TorClient(configuration: $0) }
     ) {
         precondition(!backoffSchedule.isEmpty, "backoffSchedule must contain at least one delay")
         self.logger = Logger(subsystem: subsystem, category: "Tor")
         self.backoffSchedule = backoffSchedule
+        self.clock = clock
         self.makeSession = makeSession
     }
 
@@ -340,8 +348,9 @@ final class TorViewModel {
         nextRetryAt = Date().addingTimeInterval(delaySeconds)
         logger.info("Scheduling Tor retry #\(self.failureCount) in \(Int(delaySeconds))s")
 
+        let clock = self.clock
         retryTask = Task { [weak self] in
-            try? await Task.sleep(for: delay)
+            try? await clock.sleep(for: delay)
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 // Re-check cancellation INSIDE the actor hop — `stop()` may
@@ -413,6 +422,23 @@ final class TorViewModel {
     internal func _testPerformStartSuppressedDuringStop() {
         displayState = .stopping
         performStart()
+    }
+
+    /// Test hook: awaits the in-flight start attempt to finish. On return the
+    /// terminal transition (`.running`, or `.failed` + retry scheduling) has been
+    /// applied, so a test can assert the settled state with no polling. Combined
+    /// with an injected `TestClock`, this drives the retry cascade deterministically:
+    /// `clock.advance(by:)` fires the next attempt, then `awaitSettled()` waits for it.
+    internal func awaitSettled() async {
+        await startTask?.value
+    }
+
+    /// Test hook: awaits the in-flight stop teardown. Returns immediately when
+    /// there is no async teardown (the give-up `.failed` path sets `.disabled`
+    /// synchronously and spawns no task), so tests can assert post-stop state
+    /// without polling.
+    internal func awaitStopped() async {
+        await stopTask?.value
     }
     #endif
 }

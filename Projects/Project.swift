@@ -20,6 +20,11 @@ let project = Project(
     packages: [
         .package(path: ".."),
         .remote(url: "https://github.com/21-DOT-DEV/swift-tor.git", requirement: .exact("0.1.1")),
+        // Test-only: `TestClock` virtualizes `TorViewModel`'s retry backoff so the
+        // race-condition suites are deterministic. Linked into the `*Tests` targets
+        // only — production uses the stdlib `Clock` — and absent from `Package.swift`,
+        // so downstream package consumers never resolve it.
+        .remote(url: "https://github.com/pointfreeco/swift-clocks.git", requirement: .upToNextMajor(from: "1.0.0")),
     ],
     settings: .settings(
         configurations: [
@@ -96,7 +101,7 @@ let project = Project(
             bundleId: "dev.21.NodeAppTests",
             deploymentTargets: deploymentTargets,
             sources: ["Sources/NodeAppTests/**", "Sources/SharedTests/**"],
-            dependencies: [.target(name: "NodeApp")],
+            dependencies: [.target(name: "NodeApp"), .package(product: "Clocks")],
             settings: .settings(
                 base: [
                     "SWIFT_OBJC_INTEROP_MODE": "objcxx",
@@ -114,7 +119,7 @@ let project = Project(
             bundleId: "dev.21.KernelAppTests",
             deploymentTargets: deploymentTargets,
             sources: ["Sources/KernelAppTests/**", "Sources/SharedTests/**"],
-            dependencies: [.target(name: "KernelApp")],
+            dependencies: [.target(name: "KernelApp"), .package(product: "Clocks")],
             settings: .settings(
                 configurations: [
                     .debug(name: "Debug", xcconfig: "Resources/KernelAppTests/Debug.xcconfig"),
