@@ -29,6 +29,10 @@ To ship `BitcoinKernel` inside an iPhone, iPad, or Apple Silicon Mac app, read <
 
 ## Topics
 
+### Getting Started
+
+- <doc:GettingStarted>
+
 ### Guides
 
 - <doc:EmbeddingOnIOS>

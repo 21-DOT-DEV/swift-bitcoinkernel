@@ -1,7 +1,7 @@
 # swift-bitcoinkernel Product Roadmap
 
-**Version**: v2.2.3  
-**Last Updated**: 2026-05-07  
+**Version**: v2.2.4  
+**Last Updated**: 2026-06-04  
 **Status**: Active Development
 
 ---
@@ -130,6 +130,16 @@ These are not committed phases — they're areas to monitor and potentially inco
 - **Integration challenge**: Requires changes to how `libbitcoinkernel` resolves UTXOs — replacing `CCoinsViewDB` with accumulator proofs.
 - **Monitor**: Floresta's Utreexo adoption, any Bitcoin Core Utreexo integration proposals.
 
+### Direct-to-Peer Transaction Broadcast (Libre-Relay)
+
+Re-creates the capability of [`tx-pigeon`](https://github.com/stutxo/tx-pigeon) (Rust) as a Swift-native feature. It broadcasts a transaction by connecting directly to peers that advertise the `NODE_LIBRE_RELAY` service flag and handing them the transaction over the P2P wire, rather than relaying through a local node's mempool. The use case is delivering transactions a default-policy node would not relay (out-of-policy or censorship-resistant broadcast).
+
+- **Status**: Future Consideration. No Rust FFI; `tx-pigeon` is a protocol-logic reference only, consistent with the Kyoto/Floresta/SwiftSync convention used elsewhere in this roadmap.
+- **Relationship to committed phases**: the mechanism is largely already scheduled. Generic `inv`/`getdata`/`tx` broadcast is Phase 4.5, DNS-seed bootstrap and peer management are Phase 4.3, `addr`/`addrv2` discovery is Phase 6.2, and Tor SOCKS5 routing is Phase 4.6 (via `swift-tor`). This is the thin opinionated layer on top, not a new subsystem.
+- **Net-new surface**: filter discovered peers by the `NODE_LIBRE_RELAY` service bit (bit 29), fan a transaction out to the matching peer set, and optionally keep serving it from the latest block after confirmation (`tx-pigeon`'s "garbage man" behaviour).
+- **Why not a committed phase**: it depends on the full Phase 4 P2P stack existing first, and out-of-policy relay is a niche use case relative to the core node-layer mission. Captured here without committing the project to it pre-1.0.
+- **Monitor / promote**: revisit once Phase 4 ships. If there is real demand, promote to a Phase 6 sub-feature (after 6.2) with success metrics.
+
 ### tvOS BitcoinKernel Support
 
 **Status**: Planned — BitcoinKernel compiles for tvOS (libbitcoinkernel target succeeds), but full bitcoind is blocked by `fork`/`execvp` which Apple marks unavailable on tvOS. Requires conditional compilation guards in vendored C++ sources (`subprocess.h`, `exec.cpp`) to exclude daemon-only features from tvOS builds. watchOS is blocked for both targets (same primitives unavailable).
@@ -187,6 +197,7 @@ A potential soft fork (discussed on delvingbitcoin.org) that would fix the timew
 
 | Version | Date | Change Type | Description |
 |---------|------|-------------|-------------|
+| v2.2.4 | 2026-06-04 | PATCH | Added "Direct-to-Peer Transaction Broadcast (Libre-Relay)" as a Future Consideration: a Swift-native re-creation of `tx-pigeon` (reference link), scoped as the opinionated layer over Phase 4.5 broadcast and 6.2 service-flag discovery, not a committed phase. |
 | v2.2.3 | 2026-05-07 | PATCH | Added Filter Registration API (7.2) to Phase 7. Based on cross-implementation research across LDK, CLN, BDK, Kyoto, and Floresta. LDK's `Filter` trait pattern selected as best approach. |: change logs now describe features by BIP number, project names kept only in Reference lines as implementation pointers. Global risks use BIP numbers. Mirrors v2.2.1 Floresta/Utreexo treatment. |
 | v2.2.1 | 2026-05-07 | PATCH | Added Utreexo as a Future Consideration in index and Phase 6 note. Clarified that Floresta references are for P2P infrastructure (wire protocol, BIP 324, mempool), not Utreexo itself. |
 | v2.2.0 | 2026-05-07 | MINOR | Added Phase 8: RPC Server & Privacy (JSON-RPC server, Ricochet, STONEWALL, PayJoin/BIP 78, BIP 47 Payment Codes). Added Binary Fuse filter alternative note to Phase 5. Added Cluster Mempool alignment and node fingerprinting privacy notes to Phase 6. Cross-referenced delvingbitcoin.org (Binary Fuse filters, Great Consensus Cleanup Revival, Cluster Mempool, Fingerprinting nodes). Explored kernel-i-node, kernel-node, rust-esplora-client, yuki, MainFltrWallet, samourai-wallet-android. |

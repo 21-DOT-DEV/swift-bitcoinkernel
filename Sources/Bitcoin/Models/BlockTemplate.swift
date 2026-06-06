@@ -11,7 +11,7 @@
 /// Block template data from `getblocktemplate` (BIP 22/23/9/145).
 ///
 /// Contains everything needed to construct a candidate block for mining.
-/// Fee and coinbase value fields are in **satoshis** (not `BTCAmount`).
+/// Fee and coinbase value fields are in **satoshis** (not ``BTCAmount``).
 ///
 /// - Note: Targets Bitcoin Core v31.x.
 public struct BlockTemplate: Codable, Sendable, Equatable {
@@ -88,7 +88,7 @@ public struct BlockTemplate: Codable, Sendable, Equatable {
 
 /// A transaction entry within a block template.
 ///
-/// All fee/sigop fields are in **satoshis** or raw counts (not `BTCAmount`).
+/// All fee/sigop fields are in **satoshis** or raw counts (not ``BTCAmount``).
 public struct BlockTemplateTransaction: Codable, Sendable, Equatable {
     /// Transaction data encoded in hexadecimal (byte-for-byte).
     public let data: String

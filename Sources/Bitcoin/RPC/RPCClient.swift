@@ -148,7 +148,7 @@ public final class RPCClient: Sendable {
     ///   - method: The RPC method name (e.g., `"getblockcount"`).
     ///   - params: The parameters to pass to the RPC method.
     /// - Returns: The decoded result.
-    /// - Throws: `RPCError` (server), ``RPCClientError`` (client), or transport errors.
+    /// - Throws: ``RPCError`` (server), ``RPCClientError`` (client), or transport errors.
     public func send<T: Decodable & Sendable>(_ method: String, params: [RPCParam] = [])
         async throws -> T
     {
@@ -164,7 +164,7 @@ public final class RPCClient: Sendable {
     ///   - method: The RPC method name.
     ///   - params: The parameters to pass to the RPC method.
     /// - Returns: The decoded result, or `nil` if the server returned null.
-    /// - Throws: `RPCError` (server), ``RPCClientError`` (client), or transport errors.
+    /// - Throws: ``RPCError`` (server), ``RPCClientError`` (client), or transport errors.
     public func sendNullable<T: Decodable & Sendable>(_ method: String, params: [RPCParam] = [])
         async throws -> T?
     {
@@ -180,7 +180,7 @@ public final class RPCClient: Sendable {
     /// - Parameters:
     ///   - method: The RPC method name.
     ///   - params: The parameters to pass to the RPC method.
-    /// - Throws: `RPCError` (server) or transport errors.
+    /// - Throws: ``RPCError`` (server) or transport errors.
     public func sendVoid(_ method: String, params: [RPCParam] = []) async throws {
         let data = try await transport.send(buildRequest(method, params: params), path: nil)
         let response: JSONRPCResponse<String?>
@@ -249,7 +249,7 @@ public final class RPCClient: Sendable {
     ///   - method: The RPC method name.
     ///   - params: The parameters to pass to the RPC method.
     /// - Returns: The raw response `Data`.
-    /// - Throws: `RPCError` if the response contains a JSON-RPC error,
+    /// - Throws: ``RPCError`` if the response contains a JSON-RPC error,
     ///   or transport errors.
     public func call(_ method: String, params: [RPCParam] = []) async throws -> Data {
         let data = try await transport.send(buildRequest(method, params: params), path: nil)
