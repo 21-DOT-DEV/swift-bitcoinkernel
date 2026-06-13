@@ -45,6 +45,22 @@ final class KernelAppViewModel {
     /// ``BlockchainSync/Update`` from the running sync.
     private(set) var snapshot: SyncSnapshot = .idle
 
+    /// Wall-clock validation rate during an active sync (blocks per second),
+    /// derived from successive ``apply(update:)`` deltas. `nil` until two
+    /// `.syncing` updates have arrived, and cleared when the sync ends.
+    private(set) var blocksPerSecond: Double?
+
+    /// When the most recent sync update was applied; drives the source card's
+    /// "updated N ago" staleness readout. `nil` outside an active run.
+    private(set) var lastSyncUpdate: Date?
+
+    /// Measured on-disk size of the data directory in bytes, refreshed by
+    /// ``refreshDataDirectorySize()``. `nil` until first measured.
+    private(set) var dataDirectorySize: Int?
+
+    @ObservationIgnored private var ratePreviousHeight: Int?
+    @ObservationIgnored private var ratePreviousTime: Date?
+
     /// Forwarded persistent ``Foundation/Progress`` from the active
     /// sync. Suitable for binding a system
     /// `BGContinuedProcessingTask.progress` once background-task support
@@ -342,6 +358,45 @@ final class KernelAppViewModel {
 
     private func apply(update: BlockchainSync.Update) {
         snapshot = SyncSnapshot(from: update)
+
+        let now = Date()
+        if case .syncing = update.state {
+            if let previousHeight = ratePreviousHeight, let previousTime = ratePreviousTime {
+                let blocks = Double(update.tip.height - previousHeight)
+                let seconds = now.timeIntervalSince(previousTime)
+                if seconds > 0, blocks >= 0 { blocksPerSecond = blocks / seconds }
+            }
+            ratePreviousHeight = update.tip.height
+            ratePreviousTime = now
+        } else {
+            blocksPerSecond = nil
+            ratePreviousHeight = nil
+            ratePreviousTime = nil
+        }
+        lastSyncUpdate = now
+    }
+
+    /// Walks the effective data directory off the main actor and publishes its
+    /// total allocated size (the operator-facing storage footprint).
+    func refreshDataDirectorySize() async {
+        let directory = settings.effectiveDataDirectory
+        dataDirectorySize = await Task.detached(priority: .utility) {
+            Self.directorySize(at: directory)
+        }.value
+    }
+
+    nonisolated private static func directorySize(at url: URL) -> Int? {
+        let keys: [URLResourceKey] = [.totalFileAllocatedSizeKey, .fileAllocatedSizeKey, .isRegularFileKey]
+        guard let enumerator = FileManager.default.enumerator(
+            at: url, includingPropertiesForKeys: keys
+        ) else { return nil }
+        var total = 0
+        for case let fileURL as URL in enumerator {
+            guard let values = try? fileURL.resourceValues(forKeys: Set(keys)),
+                  values.isRegularFile == true else { continue }
+            total += values.totalFileAllocatedSize ?? values.fileAllocatedSize ?? 0
+        }
+        return total
     }
 
     // MARK: - Wait-for-Tor

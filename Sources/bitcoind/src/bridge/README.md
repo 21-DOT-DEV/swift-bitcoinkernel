@@ -46,6 +46,15 @@ in-process run every SOCKS5 `InterruptibleRecv()` trips the check at
 outbound connections. Clearing the flag per run restores correct
 behaviour.
 
+### `bitcoin_hmac_sha256.cpp`
+
+Exposes Bitcoin Core's `CHMAC_SHA256` (vendored at `crypto/hmac_sha256.h`)
+so `RPCAuth` can derive the `-rpcauth=` password HMAC natively instead of
+shelling out to `share/rpcauth/rpcauth.py`. Unlike the other shims here,
+this is a pure compute helper, not a per-run lifecycle reset: Swift calls
+it from `RPCAuth`, not from the `bitcoind_main()` thread, so rule 5 above
+(call from `Daemon.swift`) does not apply.
+
 ## Adding a new shim
 
 1. Create `bitcoin_<subsystem>_<verb>.cpp` in this directory. Include

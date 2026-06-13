@@ -135,7 +135,4 @@ Per [CONTRIBUTING.md](https://github.com/bitcoin/bitcoin/blob/master/CONTRIBUTIN
 | `-Dmain=entry` compiler flag | Dangerous — replaces ALL standalone `main` tokens in all source files |
 | `#ifndef MAIN_FUNCTION` guard | Standard C pattern, zero risk, zero behavior change for existing builds |
 
-## Labels to Request
-
-- `Build system` — affects build configuration
-- (No consensus, validation, or P2P labels needed)
+*Issue states: see [patches/README.md](../README.md#cited-upstream-issues) (verified 2026-06-13).*

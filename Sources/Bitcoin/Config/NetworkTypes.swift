@@ -22,6 +22,10 @@ public protocol BitcoinNetwork: Sendable {
 
     /// The default RPC port for this network.
     static var defaultRPCPort: UInt16 { get }
+
+    /// The data subdirectory under the data directory (e.g. `"regtest"`), or
+    /// `""` for mainnet. The RPC cookie lives at `<datadir>/<dataDirName>/.cookie`.
+    static var dataDirName: String { get }
 }
 
 /// Bitcoin mainnet (production).
@@ -29,6 +33,7 @@ public enum Mainnet: BitcoinNetwork {
     public static let flag: String? = nil
     public static let defaultP2PPort: UInt16 = 8333
     public static let defaultRPCPort: UInt16 = 8332
+    public static let dataDirName = ""
 }
 
 /// Bitcoin testnet3.
@@ -38,6 +43,7 @@ public enum Testnet: BitcoinNetwork {
     public static let flag: String? = "-testnet"
     public static let defaultP2PPort: UInt16 = 18333
     public static let defaultRPCPort: UInt16 = 18332
+    public static let dataDirName = "testnet3"
 }
 
 /// Bitcoin testnet4.
@@ -45,6 +51,7 @@ public enum Testnet4: BitcoinNetwork {
     public static let flag: String? = "-testnet4"
     public static let defaultP2PPort: UInt16 = 48333
     public static let defaultRPCPort: UInt16 = 48332
+    public static let dataDirName = "testnet4"
 }
 
 /// Bitcoin regtest (regression test network).
@@ -52,6 +59,7 @@ public enum Regtest: BitcoinNetwork {
     public static let flag: String? = "-regtest"
     public static let defaultP2PPort: UInt16 = 18444
     public static let defaultRPCPort: UInt16 = 18443
+    public static let dataDirName = "regtest"
 }
 
 /// Bitcoin signet.
@@ -59,4 +67,5 @@ public enum Signet: BitcoinNetwork {
     public static let flag: String? = "-signet"
     public static let defaultP2PPort: UInt16 = 38333
     public static let defaultRPCPort: UInt16 = 38332
+    public static let dataDirName = "signet"
 }

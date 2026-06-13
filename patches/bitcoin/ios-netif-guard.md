@@ -144,7 +144,4 @@ frameworks and third-party cross-platform libraries.
 | [#11720](https://github.com/bitcoin/bitcoin/issues/11720) | `iOS Deployment Target for RPC` | Prior discussion of iOS as a target platform |
 | [#27587](https://github.com/bitcoin/bitcoin/issues/27587) | `Bitcoin Kernel Library Project Tracking` | Ongoing kernel library work |
 
-## Labels to Request
-
-- `P2P` — affects network interface detection
-- `Build system` — platform compatibility
+*Issue states: see [patches/README.md](../README.md#cited-upstream-issues) (verified 2026-06-13).*

@@ -60,3 +60,19 @@ swift-bitcoinkernel runs Bitcoin Core in-process via `bitcoind` and links `libbi
 - **Never log sensitive material.** Wallet seed phrases, BIP32 extended private keys, descriptor secrets, RPC cookies, and `bitcoin.conf` `rpcpassword=` lines must stay out of logs, crash reports, and analytics.
 - **Match upstream Bitcoin Core's release cadence for security fixes.** Subscribe to [Bitcoin Core security advisories](https://bitcoincore.org/en/security-advisories/) — when upstream patches a consensus or wallet vulnerability, this package needs a corresponding subtree resync. Pin with `exact:` so you control when those rebases land in your build.
 - **The `wallet` trait introduces additional attack surface.** Bitcoin Core's wallet (BDB/SQLite, descriptors, PSBT signing) is opt-in for a reason. Only enable it when your application actually custodies keys.
+
+## Patch policy
+
+For a consensus-validation package, the first question is whether local patches could change consensus behavior. They cannot. Modifications to the vendored Bitcoin Core sources are limited to build glue, platform guards, and process-lifecycle resets for in-process embedding. They never touch consensus, script, validation, or serialization code.
+
+Every patch is documented in [`patches/`](patches/) with an upstreaming plan. The complete set of patched upstream files:
+
+| File | Purpose |
+|------|---------|
+| `src/common/netif.cpp` | Guard route/sysctl headers absent from the iOS SDK |
+| `src/rpc/server.cpp`, `src/rpc/server.h` | Remove one-shot `std::once_flag` so the RPC server can restart in-process |
+| `src/init.cpp` | Reset process-global state at shutdown so a second `bitcoind_main()` can run |
+| `src/compat/compat.h` | Guard `MAIN_FUNCTION` so the host app can own `main()` |
+| `src/logging.cpp` | Prevent a teardown assertion when logging stops |
+
+No patch modifies `src/consensus/`, `src/script/`, validation, or serialization. Subtree syncs overwrite the vendored sources wholesale, so drift outside `patches/` is structurally impossible. See [`patches/README.md`](patches/README.md) for the diffs and the upstreaming campaign.

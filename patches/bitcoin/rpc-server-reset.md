@@ -232,7 +232,4 @@ Second lifecycle:
 `StopRPC()` and `ResetRPC()` run sequentially on the shutdown thread after
 all RPC worker threads have been joined.
 
-## Labels to Request
-
-- `RPC/REST/ZMQ` — affects RPC server lifecycle
-- `Refactoring` — replaces mechanism without changing observable behavior
+*Issue states: see [patches/README.md](../README.md#cited-upstream-issues) (verified 2026-06-13).*

@@ -28,6 +28,7 @@ Tuist workspace commands live in [`Projects/AGENTS.md`](Projects/AGENTS.md).
 
 - **Never**: emit private keys or sensitive material; weaken constant-time code in vendored C sources; edit files under `Vendor/bitcoin/` or extracted `Sources/{bitcoind,libbitcoinkernel,secp256k1,...}/` directly; add runtime dependencies outside the allowlist (`swift-boost`, `swift-event`, system `sqlite3`) without a constitutional amendment; reimplement Bitcoin consensus rules, validation logic, or P2P protocol behavior in Swift; expose raw C++ pointers or types through public Swift API.
 - **Ask first**: add new third-party dependencies; broaden CI permissions; change the pinned Bitcoin Core version in `subtree.yaml`.
+- **At release (tag time)**: pin every dependency to `exact:` or `revision:`. Never ship a tagged release with a `branch:` requirement, which is non-reproducible.
 - See the [21-DOT-DEV contributing guidelines](https://github.com/21-DOT-DEV/.github/blob/main/CONTRIBUTING.md) for branching and commit guidelines. See [SECURITY.md](SECURITY.md) for vulnerability reporting.
 
 ## Scoped guidance

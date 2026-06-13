@@ -1,0 +1,66 @@
+diff --git a/src/rpc/server.cpp b/src/rpc/server.cpp
+index cddd62f4aa5..404a7e968b7 100644
+--- a/src/rpc/server.cpp
++++ b/src/rpc/server.cpp
+@@ -25,7 +25,6 @@
+ #include <cassert>
+ #include <chrono>
+ #include <memory>
+-#include <mutex>
+ #include <string_view>
+ #include <unordered_map>
+ 
+@@ -278,25 +277,27 @@ void StartRPC()
+ 
+ void InterruptRPC()
+ {
+-    static std::once_flag g_rpc_interrupt_flag;
+-    // This function could be called twice if the GUI has been started with -server=1.
+-    std::call_once(g_rpc_interrupt_flag, []() {
+-        LogDebug(BCLog::RPC, "Interrupting RPC\n");
+-        // Interrupt e.g. running longpolls
+-        g_rpc_running = false;
+-    });
++    // Guard: this function could be called twice if the GUI has been started with -server=1.
++    if (!g_rpc_running) return;
++    LogDebug(BCLog::RPC, "Interrupting RPC\n");
++    // Interrupt e.g. running longpolls
++    g_rpc_running = false;
+ }
+ 
+ void StopRPC()
+ {
+-    static std::once_flag g_rpc_stop_flag;
+-    // This function could be called twice if the GUI has been started with -server=1.
++    // Guard: this function could be called twice if the GUI has been started with -server=1.
+     assert(!g_rpc_running);
+-    std::call_once(g_rpc_stop_flag, [&]() {
+-        LogDebug(BCLog::RPC, "Stopping RPC\n");
+-        DeleteAuthCookie();
+-        LogDebug(BCLog::RPC, "RPC stopped.\n");
+-    });
++    LogDebug(BCLog::RPC, "Stopping RPC\n");
++    DeleteAuthCookie();
++    LogDebug(BCLog::RPC, "RPC stopped.\n");
++}
++
++void ResetRPC()
++{
++    LOCK(g_rpc_warmup_mutex);
++    fRPCInWarmup = true;
++    rpcWarmupStatus = "RPC server started";
+ }
+ 
+ bool IsRPCRunning()
+diff --git a/src/rpc/server.h b/src/rpc/server.h
+index cb68c1def79..bd7dc98cbd4 100644
+--- a/src/rpc/server.h
++++ b/src/rpc/server.h
+@@ -133,6 +133,7 @@ extern CRPCTable tableRPC;
+ void StartRPC();
+ void InterruptRPC();
+ void StopRPC();
++void ResetRPC();
+ UniValue JSONRPCExec(const JSONRPCRequest& jreq, bool catch_errors);
+ 
+ #endif // BITCOIN_RPC_SERVER_H

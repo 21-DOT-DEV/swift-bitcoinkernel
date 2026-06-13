@@ -24,6 +24,7 @@ enum DaemonConfig {
     ///   When `nil` and Tor is enabled, the proxy argument is omitted
     ///   (Tor not yet bootstrapped).
     static func buildArguments(torProxy: String? = nil) -> [String] {
+        try? prepareDataDirectory(at: dataDirectory)
         let defaults = UserDefaults.standard
         let network = BitcoinNetwork(
             rawValue: defaults.string(forKey: "bitcoin_network") ?? ""
@@ -48,6 +49,7 @@ enum DaemonConfig {
             .rpcAllowIP(.localhost)
             .rpcPort(InternalRPC.port)
             .rpcCookieFile(InternalRPC.cookieFileURL.path)
+            .dataDir(dataDirectory.path(percentEncoded: false))
 
         // Node type
         let nodeType = NodeType(
@@ -94,5 +96,32 @@ enum DaemonConfig {
         }
 
         return config.arguments
+    }
+
+    // MARK: - Data directory
+
+    /// The app's data directory under Application Support. Bitcoin Core adds
+    /// the per-network subdirectory itself (given `-signet`/`-testnet`/`-regtest`),
+    /// so all networks coexist under here without mixing chainstate.
+    static var dataDirectory: URL {
+        let base = (try? FileManager.default.url(
+            for: .applicationSupportDirectory, in: .userDomainMask,
+            appropriateFor: nil, create: false
+        )) ?? URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent("Library/Application Support")
+        return base.appendingPathComponent("NodeApp", isDirectory: true)
+    }
+
+    /// Creates `url` if needed and marks it excluded from device backups —
+    /// chainstate is reproducible from the network and does not belong in
+    /// iCloud or local device backups.
+    @discardableResult
+    static func prepareDataDirectory(at url: URL) throws -> URL {
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        var mutable = url
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try mutable.setResourceValues(values)
+        return mutable
     }
 }

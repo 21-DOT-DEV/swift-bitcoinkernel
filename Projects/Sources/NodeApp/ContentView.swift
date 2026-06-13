@@ -9,20 +9,35 @@
 //
 
 import SwiftUI
+import Bitcoin
 
 enum AppTab: String, Hashable {
+    case dashboard = "Dashboard"
     case commands = "Commands"
     case configuration = "Configuration"
+    case logs = "Logs"
 }
 
 struct ContentView: View {
-    @State private var selectedTab: AppTab = .commands
+    @State private var selectedTab: AppTab = .dashboard
     @State private var nodeViewModel = NodeViewModel()
     @State private var commandsViewModel = CommandsViewModel()
     @State private var torViewModel = TorViewModel(subsystem: "dev.21.NodeApp")
+    @State private var dashboardViewModel = DashboardViewModel(
+        source: RPCClient(url: InternalRPC.url, cookieFile: InternalRPC.cookieFileURL)
+    )
 
     var body: some View {
         TabView(selection: $selectedTab) {
+            Tab("Dashboard", systemImage: "gauge.medium", value: .dashboard) {
+                DashboardView(
+                    nodeViewModel: nodeViewModel,
+                    torViewModel: torViewModel,
+                    viewModel: dashboardViewModel,
+                    buildArguments: { DaemonConfig.buildArguments(torProxy: torViewModel.proxyAddress) }
+                )
+            }
+
             Tab("Commands", systemImage: "terminal", value: .commands) {
                 CommandsView(
                     viewModel: commandsViewModel,
@@ -34,6 +49,10 @@ struct ContentView: View {
 
             Tab("Configuration", systemImage: "gearshape.2", value: .configuration) {
                 ConfigurationView(nodeViewModel: nodeViewModel, torViewModel: torViewModel)
+            }
+
+            Tab("Logs", systemImage: "doc.text", value: .logs) {
+                LogView()
             }
         }
         .task {

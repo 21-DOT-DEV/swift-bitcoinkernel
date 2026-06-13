@@ -44,6 +44,33 @@ public final class ChainstateManager: @unchecked Sendable {
         self.pointer = ptr
     }
 
+    /// Creates a chainstate manager bound to a context and data directory —
+    /// the common case, without the ``ChainstateManagerOptions`` builder.
+    ///
+    /// Equivalent to building a ``ChainstateManagerOptions`` with the same
+    /// arguments and passing it to ``ChainstateManager/init(options:)``. For
+    /// worker-thread counts, database wiping, or in-memory databases, use the
+    /// options initializer.
+    ///
+    /// - Parameters:
+    ///   - context: The kernel context whose ``ChainParameters`` set the rules.
+    ///   - dataDirectory: Absolute path to the data directory; created if missing.
+    ///   - blocksDirectory: Optional override for raw block storage; defaults to
+    ///     `dataDirectory + "/blocks"`.
+    /// - Throws: ``KernelError`` if the options or databases cannot be created.
+    public convenience init(
+        context: Context,
+        dataDirectory: String,
+        blocksDirectory: String? = nil
+    ) throws {
+        let options = try ChainstateManagerOptions(
+            context: context,
+            dataDirectory: dataDirectory,
+            blocksDirectory: blocksDirectory
+        )
+        try self.init(options: options)
+    }
+
     /// The best (tip) block tree entry — the block with the most cumulative
     /// proof-of-work that the kernel currently considers the chain's head.
     ///

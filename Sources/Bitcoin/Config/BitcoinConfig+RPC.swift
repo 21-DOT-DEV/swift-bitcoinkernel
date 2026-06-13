@@ -37,7 +37,9 @@ extension BitcoinConfig {
 
     /// Listen for RPC connections on this port.
     public func rpcPort(_ port: UInt16) -> Self {
-        appending("rpcport", port)
+        var copy = appending("rpcport", port)
+        copy.rpcPortOverride = port
+        return copy
     }
 
     /// Credentials for JSON-RPC connections.

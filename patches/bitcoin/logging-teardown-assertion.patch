@@ -1,0 +1,12 @@
+diff --git a/src/logging.cpp b/src/logging.cpp
+index df6946d6611..eecb58f543f 100644
+--- a/src/logging.cpp
++++ b/src/logging.cpp
+@@ -101,6 +101,7 @@ void BCLog::Logger::DisconnectTestLogger()
+     m_buffering = true;
+     if (m_fileout != nullptr) fclose(m_fileout);
+     m_fileout = nullptr;
++    m_print_to_file = false;  // swift-bitcoinkernel: prevent assertion during teardown when background threads log after disconnect
+     m_print_callbacks.clear();
+     m_max_buffer_memusage = DEFAULT_MAX_LOG_BUFFER;
+     m_cur_buffer_memusage = 0;
