@@ -12,7 +12,7 @@ Boot an embedded `bitcoind` inside your Swift binary, connect a typed async/awai
 
 The `Bitcoin` product compiles [Bitcoin Core][bitcoin-core] as a C++ dependency and links it directly into your binary. There is no external `bitcoind` to install, supervise, or socket into. RPC calls travel through an in-process bridge instead of localhost HTTP once a bootstrap step is run.
 
-This article walks from an empty SwiftPM project to a verified ``RPCClient/getBlockchainInfo()`` round-trip on regtest: install the dependency, build a validated configuration, start the daemon, activate the bridge, and issue one typed call.
+This article walks from an empty SwiftPM project to a verified ``RPCClient/getBlockchainInfo()`` round-trip on regtest: install the dependency, build a validated configuration, start the daemon and connect, and issue one typed call.
 
 ### Prerequisites
 
@@ -26,14 +26,14 @@ This article walks from an empty SwiftPM project to a verified ``RPCClient/getBl
 
 Add the package and depend on the `Bitcoin` product from your target:
 
-> Important: This package is currently pre-1.0. Track `main` until a stable tag ships, then pin with `.upToNextMajor(from:)` so a `swift package update` cannot break your build at an unmarked boundary.
+> Important: This package is pre-1.0 ([SemVer 0.y.z](https://semver.org/#spec-item-4)). The public API may change at any release; pin with `exact:` and review the release notes before bumping.
 
 ```swift
 // Package.swift
 dependencies: [
     .package(
         url: "https://github.com/21-DOT-DEV/swift-bitcoinkernel.git",
-        branch: "main"
+        exact: "0.1.0"
     ),
 ],
 targets: [
@@ -63,69 +63,28 @@ Use ``BitcoinConfig`` to assemble a network-aware, validated configuration. Star
 import Bitcoin
 import Foundation
 
-// Demo credentials — username "111", password "222".
-// `passwordHMAC` is the hex HMAC-SHA256 of the password keyed by the salt.
-// Generate your own with Bitcoin Core's helper:
-//     python3 share/rpcauth/rpcauth.py <username> <password>
-let auth = RPCAuth(
-    username: "111",
-    salt: "14c1e13a71b7d6a4dab6c9d8f107bb5b",
-    passwordHMAC: "73b9fbbd71dbbb1476efa6da7b37dde5111153a17ccb5fdef79537d276fd03d4"
-)
-
 let dataDirectory = URL.temporaryDirectory.appending(path: "bitcoin-regtest")
 try FileManager.default.createDirectory(at: dataDirectory, withIntermediateDirectories: true)
 
 let config = BitcoinConfig
     .regtest()
-    .rpcAuth(auth)
     .server()
     .dataDir(dataDirectory.path(percentEncoded: false))
 ```
 
-The builder is phantom-typed by network. Regtest-only options like `.fastPrune()` surface only on regtest configs, so misuse fails at compile time instead of at daemon startup. The configuration is data, not state. Assemble it freely, then hand it to ``Daemon/start(with:)`` in the next step. The data directory must exist before startup; `bitcoind` refuses to create it.
+The builder is phantom-typed by network. Regtest-only options like `.fastPrune()` surface only on regtest configs, so misuse fails at compile time instead of at daemon startup. The configuration is data, not state. Assemble it freely, then hand it to ``Daemon/startAndConnect(with:timeout:)`` in the next step. The data directory must exist before startup; `bitcoind` refuses to create it.
 
-> Warning: The credentials above exist only to make this tutorial copy-pasteable on regtest. Never reuse them on signet, testnet, or mainnet, and never reuse them outside throwaway development setups. Generate your own with `rpcauth.py` for anything that touches a real network.
+### Start the daemon and connect
 
-### Start the embedded daemon
-
-``Daemon/start(with:)`` validates the configuration, prints any non-fatal warnings, and launches `bitcoind` on a detached thread. The call returns immediately. Validation runs before any thread is spawned, so a thrown ``ConfigError`` means no daemon process exists and no shutdown coordination is required.
+``Daemon/startAndConnect(with:timeout:)`` validates the configuration, launches `bitcoind` on a detached thread, waits for the RPC server, and returns an ``RPCClient`` wired to it. Endpoint and credentials are derived from the config, so they are supplied once and no RPC password appears in your code.
 
 ```swift
-try Daemon.start(with: config)
+let client = try await Daemon.startAndConnect(with: config)
 ```
 
-The `throws(ConfigError)` typed throw covers fatal conflicts the builder can't catch at compile time. Non-fatal warnings print to stdout with a `⚠️ BitcoinConfig:` prefix and the daemon still starts. Bitcoin Core writes its own startup log to stderr ending with `init message: Done loading`. Treat that as a confirmation aid, not your success contract.
+Under the hood it runs three steps you can also drive yourself. ``Daemon/start(with:)`` validates the config (a thrown ``ConfigError`` means no daemon was started) and launches `bitcoind` on a detached thread, returning immediately. ``Daemon/bootstrap(cookieFile:port:timeout:)`` polls with exponential backoff (30-second default) until Bitcoin Core writes its `.cookie` and the RPC server accepts connections, then calls the hidden `_bridge_init` RPC to capture the `NodeContext` that ``DirectTransport`` dispatches against. ``RPCClient/init(url:cookieFile:)`` builds an auto-detecting client. Cookie authentication reads the credentials Bitcoin Core writes to `<datadir>/<network>/.cookie` (here `regtest/.cookie`), so non-wallet RPCs route through the in-process ``DirectTransport`` and wallet RPCs through ``HTTPTransport``, with nothing hardcoded.
 
-> Checkpoint: ``Daemon/start(with:)`` returned without throwing. The daemon is now listening on regtest's default RPC port `18443`. The real success signal is the RPC round-trip two steps below; if that call returns a `BlockchainInfo` value, the daemon is genuinely up.
-
-### Bootstrap the direct RPC bridge
-
-Call ``Daemon/bootstrap(cookieFile:port:timeout:)`` before issuing any ``RPCClient`` request. Without it, the auto-detecting transport has no in-process dispatch target and falls back to HTTP for every call, defeating the point of running the daemon in your binary.
-
-```swift
-// Same `dataDirectory` passed to `.dataDir()` above.
-let cookieFile = dataDirectory.appending(path: "regtest/.cookie")
-try await Daemon.bootstrap(cookieFile: cookieFile, port: 18443)
-```
-
-`bootstrap` polls until Bitcoin Core finishes writing the cookie file and the RPC server is accepting connections. It uses exponential backoff with a 30-second default timeout. It then calls the hidden `_bridge_init` RPC over HTTP to capture the `NodeContext` that ``DirectTransport`` dispatches against. After this call returns, the client built in the next step routes non-wallet RPCs through the in-process bridge instead of HTTP.
-
-> Note: The cookie file path depends on network. Non-mainnet networks place it under the network subdirectory: `regtest/.cookie` on regtest, `signet/.cookie` on signet. Mainnet writes directly to `<datadir>/.cookie`. The cookie-auth form is preferred over ``Daemon/bootstrap(url:username:password:timeout:)`` because it avoids stashing credentials in your code path.
-
-### Connect a typed RPC client
-
-Construct an ``RPCClient`` with the same URL and credentials you configured the daemon with:
-
-```swift
-let client = RPCClient(
-    url: URL(string: "http://127.0.0.1:18443")!,
-    username: "111",
-    password: "222"
-)
-```
-
-With the bootstrap above complete, this initializer assembles an auto-detecting transport. Non-wallet RPCs route through ``DirectTransport`` over the in-process bridge when the bridge is ready, and fall back to ``HTTPTransport`` otherwise. Wallet RPCs are always routed through ``HTTPTransport`` regardless of bridge state. The decision is made per-call. To opt out of auto-selection, pass an explicit conformer to ``RPCClient/init(transport:)``.
+> Checkpoint: `startAndConnect` returned an ``RPCClient`` without throwing. The daemon is up on regtest's default RPC port `18443`, the bridge is active, and the next call confirms the round-trip.
 
 ### Make your first call
 
@@ -137,7 +96,7 @@ print("Chain: \(info.chain)")    // regtest
 print("Blocks: \(info.blocks)")  // 0
 ```
 
-> Checkpoint: The print should report `Chain: regtest` and `Blocks: 0`. An authentication error means the credentials passed to ``RPCClient`` don't match the ``RPCAuth`` baked into the config; re-check that `"111"` and `"222"` are the cleartext pair the `salt` and `passwordHMAC` were derived from. A hang means the bootstrap step was likely skipped and the cookie file isn't yet present.
+> Checkpoint: The print should report `Chain: regtest` and `Blocks: 0`. A hang usually means the data directory wasn't created before `startAndConnect`, so Bitcoin Core never wrote the cookie the client reads. A thrown ``DaemonConnectError`` means the config has no `.dataDir(_:)` for the cookie to live under.
 
 For any RPC the typed surface doesn't model yet, ``RPCClient/send(_:params:)`` accepts a method name and decodes the result into the type you ask for: `let count: Int = try await client.send("getblockcount")`. The decoding is `JSONDecoder`-based, so any `Decodable & Sendable` type works as the return slot.
 
@@ -162,32 +121,15 @@ The walkthrough above stitched into one end-to-end block, ready to drop into a S
 import Bitcoin
 import Foundation
 
-// Demo credentials — username "111", password "222". Regtest only.
-let auth = RPCAuth(
-    username: "111",
-    salt: "14c1e13a71b7d6a4dab6c9d8f107bb5b",
-    passwordHMAC: "73b9fbbd71dbbb1476efa6da7b37dde5111153a17ccb5fdef79537d276fd03d4"
-)
-
 let dataDirectory = URL.temporaryDirectory.appending(path: "bitcoin-regtest")
 try FileManager.default.createDirectory(at: dataDirectory, withIntermediateDirectories: true)
 
 let config = BitcoinConfig
     .regtest()
-    .rpcAuth(auth)
     .server()
     .dataDir(dataDirectory.path(percentEncoded: false))
 
-try Daemon.start(with: config)
-
-let cookieFile = dataDirectory.appending(path: "regtest/.cookie")
-try await Daemon.bootstrap(cookieFile: cookieFile, port: 18443)
-
-let client = RPCClient(
-    url: URL(string: "http://127.0.0.1:18443")!,
-    username: "111",
-    password: "222"
-)
+let client = try await Daemon.startAndConnect(with: config)
 
 let info: BlockchainInfo = try await client.getBlockchainInfo()
 print("Chain: \(info.chain)")
@@ -215,6 +157,7 @@ A first run that lands on `blocks == 0` is correct. Regtest starts at genesis wi
 - ``HTTPTransport``
 - ``RPCTransport``
 - ``ConfigError``
+- ``DaemonConnectError``
 - [Bitcoin Core][bitcoin-core]
 - [`rpcauth.py` — Bitcoin Core][rpcauth]
 - [`generatetoaddress` RPC reference — Bitcoin Developer][gentoaddr]

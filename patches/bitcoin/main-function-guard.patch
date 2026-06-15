@@ -1,0 +1,20 @@
+diff --git a/src/compat/compat.h b/src/compat/compat.h
+index 3f0e127653b..ad595a17493 100644
+--- a/src/compat/compat.h
++++ b/src/compat/compat.h
+@@ -87,6 +87,7 @@ typedef unsigned int SOCKET;
+ typedef SSIZE_T ssize_t;
+ #endif
+ 
++#ifndef MAIN_FUNCTION
+ #ifdef WIN32
+ // Export main() and ensure working ASLR when using mingw-w64.
+ // Exporting a symbol will prevent the linker from stripping
+@@ -97,6 +98,7 @@ typedef SSIZE_T ssize_t;
+ #else
+ #define MAIN_FUNCTION int main(int argc, char* argv[])
+ #endif
++#endif
+ 
+ // Note these both should work with the current usage of poll, but best to be safe
+ // WIN32 poll is broken https://daniel.haxx.se/blog/2012/10/10/wsapoll-is-broken/

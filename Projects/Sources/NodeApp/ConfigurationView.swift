@@ -120,8 +120,6 @@ struct ConfigurationView: View {
                 } footer: {
                     Text("Select the Bitcoin network to connect to. Restart required.")
                 }
-                .disabled(nodeViewModel.isRunning)
-
                 Section {
                     Picker("Node Type", selection: selectedNodeType) {
                         ForEach(NodeType.allCases) { type in
@@ -147,8 +145,6 @@ struct ConfigurationView: View {
                         Text("Enables BIP 157/158 compact block filters for light client support.")
                     }
                 }
-                .disabled(nodeViewModel.isRunning)
-
                 Section {
                     Toggle("Tor", isOn: $torEnabled)
                         .onChange(of: torEnabled) { _, enabled in
@@ -198,8 +194,6 @@ struct ConfigurationView: View {
                 } header: {
                     Label("Resources", systemImage: "cpu")
                 }
-                .disabled(nodeViewModel.isRunning)
-
                 Section {
                     TextField("rpcauth string", text: $rpcAuth)
                         .font(.body.monospaced())
@@ -211,9 +205,7 @@ struct ConfigurationView: View {
                     Label("RPC Authentication", systemImage: "key")
                 } footer: {
                     Text("Format: username:salt$hash. Generated with rpcauth.py.")
-                }
-                .disabled(nodeViewModel.isRunning)
-            }
+                }            }
             .formStyle(.grouped)
             .navigationTitle("Configuration")
             .toolbar {
@@ -227,12 +219,29 @@ struct ConfigurationView: View {
             }
             .safeAreaInset(edge: .bottom) {
                 if nodeViewModel.isRunning {
-                    Text("Stop the node to change network settings")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(.ultraThinMaterial)
+                    VStack(spacing: 4) {
+                        Button {
+                            let socksPort = torEnabled
+                                ? torViewModel.socksEndpoint.map { UInt16(clamping: $0.port) } : nil
+                            Task {
+                                await nodeViewModel.applyAndRestart(
+                                    arguments: DaemonConfig.buildArguments(torProxy: torViewModel.proxyAddress),
+                                    torSession: torEnabled ? torViewModel.sessionID : nil,
+                                    torSocksPort: socksPort
+                                )
+                            }
+                        } label: {
+                            Label("Apply & Restart", systemImage: "arrow.clockwise")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+
+                        Text("Restarts the node in place to apply configuration changes.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding()
+                    .background(.ultraThinMaterial)
                 }
             }
         }

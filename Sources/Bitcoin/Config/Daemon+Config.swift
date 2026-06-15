@@ -8,6 +8,8 @@
 //  See the accompanying file LICENSE for information
 //
 
+import Foundation
+
 // MARK: - Daemon + BitcoinConfig Bridge
 
 extension Daemon {
@@ -35,5 +37,58 @@ extension Daemon {
             print("⚠️ BitcoinConfig: \(warning)")
         }
         start(config.arguments)
+    }
+
+    /// Starts the daemon from a ``BitcoinConfig`` and returns a ready
+    /// ``RPCClient``, deriving the endpoint and cookie credentials from the
+    /// config so they are supplied exactly once.
+    ///
+    /// Uses cookie authentication: the config's data directory locates the
+    /// `.cookie` Bitcoin Core writes at startup, so no RPC password appears in
+    /// caller code. Equivalent to ``start(with:)``, then
+    /// ``bootstrap(cookieFile:port:timeout:)``, then
+    /// ``RPCClient/init(url:cookieFile:)``.
+    ///
+    /// One daemon runs per process (see ``Daemon``). To reconfigure, send the
+    /// `stop` RPC, call ``waitUntilStopped()``, then start again.
+    ///
+    /// ```swift
+    /// let config = BitcoinConfig.regtest().server().dataDir(dir)
+    /// let client = try await Daemon.startAndConnect(with: config)
+    /// let info = try await client.getBlockchainInfo()
+    /// ```
+    ///
+    /// - Parameters:
+    ///   - config: A config with `.server()` enabled and a `.dataDir(_:)` set.
+    ///   - timeout: Maximum time to wait for the RPC server (default 30s).
+    /// - Returns: An ``RPCClient`` connected to the daemon.
+    /// - Throws: ``DaemonConnectError/missingDataDirectory`` if the config has no
+    ///   data directory, ``ConfigError`` for a fatal config conflict, or a
+    ///   transport error if the server never becomes ready.
+    public static func startAndConnect<N: BitcoinNetwork>(
+        with config: BitcoinConfig<N>,
+        timeout: Duration = .seconds(30)
+    ) async throws -> RPCClient {
+        guard let cookieURL = config.cookieURL else {
+            throw DaemonConnectError.missingDataDirectory
+        }
+        try start(with: config)
+        try await bootstrap(cookieFile: cookieURL, port: config.resolvedRPCPort, timeout: timeout)
+        return RPCClient(url: config.rpcEndpoint, cookieFile: cookieURL)
+    }
+}
+
+/// An error from ``Daemon/startAndConnect(with:timeout:)`` or
+/// ``RPCClient/init(daemon:)``.
+public enum DaemonConnectError: Error, CustomStringConvertible, Sendable {
+    /// The config has no data directory, so the RPC cookie cannot be located.
+    /// Call `.dataDir(_:)` on the config.
+    case missingDataDirectory
+
+    public var description: String {
+        switch self {
+        case .missingDataDirectory:
+            return "startAndConnect(with:) needs a data directory to find the RPC cookie; call .dataDir(_:) on the config."
+        }
     }
 }

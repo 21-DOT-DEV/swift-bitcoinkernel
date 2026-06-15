@@ -31,7 +31,9 @@ extension BitcoinConfig {
 
     /// Specify data directory.
     public func dataDir(_ path: String) -> Self {
-        appending("datadir", path)
+        var copy = appending("datadir", path)
+        copy.dataDirectory = path
+        return copy
     }
 
     /// Specify blocks directory.

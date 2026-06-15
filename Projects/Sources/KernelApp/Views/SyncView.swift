@@ -133,6 +133,10 @@ struct SyncView: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
 
+            Divider()
+
+            sourceCard
+
             Spacer()
 
             Divider()
@@ -195,6 +199,48 @@ struct SyncView: View {
         } else {
             await viewModel.stop()
         }
+    }
+
+    // MARK: - Source card
+
+    /// Block-source health, scoped honestly to what the kernel is: a block
+    /// validator fed over HTTP, with no peer set and no mempool.
+    private var sourceCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Source")
+                .font(.headline)
+
+            LabeledContent("Block source", value: sourceName)
+            LabeledContent("Tor routing", value: settings.routeDownloadsThroughTor ? "On" : "Off")
+            if let rate = viewModel.blocksPerSecond {
+                LabeledContent("Rate", value: String(format: "%.1f blocks/s", rate))
+            }
+            if let updated = viewModel.lastSyncUpdate {
+                LabeledContent("Updated") { Text(updated, style: .relative) }
+            }
+            LabeledContent("Footprint", value: footprintText)
+
+            Text("Validation only: no peers or mempool. Blocks come from the source above and are validated by libbitcoinkernel. For a peer-to-peer node with a mempool, use NodeApp.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        .task(id: settings.effectiveDataDirectory) {
+            while !Task.isCancelled {
+                await viewModel.refreshDataDirectorySize()
+                try? await Task.sleep(for: .seconds(10))
+            }
+        }
+    }
+
+    private var sourceName: String {
+        guard let endpoint = settings.blockSourceEndpoint else { return "—" }
+        return BlockSourcePreset.allCases.first { $0.url == endpoint }?.displayName
+            ?? endpoint.host() ?? endpoint.absoluteString
+    }
+
+    private var footprintText: String {
+        guard let size = viewModel.dataDirectorySize else { return "Measuring…" }
+        return ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
     }
 }
 

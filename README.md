@@ -14,15 +14,24 @@ Swift package for Bitcoin consensus validation, optionally embedding a full Bitc
 
 ## Contents
 
+- [Which product?](#which-product)
 - [Features](#features)
 - [Installation](#installation)
 - [Package Traits](#package-traits)
+- [Platform notes](#platform-notes)
 - [Usage Examples](#usage-examples)
 - [Demo Apps](#demo-apps)
 - [Documentation](#documentation)
 - [Contributing](#contributing)
 - [Security](#security)
 - [License](#license)
+
+## Which product?
+
+| Goal | Product | Demo app | Getting started |
+|------|---------|----------|-----------------|
+| Validate consensus or sync a chain, no networking | `BitcoinKernel` | `KernelApp` | [Guide](https://docs.21.dev/documentation/bitcoinkernel/gettingstarted) |
+| Run a full node with in-process RPC | `Bitcoin` | `NodeApp` | [Guide](https://docs.21.dev/documentation/bitcoin/gettingstarted) |
 
 ## Features
 
@@ -65,6 +74,8 @@ For the `Bitcoin` product (embedded daemon and RPC client), opt your target into
 
 Or use Xcode: **File → Add Packages…**, then enter `https://github.com/21-DOT-DEV/swift-bitcoinkernel`. For the `Bitcoin` product in Xcode, set **C++ and Objective-C Interoperability** to `C++/Objective-C++` in the target's Build Settings.
 
+Pin with a version tag. At a tagged release the package excludes its development plugins (tuist, subtree, docc); pinning a commit or branch instead resolves that full toolchain into your dependency graph.
+
 ## Package Traits
 
 The package uses [SE-0450 Package Traits](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0450-swiftpm-package-traits.md) to gate optional functionality. No traits are enabled by default.
@@ -82,32 +93,31 @@ Opts into Bitcoin Core's wallet RPCs (`createwallet`, `sendtoaddress`, `walletPr
 ```
 
 > [!NOTE]
-> Xcode doesn't resolve SwiftPM trait conditions for Swift settings. Wallet sources are guarded with `#if Xcode || ENABLE_WALLET`, so Xcode consumers always compile the wallet API surface regardless of the trait. The trait is honored fully under `swift build`.
+> The `wallet` trait is a dependency and binary-size optimization, not a security boundary. Under `swift build` the trait is honored fully. Under Xcode it is not: Xcode doesn't resolve SwiftPM trait conditions, so wallet sources guarded by `#if Xcode || ENABLE_WALLET` always compile and the wallet API surface is always present. If your threat model requires wallet code to be absent, do not rely on the trait; run the daemon with `-disablewallet`.
+
+## Platform notes
+
+- **tvOS** builds `BitcoinKernel` only. The `Bitcoin` product depends on `execvp` (marked `__TVOS_PROHIBITED`) and does not compile for tvOS.
+- **Linux** consumers of `Bitcoin` link the system SQLite. Install `libsqlite3-dev` (Debian/Ubuntu) or `sqlite-devel` (Fedora/RHEL).
+- **Storage**: regtest and signet stay in the tens of MB. Pruned mainnet keeps roughly 12 GB of UTXO chainstate plus the pruned block target (≥ 550 MiB). A full mainnet node is ~700 GB and growing.
 
 ## Usage Examples
 
 ### Validate consensus with `BitcoinKernel`
 
-Boot the validation engine against a fresh regtest data directory and confirm the chainstate has loaded by reading the tip height:
+Boot the validation engine against a fresh regtest data directory and read the tip height to confirm the chainstate loaded. `Context(chain:)` wraps the options builder for the common case:
 
 ```swift
 import BitcoinKernel
 import Foundation
 
-let params = ChainParameters(.regtest)
-let options = ContextOptions()
-options.setChainParams(params)
-let context = try Context(options: options)
+let context = try Context(chain: .regtest)
 
 let dataDirectory = FileManager.default.temporaryDirectory
     .appendingPathComponent(UUID().uuidString)
     .path(percentEncoded: false)
 
-let managerOptions = try ChainstateManagerOptions(
-    context: context,
-    dataDirectory: dataDirectory
-)
-let manager = try ChainstateManager(options: managerOptions)
+let manager = try ChainstateManager(context: context, dataDirectory: dataDirectory)
 
 print(manager.bestEntry.height)  // 0 on a fresh regtest directory
 ```
@@ -116,20 +126,11 @@ print(manager.bestEntry.height)  // 0 on a fresh regtest directory
 
 ### Embed `bitcoind` and query it with `RPCClient`
 
-Run an embedded `bitcoind` on regtest and call a typed JSON-RPC method:
+Start an embedded `bitcoind` on regtest and call a typed JSON-RPC method. Cookie authentication derives the endpoint and credentials from the config, so they are supplied once and no RPC password lives in your code:
 
 ```swift
 import Bitcoin
 import Foundation
-
-// Demo credentials — username "111", password "222". Regtest only.
-// Generate your own with Bitcoin Core's helper:
-//     python3 share/rpcauth/rpcauth.py <username> <password>
-let auth = RPCAuth(
-    username: "111",
-    salt: "14c1e13a71b7d6a4dab6c9d8f107bb5b",
-    passwordHMAC: "73b9fbbd71dbbb1476efa6da7b37dde5111153a17ccb5fdef79537d276fd03d4"
-)
 
 // Bitcoin Core requires the data directory to exist before startup.
 let dataDir = URL.temporaryDirectory.appending(path: "bitcoin-regtest")
@@ -137,25 +138,10 @@ try FileManager.default.createDirectory(at: dataDir, withIntermediateDirectories
 
 let config = BitcoinConfig
     .regtest()
-    .rpcAuth(auth)
     .server()
     .dataDir(dataDir.path(percentEncoded: false))
 
-try Daemon.start(with: config)
-
-// `Daemon.start(with:)` returns as soon as the daemon thread is launched.
-// `bootstrap` polls until the RPC server is ready before the first call.
-try await Daemon.bootstrap(
-    url: URL(string: "http://127.0.0.1:18443")!,
-    username: "111",
-    password: "222"
-)
-
-let client = RPCClient(
-    url: URL(string: "http://127.0.0.1:18443")!,
-    username: "111",
-    password: "222"
-)
+let client = try await Daemon.startAndConnect(with: config)
 
 let info = try await client.getBlockchainInfo()
 print("Chain: \(info.chain), blocks: \(info.blocks)")
@@ -203,7 +189,7 @@ Contributions are welcome. Read [AGENTS.md](AGENTS.md) for project architecture 
 
 ## Security
 
-For vulnerability reports, see [SECURITY.md](SECURITY.md).
+For vulnerability reports, see [SECURITY.md](SECURITY.md). Patches to the vendored Bitcoin Core never touch consensus code; see the [patch policy](SECURITY.md#patch-policy).
 
 ## License
 

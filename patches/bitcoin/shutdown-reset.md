@@ -11,7 +11,7 @@ init: reset g_shutdown in Shutdown() to support in-process restart
 ## PR Description
 
 ```markdown
-Add `g_shutdown.reset()`, `gArgs.ClearArgs()`, and
+Add `g_shutdown.reset()`, `gArgs.ClearArgs()`, `ResetRPC()`, and
 `LogInstance().DisconnectTestLogger()` at the end of `Shutdown()` in
 `src/init.cpp`, clearing global state so that `bitcoind_main()` can be called
 again within the same process.
@@ -19,7 +19,7 @@ again within the same process.
 **Motivation:**
 
 `Shutdown()` cleans up node-scoped state (chainstate, mempool, peers, indices,
-scheduler, ECC context, kernel context) but does not reset two process-global
+scheduler, ECC context, kernel context) but does not reset four process-global
 objects. Calling `bitcoind_main()` a second time hits fatal assertions:
 
 1. `init.cpp:215: assert(!g_shutdown)` — `InitContext()` asserts `g_shutdown`
@@ -28,6 +28,10 @@ objects. Calling `bitcoind_main()` a second time hits fatal assertions:
    inserted fresh, but `gArgs.m_available_args` still contains entries from the
    previous run. `ParseParameters()` only clears `command_line_options`, not the
    registered argument definitions.
+3. `StartLogging()` asserts `m_buffering` on entry, but the leaked singleton
+   logger persists across runs. `LogInstance().DisconnectTestLogger()` restores it.
+4. `SetRPCWarmupFinished()` asserts `fRPCInWarmup`, but it was cleared on the
+   previous run. `ResetRPC()` (added in the RPC server patch) restores it.
 
 This affects projects embedding Bitcoin Core as a library that need to
 start/stop/restart the daemon without relaunching the host process — for
@@ -44,6 +48,7 @@ two globals above are the only ones that block a clean restart.
 
 +    g_shutdown.reset();
 +    gArgs.ClearArgs();
++    ResetRPC();
 +    LogInstance().DisconnectTestLogger();
 +
      LogInfo("Shutdown done");
@@ -66,13 +71,14 @@ two globals above are the only ones that block a clean restart.
 ```
 init: reset global state in Shutdown() to support in-process restart
 
-Add g_shutdown.reset() and gArgs.ClearArgs() at the end of Shutdown(),
-clearing two process-global objects so that bitcoind_main() can be
+Add g_shutdown.reset(), gArgs.ClearArgs(), ResetRPC(), and
+LogInstance().DisconnectTestLogger() at the end of Shutdown(),
+clearing four process-global objects so that bitcoind_main() can be
 re-invoked within the same process.
 
 Shutdown() already cleans up all other node state (chainstate,
 mempool, peers, indices, scheduler, ECC, kernel context) but leaves
-three process-global objects stale:
+four process-global objects stale:
 
 - g_shutdown (std::optional<util::SignalInterrupt>) — emplaced in
   InitContext() which asserts it is empty on entry.
@@ -82,8 +88,11 @@ three process-global objects stale:
 - LogInstance().m_buffering — set to false by StartLogging(), which
   asserts it is true on entry. The leaked singleton logger persists
   across restarts.
+- fRPCInWarmup — SetRPCWarmupFinished() asserts it; ResetRPC() (added
+  in the companion RPC server patch) restores it.
 
-ClearArgs() and DisconnectTestLogger() are existing public methods.
+ClearArgs() and DisconnectTestLogger() are existing public methods;
+ResetRPC() is added by the companion RPC server patch.
 
 This enables projects that embed Bitcoin Core as a library to restart
 the daemon without relaunching the host process, which is important
@@ -95,7 +104,7 @@ No behavior change for the normal single-run case.
 
 ## File Changed
 
-**`src/init.cpp`** — 3 lines added (`g_shutdown.reset()`, `gArgs.ClearArgs()`, `LogInstance().DisconnectTestLogger()`)
+**`src/init.cpp`** — 4 lines added (`g_shutdown.reset()`, `gArgs.ClearArgs()`, `ResetRPC()`, `LogInstance().DisconnectTestLogger()`)
 
 ### Diff (against current `master`)
 
@@ -103,7 +112,7 @@ No behavior change for the normal single-run case.
 diff --git a/src/init.cpp b/src/init.cpp
 --- a/src/init.cpp
 +++ b/src/init.cpp
-@@ -414,6 +414,11 @@ void Shutdown(NodeContext& node)
+@@ -414,6 +414,12 @@ void Shutdown(NodeContext& node)
 
      RemovePidFile(*node.args);
 
@@ -112,6 +121,7 @@ diff --git a/src/init.cpp b/src/init.cpp
 +    // without relaunching).
 +    g_shutdown.reset();
 +    gArgs.ClearArgs();
++    ResetRPC();
 +    LogInstance().DisconnectTestLogger();
 +
      LogInfo("Shutdown done");
@@ -171,7 +181,7 @@ Shutdown() cleanup order:
   9. Flush validation interface callbacks
   10. Reset chain clients, mempool, chainman, validation_signals, scheduler, ecc, kernel
   11. Remove PID file
-  → g_shutdown.reset()  ← NEW (this PR)
+  → g_shutdown.reset(), gArgs.ClearArgs(), ResetRPC(), LogInstance().DisconnectTestLogger()  ← NEW (this PR)
   12. Log "Shutdown done"
 ```
 
@@ -198,7 +208,4 @@ across calls are:
 | `g_shutdown` | **No** — this PR fixes it |
 | `LogInstance()` | Singleton, reused — safe |
 
-## Labels to Request
-
-- `Refactoring` — cleanup of shutdown path
-- `Utils/log/libs` — affects init/shutdown lifecycle
+*Issue states: see [patches/README.md](../README.md#cited-upstream-issues) (verified 2026-06-13).*

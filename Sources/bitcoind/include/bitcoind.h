@@ -9,6 +9,8 @@
 #ifndef BITCOIN_RPC_BRIDGE_H
 #define BITCOIN_RPC_BRIDGE_H
 
+#include <stddef.h>  // size_t
+
 int bitcoind_main(int argc, char* argv[]);
 
 // Call BEFORE bitcoind_main(). appendCommand aborts if RPC is already running.
@@ -37,5 +39,13 @@ void bitcoin_free(void* ptr);
 // Concurrent bitcoin_rpc() calls will return NULL instead of touching
 // a half-destroyed NodeContext.
 void bitcoin_rpc_reset(void);
+
+// Compute HMAC-SHA256(key[keylen], msg[msglen]) into `out` (32 bytes) using
+// Bitcoin Core's vendored CHMAC_SHA256. A pure helper (not a per-run lifecycle
+// shim) used by RPCAuth to derive the rpcauth password HMAC. `out` must point
+// to at least 32 bytes.
+void bitcoin_hmac_sha256(const unsigned char* key, size_t keylen,
+                         const unsigned char* msg, size_t msglen,
+                         unsigned char* out);
 
 #endif /* BITCOIN_RPC_BRIDGE_H */

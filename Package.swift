@@ -17,7 +17,10 @@ let package = Package(
         .trait(name: "wallet")
     ],
     dependencies: [
-        .package(url: "https://github.com/21-DOT-DEV/swift-boost", branch: "pruned-umbrella-1.90.0"),
+        // Pinned to the pruned-umbrella-1.90.0 release commit. That tag name is not
+        // SemVer, so it cannot be used with `exact:`; a revision pin is reproducible
+        // and removes the (non-existent) branch reference.
+        .package(url: "https://github.com/21-DOT-DEV/swift-boost", revision: "6d8c72c0f41a20ec47b25096e4c422ef34f67579"),
         .package(url: "https://github.com/21-DOT-DEV/swift-event", exact: "0.2.1"),
     ] + Package.Dependency.developmentDependencies,
     targets: [
@@ -38,14 +41,12 @@ let package = Package(
             name: "libbitcoinkernel",
             dependencies: Target.Dependency.kernelDeps,
             exclude: ["src/crypto/ctaes/ctaes.c"],
-            publicHeadersPath: "include",
             cxxSettings: CXXSetting.kernelSettings
         ),
         .target(
             name: "bitcoind",
             dependencies: Target.Dependency.bitcoinDeps,
             exclude: ["src/bridge/README.md"],
-            publicHeadersPath: "include",
             cxxSettings: CXXSetting.bitcoinSettings,
             linkerSettings: [
                 .linkedLibrary("sqlite3")
@@ -71,7 +72,6 @@ let package = Package(
         .target(name: "minisketch"),
         .target(
             name: "secp256k1",
-            publicHeadersPath: "include",
             cSettings: [
                 .define("ECMULT_GEN_PREC_BITS", to: "4"),
                 .define("ECMULT_WINDOW_SIZE", to: "15"),
@@ -96,6 +96,8 @@ let package = Package(
             dependencies: ["BitcoinKernel"]
         ),
     ],
+    // Matches the vendored secp256k1 C sources, which are written to C89.
+    // SwiftPM applies one C standard to every C target in the package.
     cLanguageStandard: .c89,
     cxxLanguageStandard: .cxx20
 )

@@ -61,6 +61,14 @@ public struct BitcoinConfig<N: BitcoinNetwork>: Sendable {
     private var args: [String]
     var flags: ConfigFlags
 
+    /// The data directory set via ``dataDir(_:)``, if any. Used to derive the
+    /// RPC cookie path (``cookieURL``) for ``Daemon/startAndConnect(with:timeout:)``.
+    var dataDirectory: String?
+
+    /// The explicit RPC port set via ``rpcPort(_:)``, if any. ``resolvedRPCPort``
+    /// falls back to the network default when this is `nil`.
+    var rpcPortOverride: UInt16?
+
     /// Internal — use static factories instead.
     init() {
         if let flag = N.flag {

@@ -42,6 +42,30 @@ public final class Context: @unchecked Sendable {
         self.pointer = ptr
     }
 
+    /// Creates a kernel context for a chain — the common case, without the
+    /// ``ContextOptions`` builder.
+    ///
+    /// Equivalent to building a ``ContextOptions``, calling
+    /// ``ContextOptions/setChainParams(_:)`` with ``ChainParameters`` for
+    /// `chain`, attaching any callbacks, then ``Context/init(options:)``.
+    ///
+    /// - Parameters:
+    ///   - chain: The Bitcoin network to validate against.
+    ///   - notifications: Optional tip, progress, and warning callbacks.
+    ///   - validationInterface: Optional per-block validation callbacks.
+    /// - Throws: ``KernelError/contextCreationFailed`` if the C API returns null.
+    public convenience init(
+        chain: ChainType,
+        notifications: NotificationCallbacks? = nil,
+        validationInterface: ValidationInterfaceCallbacks? = nil
+    ) throws {
+        let options = ContextOptions()
+        options.setChainParams(ChainParameters(chain))
+        if let notifications { options.setNotifications(notifications) }
+        if let validationInterface { options.setValidationInterface(validationInterface) }
+        try self.init(options: options)
+    }
+
     /// Interrupts long-running validation operations — reindex, block
     /// import, `ChainstateManager.processBlock`.
     ///

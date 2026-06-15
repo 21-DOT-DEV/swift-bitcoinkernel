@@ -12,7 +12,7 @@ Install `BitcoinKernel` via Swift Package Manager and boot Bitcoin Core's consen
 
 `BitcoinKernel` wraps Bitcoin Core's [`libbitcoinkernel`][bitcoin-kernel] behind a type-safe Swift API. `libbitcoinkernel` is the consensus-validation engine extracted from [`src/kernel`][bitcoin-kernel] with the network, wallet, and GUI subsystems excluded by design.
 
-This article walks from an empty SwiftPM project to a live engine. Install the dependency, build three objects (``Context``, ``ChainstateManagerOptions``, ``ChainstateManager``), and confirm the engine has located its tip.
+This article walks from an empty SwiftPM project to a live engine. Install the dependency, build two objects (``Context`` and ``ChainstateManager``), and confirm the engine has located its tip.
 
 ### Prerequisites
 
@@ -24,14 +24,14 @@ This article walks from an empty SwiftPM project to a live engine. Install the d
 
 Add the package, then depend on the `BitcoinKernel` product from your target:
 
-> Important: This package is currently pre-1.0. Track `main` until a stable tag ships, then pin with `.upToNextMajor(from:)` so a `swift package update` cannot break your build at an unmarked boundary.
+> Important: This package is pre-1.0 ([SemVer 0.y.z](https://semver.org/#spec-item-4)). The public API may change at any release; pin with `exact:` and review the release notes before bumping.
 
 ```swift
 // Package.swift
 dependencies: [
     .package(
         url: "https://github.com/21-DOT-DEV/swift-bitcoinkernel.git",
-        branch: "main"
+        exact: "0.1.0"
     ),
 ],
 targets: [
@@ -48,11 +48,11 @@ The first build compiles `libbitcoinkernel` and its C/C++ dependencies from sour
 
 ### Boot the validating engine
 
-Three objects, constructed in fixed order, get a regtest consensus engine running in a throwaway temporary directory. The example below is `Snippets/BootValidatingEngine.swift` in the package and is compile-checked on every `swift build`.
+Two objects get a regtest consensus engine running in a throwaway temporary directory. The example below is `Snippets/BootValidatingEngine.swift` in the package and is compile-checked on every `swift build`.
 
 @Snippet(path: "BitcoinKernel/Snippets/BootValidatingEngine")
 
-A ``Context`` carries the chain parameters and the interrupt handle every validation operation reads from. A ``ChainstateManagerOptions`` binds that context to a writable data directory. A ``ChainstateManager`` opens the block-index and chainstate LevelDB stores under that directory, replays any existing state, and exposes the chain tip via ``ChainstateManager/bestEntry``.
+A ``Context`` carries the chain parameters and the interrupt handle every validation operation reads from. A ``ChainstateManager`` opens the block-index and chainstate LevelDB stores under a writable data directory, replays any existing state, and exposes the chain tip via ``ChainstateManager/bestEntry``. The convenience initializer builds a ``ChainstateManagerOptions`` for you; reach for that type directly when you need worker-thread counts or in-memory databases.
 
 On a fresh regtest data directory the kernel writes the embedded regtest genesis block and nothing else, so `bestEntry.height` returning `0` proves the engine opened both LevelDB stores, loaded the chain parameters, and now knows where its tip is. Anything other than `0` against a fresh regtest directory indicates a partial boot.
 

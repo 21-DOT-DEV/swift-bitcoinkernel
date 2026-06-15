@@ -101,6 +101,23 @@ public final class RPCClient: Sendable {
         )
     }
 
+    /// Creates a client for an already-running embedded daemon, deriving the
+    /// endpoint and cookie file from the daemon's ``BitcoinConfig`` so they are
+    /// supplied once. Uses cookie authentication.
+    ///
+    /// To start the daemon and connect in one step, use
+    /// ``Daemon/startAndConnect(with:timeout:)``.
+    ///
+    /// - Parameter config: The config the daemon was started with; must have a
+    ///   `.dataDir(_:)` set so the cookie can be located.
+    /// - Throws: ``DaemonConnectError/missingDataDirectory`` if no data directory was set.
+    public convenience init<N: BitcoinNetwork>(daemon config: BitcoinConfig<N>) throws {
+        guard let cookieURL = config.cookieURL else {
+            throw DaemonConnectError.missingDataDirectory
+        }
+        self.init(url: config.rpcEndpoint, cookieFile: cookieURL)
+    }
+
     // MARK: - Generic Decode
 
     func decode<T: Decodable & Sendable>(_ data: Data, method: String) throws -> T {
