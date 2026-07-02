@@ -1,103 +1,18 @@
-# Bitcoin Core Upstream PR: Remove `std::once_flag` from RPC Lifecycle
+# Make the RPC server restartable
 
-Prepared draft for removing unnecessary `std::once_flag` from `InterruptRPC()`/`StopRPC()` and adding `ResetRPC()` in Bitcoin Core's `src/rpc/server.cpp` and `src/rpc/server.h`.
+`InterruptRPC()` and `StopRPC()` — the two functions that wind down Bitcoin Core's JSON-RPC server — each guard themselves with `std::once_flag`, a C++ one-shot lock that can never re-arm. One shot per process means a second node start inside the same process trips fatal assertions. The locks are also stronger than needed: both function bodies are already safe to call twice. Removing them fixes a separately reported startup crash as well, and a new three-line helper, `ResetRPC()`, restores the server's "warming up" state for the next lifecycle.
 
-> **Upstream strategy**: This is **PR 1 of 2** (pure refactor). PR 2 (`upstream-shutdown-reset-pr.md`) adds `ResetRPC()` call + other global resets in `Shutdown()` for restart support. PR 1 stands alone — it simplifies code and fixes #31289.
+| | |
+|---|---|
+| **Status** | Applied here; not yet filed upstream. Still needed on master: the locks remain at `src/rpc/server.cpp:281,292` (checked 2026-07-02). |
+| **Touches** | `src/rpc/server.cpp`, `src/rpc/server.h` |
+| **Depends on** | Nothing. |
+| **Unlocks** | [Reset four globals at shutdown](shutdown-reset.md) — it needs `InterruptRPC()`/`StopRPC()` to be restartable first. Locally this patch also carries the `ResetRPC()` helper; upstream that helper ships with the shutdown PR (see the must-not list below). |
+| **File as** | Direct pull request, step 5 of [the pipeline](../UPSTREAMING.md#the-pipeline). Link the discussion thread for context; the crash fix justifies the PR on its own. |
+| **PR title** | `rpc: remove once_flag from InterruptRPC/StopRPC` |
+| **Cite** | [#31289](https://github.com/bitcoin/bitcoin/issues/31289) — the startup crash this removes (closed 2024 with no fix; still reproduces). [#19111](https://github.com/bitcoin/bitcoin/pull/19111) — precedent: the same locks were already narrowed once, on the same reasoning. |
 
-## PR Title
-
-```
-rpc: replace std::once_flag with resettable guards in InterruptRPC/StopRPC
-```
-
-## PR Description
-
-```markdown
-Remove `static std::once_flag` + `std::call_once` from `InterruptRPC()`
-and `StopRPC()`. Both functions are naturally idempotent without them.
-Add `ResetRPC()` to restore RPC warmup state to initial values.
-
-**Motivation:**
-
-`InterruptRPC()` and `StopRPC()` each use a `static std::once_flag` to
-ensure their bodies execute at most once. The original intent was
-idempotency — these functions can be called twice when the GUI is started
-with `-server=1`.
-
-However, `std::once_flag` is **stronger than needed**:
-
-1. **`InterruptRPC()`** sets `g_rpc_running = false`. Setting an atomic
-   bool to `false` when it's already `false` is a no-op — the function
-   is naturally idempotent. An `if (!g_rpc_running) return` guard is
-   clearer and avoids the lambda indirection.
-
-2. **`StopRPC()`** calls `DeleteAuthCookie()`, which internally calls
-   `fs::remove()` — returns `false` on a missing file, no error. The
-   body is naturally idempotent.
-
-3. **Race in #31289**: `std::once_flag` in `InterruptRPC()` can be
-   consumed before `StartRPC()` sets `g_rpc_running = true`, leaving
-   `StopRPC()`'s `assert(!g_rpc_running)` to crash. Checking
-   `g_rpc_running` directly eliminates this race.
-
-4. **`std::once_flag` is permanently one-shot** per C++ spec and cannot
-   be reset between daemon lifecycles, blocking in-process restart for
-   library embedders.
-
-**Changes:**
-
-1. `InterruptRPC()`: remove `std::once_flag`, add `if (!g_rpc_running)
-   return` — natural idempotency.
-
-2. `StopRPC()`: remove `std::once_flag`, unwrap lambda — body is
-   idempotent (`DeleteAuthCookie` handles missing file).
-
-3. Remove `#include <mutex>` — no longer needed (`GlobalMutex`/`LOCK`
-   come from `<sync.h>`).
-
-4. Add `ResetRPC()`: resets `fRPCInWarmup` and `rpcWarmupStatus` to
-   initial values. These are the only RPC globals with assertions that
-   block restart (`SetRPCWarmupFinished()` asserts `fRPCInWarmup`).
-
-5. Declare `ResetRPC()` in `src/rpc/server.h`.
-
-**Impact:**
-
-- Preserves the existing double-call safety for GUI + server shutdown
-- Zero behavior change for single-run invocations
-- Fixes #31289 (race between InterruptRPC and StartRPC)
-- Enables `ResetRPC()` to be called from `Shutdown()` for restart support
-- No test changes required for existing tests
-- Does not affect consensus code
-```
-
-## Commit Message
-
-```
-rpc: remove std::once_flag from InterruptRPC/StopRPC
-
-Remove static std::once_flag + std::call_once from InterruptRPC() and
-StopRPC(). Both functions are naturally idempotent without them:
-
-- InterruptRPC() sets g_rpc_running (atomic bool) to false; a second
-  call is a no-op. An explicit if-guard makes this clear.
-- StopRPC() calls DeleteAuthCookie() which handles missing files.
-
-std::once_flag was stronger than needed — the requirement is per-
-lifecycle idempotency, not permanent one-shot-per-process. Removing
-it also fixes the race in #31289 where the once_flag is consumed
-before StartRPC() completes.
-
-Add ResetRPC() to restore fRPCInWarmup and rpcWarmupStatus to their
-initial values, enabling callers to prepare for a new RPC lifecycle.
-```
-
-## Files Changed
-
-**`src/rpc/server.cpp`** — Remove `std::once_flag`, remove `#include <mutex>`, add `ResetRPC()`
-**`src/rpc/server.h`** — Declare `ResetRPC()`
-
-### Diff (against current `master`)
+## The change
 
 ```diff
 diff --git a/src/rpc/server.cpp b/src/rpc/server.cpp
@@ -163,73 +78,31 @@ diff --git a/src/rpc/server.h b/src/rpc/server.h
  UniValue JSONRPCExec(const JSONRPCRequest& jreq, bool catch_errors);
 ```
 
-> **Note:** Line numbers are approximate. The actual PR branch must be rebased
-> onto `master` before opening.
+The diff matches the vendored v31.0 tree and applies cleanly to it (checked 2026-07-17); rebase onto current `master` before opening the PR.
 
-## Bitcoin Core PR Process Checklist
+## Writing the PR
 
-Per [CONTRIBUTING.md](https://github.com/bitcoin/bitcoin/blob/master/CONTRIBUTING.md):
+Must say:
 
-- [ ] Fork `bitcoin/bitcoin` and create a branch from `master`
-- [ ] Rebase the change onto current `master`
-- [ ] Verify the diff applies cleanly
-- [ ] Run the existing test suite: `ctest --test-dir build`
-- [ ] PR title uses area prefix: `rpc:` (matches module area)
-- [ ] Commit message follows project conventions (imperative mood, no `@` mentions)
-- [ ] No `@` mentions in PR description (use follow-up comments for pings)
-- [ ] Consider pinging reviewers who last touched `src/rpc/server.cpp` (use `git blame`)
+- Lead with the crash. Preserved wording: "The `once_flag` in `InterruptRPC()` can be consumed before `StartRPC()` sets `g_rpc_running`, so `StopRPC()`'s `assert(!g_rpc_running)` can fire" — the race reported in #31289, still reproducible on master.
+- Both bodies are naturally idempotent (safe to call twice): `InterruptRPC()` sets an atomic flag that is already false the second time; `StopRPC()` deletes a cookie file that is already gone.
+- The one observable change. Preserved wording: "`InterruptRPC()` before `StartRPC()` now early-returns silently instead of logging and burning the flag."
+- Include a regression test driving `InterruptRPC(); StartRPC(); InterruptRPC(); StopRPC();`.
 
-## Context & Prior Art
+Must not:
 
-### Why `std::once_flag` was used
+- Do not include `ResetRPC()` in the upstream PR. Upstream it has no caller until the shutdown patch lands, and "new API with zero callers" is a standard rejection — it ships with [its caller](shutdown-reset.md) instead. Our local `.patch` does include it, because our shutdown patch is its caller here. This is the one place the local patch and the upstream PR deliberately differ.
+- Do not write "Fixes #31289" — that issue is closed; cite it as the historical report.
 
-The original code comments explain: "This function could be called twice if the
-GUI has been started with `-server=1`." Both the GUI shutdown path and the server
-shutdown path can call `InterruptRPC()` and `StopRPC()`, so idempotency is
-required.
+## Notes
 
-`std::once_flag` was chosen as a strong guarantee — but it's **stronger than
-needed**. The actual requirement is idempotency within a single daemon lifecycle,
-not permanent one-shot-per-process.
+Why removing the locks is safe:
 
-### Why `std::once_flag` removal is safe
-
-| Property | `std::once_flag` | Natural idempotency |
+| Property | With `std::once_flag` | Without |
 |---|---|---|
-| Idempotent within lifecycle | Yes | Yes — `InterruptRPC()` checks `g_rpc_running`; `StopRPC()` body is idempotent |
-| Thread-safe | Yes (built-in) | Yes — `g_rpc_running` is `std::atomic<bool>`; `StopRPC()` runs on shutdown thread after all RPC threads are joined |
-| Resettable between lifecycles | **No** | Yes |
-| Immune to #31289 race | No — once_flag consumed before StartRPC completes | Yes — checks `g_rpc_running` directly |
-| New variables introduced | N/A | None — no `g_rpc_stopped` needed |
+| Safe to call twice in one lifecycle | Yes | Yes — `InterruptRPC()` checks the atomic flag; `StopRPC()`'s body is idempotent |
+| Thread-safe | Yes | Yes — the flag is `std::atomic<bool>`; `StopRPC()` runs on the shutdown thread after RPC workers are joined |
+| Can re-arm for a second lifecycle | **No** | Yes |
+| Exposed to the #31289 race | Yes | No — the flag is checked directly |
 
-### Related Issues & PRs
-
-| PR/Issue | Title | Relevance |
-|---|---|---|
-| [#31289](https://github.com/bitcoin/bitcoin/issues/31289) | `bitcoin-qt failed assertion on startup` | Race between `InterruptRPC()` and `StartRPC()` causes `assert(!g_rpc_running)` crash in `StopRPC()`. The `std::once_flag` in `InterruptRPC()` consumed its one chance before `g_rpc_running` was set to `true`. |
-| [#18452](https://github.com/bitcoin/bitcoin/pull/18452) | `Fix GUI shutdown when waitfor* cmds are called from RPC console` | Added `InterruptRPC(); StopRPC();` to GUI shutdown path, increasing the likelihood of double-calls that motivated the `once_flag` pattern |
-| [#24303](https://github.com/bitcoin/bitcoin/issues/24303) | `The libbitcoinkernel Project` | Library extraction — makes Bitcoin Core embeddable, where in-process restart becomes a real use case |
-| [#27587](https://github.com/bitcoin/bitcoin/issues/27587) | `Bitcoin Kernel Library Project Tracking` | Ongoing kernel library work |
-
-### Thread safety analysis
-
-```
-Shutdown sequence (single-threaded after thread joins):
-
-  Interrupt(node)          ← calls InterruptRPC()  [g_rpc_running = false]
-  Shutdown(node)           ← calls StopRPC()       [logs + DeleteAuthCookie]
-                             calls ResetRPC()       [warmup flags reset]
-
-Second lifecycle:
-
-  AppInit(node)            ← calls StartRPC()      [g_rpc_running = true]
-  ...normal operation...
-  SetRPCWarmupFinished()   ←                        [fRPCInWarmup = false] ← assert passes
-```
-
-`InterruptRPC()` is called from signal handler context or the main thread.
-`g_rpc_running` is `std::atomic<bool>`, so the early-return check is safe.
-`StopRPC()` and `ResetRPC()` run sequentially on the shutdown thread after
-all RPC worker threads have been joined.
-
-*Issue states: see [patches/README.md](../README.md#cited-upstream-issues) (verified 2026-06-13).*
+Shutdown runs `InterruptRPC()` then `StopRPC()` then (locally) `ResetRPC()` in sequence on one thread; the next start's `SetRPCWarmupFinished()` then finds the warmup flag it asserts on.

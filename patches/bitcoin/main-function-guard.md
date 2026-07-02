@@ -1,138 +1,55 @@
-# Bitcoin Core Upstream PR: `MAIN_FUNCTION` Guard
+# Let the host app own `main()`
 
-Prepared draft for contributing an `#ifndef MAIN_FUNCTION` guard to Bitcoin Core's `src/compat/compat.h`.
+Bitcoin Core's executables declare their entry point through a macro, `MAIN_FUNCTION`, so Windows builds can decorate `main()` for a security fix (keeping address-space randomization working). When an app embeds the daemon, the app already has a `main()`, and two entry points collide at link time. This patch wraps the macro's definition in a standard `#ifndef` guard so a build system can predefine it — we predefine it to rename the daemon's entry point to `bitcoind_main()`, which Swift then calls like any function. Nothing changes for anyone who doesn't predefine the macro.
 
-## PR Title
+| | |
+|---|---|
+| **Status** | Applied here; not yet filed upstream. Applies cleanly to the vendored v31.0 tree (checked 2026-07-17); still unguarded on master (checked 2026-07-02). |
+| **Touches** | `src/compat/compat.h` (the macro is consumed in `src/bitcoind.cpp` and the other executables) |
+| **Depends on** | Nothing. |
+| **File as** | Direct pull request — step 3 of [the pipeline](../UPSTREAMING.md#the-pipeline). Link the discussion thread as embedding context once it exists; the PR stands alone either way. No separate issue: this is a capability tweak, not a bug — a code-less feature issue invites design debate, and the restart thread is its context. |
+| **PR title** | `compat: make MAIN_FUNCTION overridable` |
+| **Cite** | [#18702](https://github.com/bitcoin/bitcoin/pull/18702) — origin of the macro (the Windows fix, first in `bitcoin-cli` only). [#25251](https://github.com/bitcoin/bitcoin/pull/25251) — consolidated it into `compat.h` for all executables. Cite this lineage precisely. |
 
-```
-compat: allow overriding MAIN_FUNCTION macro via build system
-```
-
-## PR Description
-
-```markdown
-Add an `#ifndef MAIN_FUNCTION` guard around the `MAIN_FUNCTION` macro definition
-in `src/compat/compat.h`, allowing it to be overridden via compiler flags (e.g.
-`-DMAIN_FUNCTION="int entry(int argc, char* argv[])"`).
-
-**Motivation:**
-
-Projects embedding Bitcoin Core as a library need to avoid duplicate `main()`
-symbols when the host application or test harness provides its own entry point.
-Currently, the only way to achieve this is to maintain a patched copy of
-`compat.h` or post-process `bitcoind.cpp` with `sed`.
-
-The `MAIN_FUNCTION` macro was designed to abstract the entry point signature
-(originally for Windows `__declspec(dllexport)` support). Adding a standard
-`#ifndef` guard makes it overridable via `-D` compiler flags — a common C
-pattern for configurable defaults — without changing any existing behavior.
-
-This aligns with Bitcoin Core's ongoing library extraction efforts
-(libbitcoinkernel, #24303) by making it easier for external projects to
-integrate Bitcoin Core components.
-
-**Change:**
-
-```diff
-+#ifndef MAIN_FUNCTION
- #ifdef WIN32
- #define MAIN_FUNCTION __declspec(dllexport) int main(int argc, char* argv[])
- #else
- #define MAIN_FUNCTION int main(int argc, char* argv[])
- #endif
-+#endif
-```
-
-**Impact:**
-
-- Zero behavior change for existing builds (the guard is only active when
-  `MAIN_FUNCTION` is pre-defined)
-- No test changes required
-- Does not affect consensus code
-```
-
-## Commit Message
-
-```
-compat: allow overriding MAIN_FUNCTION macro via build system
-
-Add an #ifndef guard around the MAIN_FUNCTION definition in
-src/compat/compat.h, allowing projects that embed Bitcoin Core as a
-library to override the entry point signature via -D compiler flags.
-
-This is useful when the host application or test runner provides its
-own main(), which would otherwise conflict with the MAIN_FUNCTION
-expansion. The guard follows standard C practice for overridable macro
-defaults and does not change behavior for existing builds.
-```
-
-## File Changed
-
-**`src/compat/compat.h`** — 2 lines added (`#ifndef MAIN_FUNCTION` + `#endif`)
-
-### Diff (against v26.0)
+## The change
 
 ```diff
 diff --git a/src/compat/compat.h b/src/compat/compat.h
 --- a/src/compat/compat.h
 +++ b/src/compat/compat.h
-@@ -83,11 +83,13 @@ typedef char* sockopt_arg_type;
+@@ -87,6 +87,7 @@ typedef unsigned int SOCKET;
+ typedef SSIZE_T ssize_t;
  #endif
  
 +#ifndef MAIN_FUNCTION
  #ifdef WIN32
  // Export main() and ensure working ASLR when using mingw-w64.
  // Exporting a symbol will prevent the linker from stripping
- // the .reloc section from the binary, which is a requirement
- // for ASLR. While release builds are not affected, anyone
- // building with a binutils < 2.36 is subject to this ld bug.
- #define MAIN_FUNCTION __declspec(dllexport) int main(int argc, char* argv[])
+@@ -97,6 +98,7 @@ typedef SSIZE_T ssize_t;
  #else
  #define MAIN_FUNCTION int main(int argc, char* argv[])
  #endif
 +#endif
 ```
 
-> **Note:** This diff is against `v26.0`. The actual PR branch must be rebased
-> onto `master` before opening. The current `master` version of `compat.h` has
-> diverged slightly (e.g. dropped `HAVE_CONFIG_H` include, added `sa_family_t`
-> typedef), but the `MAIN_FUNCTION` section is unchanged.
+This is the `.patch` artifact verbatim; it matches the vendored v31.0 tree (`src/compat/compat.h:90-99`) and applies cleanly to it. The section is unchanged on master (checked 2026-07-02); rebase onto current `master` before opening the PR.
 
-## Bitcoin Core PR Process Checklist
+## Writing the PR
 
-Per [CONTRIBUTING.md](https://github.com/bitcoin/bitcoin/blob/master/CONTRIBUTING.md):
+Must say:
 
-- [ ] Fork `bitcoin/bitcoin` and create a branch from `master`
-- [ ] Rebase the change onto current `master` (not `v26.0`)
-- [ ] Verify the diff applies cleanly to current `master`'s `compat.h`
-- [ ] Run the existing test suite: `ctest --test-dir build` (no new tests needed — no behavior change)
-- [ ] PR title uses area prefix: `compat:` (matches file location `src/compat/`)
-- [ ] Commit message follows project conventions (imperative mood, no `@` mentions)
-- [ ] No `@` mentions in PR description (use follow-up comments for pings)
-- [ ] Consider pinging reviewers who last touched this code (use `git blame src/compat/compat.h`)
+- Two lines; zero behavior change unless a build system predefines the macro, which nothing upstream does.
+- The precise lineage (#18702 → #25251) and the standard-C-practice framing: an `#ifndef` guard is the ordinary pattern for an overridable default.
+- The embedding motivation in one sentence: a host application or test harness that provides its own `main()` currently has to patch this header.
 
-## Context & Prior Art
+Must not:
 
-### How `MAIN_FUNCTION` works today
+- Do not promise a first-class CMake option for the override. Mention it as a possible follow-up at most, and let maintainers decide.
 
-- Defined in `src/compat/compat.h` (since PR #18702, April 2020)
-- Used in: `bitcoind.cpp`, `bitcoin-cli.cpp`, `bitcoin-tx.cpp`, `bitcoin-util.cpp`, `bitcoin-wallet.cpp`
-- Original purpose: Windows ASLR fix — `__declspec(dllexport)` on `main()` prevents `.reloc` section stripping by mingw-w64 ld
-- Non-Windows: expands to plain `int main(int argc, char* argv[])`
-
-### Related PRs
-
-| PR | Title | Relevance |
-|---|---|---|
-| [#18702](https://github.com/bitcoin/bitcoin/pull/18702) | `build: fix ASLR for bitcoin-cli on Windows` | Introduced `MAIN_FUNCTION` macro in `compat.h` |
-| [#24303](https://github.com/bitcoin/bitcoin/issues/24303) | `The libbitcoinkernel Project` | Ongoing effort to extract consensus engine as a library — aligns with making Bitcoin Core more embeddable |
-
-### Why `#ifndef` guard (not other approaches)
+## Notes — why not the alternatives
 
 | Approach | Verdict |
 |---|---|
-| `__attribute__((weak))` on `main()` | Doesn't work — weak `main()` gets overridden by host's strong `main()`, causing infinite recursion when the library tries to call its own entry point |
-| `-Dmain=entry` compiler flag | Dangerous — replaces ALL standalone `main` tokens in all source files |
-| `#ifndef MAIN_FUNCTION` guard | Standard C pattern, zero risk, zero behavior change for existing builds |
-
-*Issue states: see [patches/README.md](../README.md#cited-upstream-issues) (verified 2026-06-13).*
+| Mark `main()` weak (`__attribute__((weak))`) | Fails — the host's strong `main()` wins, and the library ends up calling the host's entry point recursively. |
+| `-Dmain=entry` compiler flag | Dangerous — renames every standalone `main` token in every file. |
+| `#ifndef MAIN_FUNCTION` guard | Standard C pattern; zero risk; zero change for existing builds. |
