@@ -59,6 +59,9 @@ let package = Package(
         .target(
             name: "leveldb",
             cxxSettings: [
+                // See CXXSetting.shared: override the toolchain's Debug default of
+                // libc++ DEBUG hardening (O(n) container-invariant checks) with FAST.
+                .define("_LIBCPP_HARDENING_MODE", to: "_LIBCPP_HARDENING_MODE_FAST"),
                 .define("LEVELDB_PLATFORM_POSIX", to: "1"),
                 .define("LEVELDB_IS_BIG_ENDIAN", to: "0"),
                 // `port_config.h` defaults assume Apple (HAVE_FULLFSYNC=1, HAVE_FDATASYNC=0).
@@ -154,6 +157,15 @@ extension SwiftSetting {
 extension CXXSetting {
     /// Shared C++ settings for all Bitcoin Core C++ targets.
     static let shared: [Self] = [
+        // Override the toolchain's Debug default of
+        // `_LIBCPP_HARDENING_MODE_DEBUG`, which compiles in libc++'s O(n)
+        // container-invariant checks (`std::__tree_sub_invariant` on every
+        // map/set insert/erase). During IBD Core's maps reach ~130k+ entries,
+        // making those checks quadratic — one core pins at ~100%, validation
+        // stalls holding `cs_main`, and every RPC poll times out (-1001). FAST
+        // keeps the cheap O(1) checks (bounds, etc.) and drops the O(n) ones.
+        // A target-level `-D` is emitted after the toolchain default, so it wins.
+        .define("_LIBCPP_HARDENING_MODE", to: "_LIBCPP_HARDENING_MODE_FAST"),
         .headerSearchPath("src"),
         .headerSearchPath("src/univalue/include"),
         // Disable `multi_index_container`'s serialization member templates
