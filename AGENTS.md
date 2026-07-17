@@ -38,8 +38,20 @@ Directory-specific `AGENTS.md` files provide additional context:
 - [`.github/AGENTS.md`](.github/AGENTS.md) — CI workflows, platform coverage matrix, Actions permissions policy
 - [`Projects/AGENTS.md`](Projects/AGENTS.md) — Tuist-managed demo apps, XCFramework workflows
 
+## Feature specs
+
+Non-trivial features are planned as lightweight, spec-kit-aligned specs under
+[`Specs/`](Specs/README.md): one numbered folder per feature (`NNN-slug/`) with a
+canonical `plan.md` — a metadata header (**Feature / Status / Decisions / Assumptions**)
+then numbered sections (Goal, Scope, Design, Steps, Verification, Risks). The spec
+number is a stable global counter; a plan's roadmap-phase mapping lives in its header,
+not its path, and demo-app/tooling polish carries no phase. Keep each plan's **Status**
+current (`Planned` → `Implemented` at merge). See [`Specs/README.md`](Specs/README.md)
+for the index and conventions.
+
 ## Maintenance
 
 - Keep scoped `AGENTS.md` files limited to deltas; avoid duplicating root guidance.
 - Update when build/test workflows, toolchain versions, platform requirements, or CI runners change.
 - Update when new phases from `.specify/memory/roadmap.md` are completed.
+- Plan non-trivial features as `Specs/NNN-slug/plan.md`; keep each plan's Status header current and its row in [`Specs/README.md`](Specs/README.md) in sync.
