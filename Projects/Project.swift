@@ -44,7 +44,8 @@ let project = Project(
             sources: ["Sources/NodeApp/**", "Sources/Shared/**"],
             resources: [
                 "Resources/NodeApp/Assets.xcassets/**",
-                "Resources/NodeApp/Preview Content/**"
+                "Resources/NodeApp/Preview Content/**",
+                "Resources/NodeApp/AppIcon.icon"
             ],
             entitlements: "Resources/NodeApp/NodeApp.entitlements",
             dependencies: [
@@ -73,7 +74,8 @@ let project = Project(
             sources: ["Sources/KernelApp/**", "Sources/Shared/**"],
             resources: [
                 "Resources/KernelApp/Assets.xcassets/**",
-                "Resources/KernelApp/Preview Content/**"
+                "Resources/KernelApp/Preview Content/**",
+                "Resources/KernelApp/AppIcon.icon"
             ],
             entitlements: "Resources/KernelApp/KernelApp.entitlements",
             dependencies: [

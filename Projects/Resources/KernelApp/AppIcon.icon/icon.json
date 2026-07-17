@@ -1,0 +1,29 @@
+{
+  "fill" : {
+    "linear-gradient" : [
+      "srgb:0.99608,0.98431,0.94118,1.00000",
+      "srgb:0.94902,0.88235,0.78039,1.00000"
+    ],
+    "orientation" : {
+      "start" : { "x" : 0, "y" : 0 },
+      "stop" : { "x" : 1, "y" : 1 }
+    }
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "image-name" : "kernel_app.svg",
+          "name" : "kernel",
+          "position" : {
+            "scale" : 5,
+            "translation-in-points" : [ 0, 0 ]
+          }
+        }
+      ]
+    }
+  ],
+  "supported-platforms" : {
+    "squares" : "shared"
+  }
+}
