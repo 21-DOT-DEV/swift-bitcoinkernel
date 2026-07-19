@@ -1,8 +1,13 @@
-# swift-boost: Inter-Target Dependency Fix
+# swift-boost: declare dependencies between Boost targets
 
-**Date**: 2025-03-24
-**Status**: Proposed
-**Repo**: https://github.com/21-DOT-DEV/swift-boost
+swift-boost packages each Boost module as its own SwiftPM target but declares no dependencies between them, so a consumer that wants one module must hand-list every module it transitively includes. This package now sidesteps the problem by depending on the single umbrella `boost` product (`Package.swift:130`); the 27-module hand-list below shows what fine-grained, per-module consumption requires today. The proposed fix teaches swift-boost the dependency map so fine-grained consumers declare only what they use.
+
+| | |
+|---|---|
+| **Status** | Proposed; not yet filed. Nothing applied locally — this is a design proposal for the swift-boost repo. |
+| **Repo** | https://github.com/21-DOT-DEV/swift-boost |
+| **Depends on** | Nothing. |
+| **File as** | Pull request to swift-boost, with the dependency map and the cycle handling below. |
 
 ## Problem
 
@@ -137,10 +142,10 @@ Keep individual targets but use `cxxSettings: [.headerSearchPath(...)]` for the 
 
 ## Consumer Impact
 
-After this fix, swift-bitcoinkernel's `Package.swift` simplifies from 27 explicit modules to just 2:
+swift-bitcoinkernel currently depends on the umbrella `boost` product, so it compiles every packaged module. With proper inter-target dependencies, fine-grained consumption becomes practical: declaring 2 products instead of hand-listing 27 transitive modules:
 
 ```swift
-// Before (workaround):
+// Fine-grained consumption today (every transitive module by hand):
 let boostModules: [String] = [
     "assert", "bind", "config", "container_hash", "core", "describe",
     "detail", "foreach", "function", "integer", "iterator", "move",
@@ -150,7 +155,7 @@ let boostModules: [String] = [
     "utility", "variant",
 ]
 
-// After (proper deps):
+// With proper deps declared in swift-boost:
 .product(name: "multi_index", package: "swift-boost"),
 .product(name: "signals2", package: "swift-boost"),
 ```

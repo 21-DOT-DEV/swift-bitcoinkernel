@@ -1,147 +1,97 @@
-# Bitcoin Core Upstream PR: iOS Build Compatibility for `netif.cpp`
+# Compile the network-interface file on iPhone-family SDKs
 
-Prepared draft for contributing `TARGET_OS_OSX` guards to Bitcoin Core's `src/common/netif.cpp`.
+`src/common/netif.cpp` looks up the system's default network gateway. Its Apple branch includes `<net/route.h>`, a header only the Mac SDK ships — the iPhone, TV, watch, and headset SDKs all lack it, so the file fails to compile for those targets. The fix compiles the route-table code only where its header exists, using `__has_include` — the same guard `src/randomenv.cpp` already uses for system headers. On Apple platforms without the header, the lookup falls through to the file's existing unsupported-platform answer (`std::nullopt`, "no gateway found"), the same as on any OS the file doesn't know.
 
-## PR Title
+| | |
+|---|---|
+| **Status** | Applied here; not yet filed upstream. Still needed on master: the bare `__APPLE__` guards remain (re-verified 2026-07-18). The guard sites moved to `netif.cpp:21,220` on master after #35659 dropped the FreeBSD workaround, so expect context drift at rebase. |
+| **Touches** | `src/common/netif.cpp` |
+| **Depends on** | Nothing. |
+| **File as** | Direct pull request — step 1 of [the pipeline](../UPSTREAMING.md#the-pipeline): smallest change, files first, builds the track record. No separate issue: an issue would frame this as a platform-support question, and that framing has been closed twice (#21208 as duplicate of #11720; #11720 as "Superceded by kernel"). The PR must be judged as an inert two-line diff — the same one-line change at both guard sites. |
+| **PR title** | `net: use __has_include to narrow __APPLE__ guards` |
+| **Cite** | [#27587](https://github.com/bitcoin/bitcoin/issues/27587) — the kernel-library tracker, as context that building Bitcoin Core pieces for Apple platforms is a live, supported direction. Nothing else needed in the description. |
 
-```
-net: guard macOS-only route headers for iOS build compatibility
-```
-
-## PR Description
-
-```markdown
-Narrow `__APPLE__` preprocessor guards to `__APPLE__ && TARGET_OS_OSX` in
-`src/common/netif.cpp`, so the file compiles on iOS/tvOS/watchOS targets.
-
-**Motivation:**
-
-`<net/route.h>` and `<sys/sysctl.h>` are not available in the iOS SDK (or other
-non-macOS Apple platforms). When building Bitcoin Core as an embedded library for
-iOS — an increasingly relevant use case as mobile Bitcoin apps mature — the
-existing `__APPLE__` guards cause compilation failures because they include iOS,
-which is an Apple platform but does not ship these route-socket headers.
-
-The macOS-specific `QueryDefaultGatewayImpl()` function uses `sysctl()` with
-`CTL_NET/PF_ROUTE/NET_RT_FLAGS` to read the kernel routing table — an API
-exclusive to macOS. On iOS, the function gracefully falls through to the final
-`return std::nullopt` fallback, which is the correct behavior (iOS apps have no
-use for raw route-table queries).
-
-This aligns with Bitcoin Core's cross-platform goals and the ongoing
-libbitcoinkernel library extraction (#24303), making it easier for external
-projects to build Bitcoin Core components on Apple's non-macOS platforms.
-
-**Change:**
-
-Two locations in `src/common/netif.cpp`:
-
-1. Include block: narrow `__APPLE__` include guard to `__APPLE__` + `TARGET_OS_OSX`
-2. Implementation block: narrow `__APPLE__` platform check to `__APPLE__ && TARGET_OS_OSX`
-
-**Impact:**
-
-- Zero behavior change on macOS, Linux, Windows, or FreeBSD
-- On iOS/tvOS/watchOS: `QueryDefaultGatewayImpl()` returns `std::nullopt`
-  (same as any unsupported platform), instead of failing to compile
-- No test changes required — no existing CI targets iOS
-- Does not affect consensus code
-```
-
-## Commit Message
-
-```
-net: guard macOS-only route headers for iOS build compatibility
-
-Narrow __APPLE__ preprocessor guards in src/common/netif.cpp to
-__APPLE__ && TARGET_OS_OSX, so the file compiles when targeting iOS
-and other non-macOS Apple platforms.
-
-<net/route.h> and <sys/sysctl.h> are not available in the iOS SDK.
-The macOS-specific QueryDefaultGatewayImpl() route-table code is not
-applicable on iOS, where the function correctly falls through to the
-std::nullopt return.
-
-This follows the standard Apple pattern of using TargetConditionals.h
-to distinguish macOS from other Apple platforms, and changes no
-behavior on any currently supported platform.
-```
-
-## File Changed
-
-**`src/common/netif.cpp`** — 4 lines changed (2 include guard, 1 platform check, 1 new include)
-
-### Diff (against current `master`)
+## The change
 
 ```diff
 diff --git a/src/common/netif.cpp b/src/common/netif.cpp
 --- a/src/common/netif.cpp
 +++ b/src/common/netif.cpp
-@@ -24,8 +24,11 @@
+@@ -24,7 +24,7 @@
+ #endif
  #elif defined(WIN32)
  #include <iphlpapi.h>
- #elif defined(__APPLE__)
--#include <net/route.h>
--#include <sys/sysctl.h>
-+#include <TargetConditionals.h>
-+#if TARGET_OS_OSX
-+#include <net/route.h>
-+#include <sys/sysctl.h>
-+#endif
+-#elif defined(__APPLE__)
++#elif defined(__APPLE__) && __has_include(<net/route.h>)
+ #include <net/route.h>
+ #include <sys/sysctl.h>
  #endif
-
-@@ -229,7 +232,7 @@
+@@ -226,7 +226,7 @@ std::optional<CNetAddr> QueryDefaultGatewayImpl(sa_family_t family)
      return std::nullopt;
  }
-
+ 
 -#elif defined(__APPLE__)
-+#elif defined(__APPLE__) && TARGET_OS_OSX
-
++#elif defined(__APPLE__) && __has_include(<net/route.h>)
+ 
  #define ROUNDUP32(a) \
+     ((a) > 0 ? (1 + (((a) - 1) | (sizeof(uint32_t) - 1))) : sizeof(uint32_t))
 ```
 
-## Bitcoin Core PR Process Checklist
+This is the `.patch` artifact verbatim; it applies cleanly to the vendored v31.0 tree (checked 2026-07-18; the pristine guard sites sit at `src/common/netif.cpp:27,229` there). Rebase onto current `master` before opening the PR.
 
-Per [CONTRIBUTING.md](https://github.com/bitcoin/bitcoin/blob/master/CONTRIBUTING.md):
+## Writing the PR
 
-- [ ] Fork `bitcoin/bitcoin` and create a branch from `master`
-- [ ] Rebase the change onto current `master`
-- [ ] Verify the diff applies cleanly to current `master`'s `netif.cpp`
-- [ ] Run the existing test suite: `ctest --test-dir build` (no new tests needed — no behavior change)
-- [ ] PR title uses area prefix: `net:` (matches module area)
-- [ ] Commit message follows project conventions (imperative mood, no `@` mentions)
-- [ ] No `@` mentions in PR description (use follow-up comments for pings)
-- [ ] Consider pinging reviewers who last touched this code (use `git blame src/common/netif.cpp`)
+The description is settled (filer-drafted, 2026-07-18). File it as written; the same text serves as the commit body under the title:
 
-## Context & Prior Art
+> The `__APPLE__` macro is defined on all Apple platforms, but only the macOS SDK ships `<net/route.h>`. Use `__has_include(<net/route.h>)` to compile the route-table code only where its header exists, the same idiom `randomenv.cpp` and `util/threadnames.cpp` use for system headers, so unsupported platforms use the existing dummy implementation (`return std::nullopt`).
+>
+> No behavior change on any currently built platform; no CI changes are requested.
 
-### How `netif.cpp` works today
+The rules it follows, for any future revision:
 
-- Introduced in Bitcoin Core to provide cross-platform default gateway detection
-- Platform branches: Linux (`rtnetlink`), FreeBSD (`netlink`), Windows (`iphlpapi`), macOS (`sysctl` + route socket)
-- The `__APPLE__` branch is currently the only platform check that doesn't distinguish between OS variants
+- Mechanical claims only; no compile-failure narrative; platforms never named individually. This is the style of the file's own most recent hygiene PR (#35658, a maintainer's, merged 2026-07-06, which kept its unsupported platform — illumos — to a reference link). "Unsupported platforms" is normal merged-PR vocabulary (#33435).
+- Imperative mood ("Use …"); no "this change aims to"; no "leverage". Commit-message conventions apply because the description doubles as the commit body.
+- Nothing pre-argued: no `TARGET_OS_OSX`, no `HAVE_NET_ROUTE_H`, no `MAC_OSX` history, no precedent PR numbers. Merged compat PRs run one to four sentences; every answer lives in the next section, for replies.
+- Every claim verifiable against master in seconds: the two facts, the two cited files, the dummy implementation, the impact line.
 
-### Apple platform header availability
+## If reviewers push back (for replies, in your own words — not the description)
 
-| Header | macOS | iOS | tvOS | watchOS |
-|--------|-------|-----|------|---------|
-| `<net/route.h>` | Yes | No | No | No |
-| `<sys/sysctl.h>` | Yes | Deprecated | No | No |
-| `<TargetConditionals.h>` | Yes | Yes | Yes | Yes |
+Facts held ready. Bitcoin Core's AI policy requires replies to be human-written, so these are arguments to make, not text to paste.
 
-### `TARGET_OS_OSX` usage pattern
+**"This guard shape is odd/novel."** The file was founded on exactly this shape: #30043 shipped `netif.cpp` with an availability gate inside a platform branch (`#if __FreeBSD_version >= 1400000` inside `#elif defined(__FreeBSD__)`), a compound implementation guard (`defined(__FreeBSD__) && __FreeBSD_version >= 1400000`), and fall-through to the dummy implementation — because FreeBSD variants' capabilities diverged. #35659 later removed that gate only because pre-14 FreeBSD support ended entirely; the pattern retired with its subject, it was not rejected. Apple is the second platform to need the file's founding design, with a header test instead of a version test. One structural difference, if pressed: FreeBSD's include site had to nest (`__FreeBSD_version` does not exist until `<osreldate.h>` is included, so the branch must be entered before the test); `__has_include` has no prerequisite, so this patch uses the identical compound at both sites.
 
-`TARGET_OS_OSX` (from `<TargetConditionals.h>`) is the standard Apple mechanism
-for distinguishing macOS from other Apple platforms. It evaluates to `1` on macOS
-and `0` on iOS/tvOS/watchOS/visionOS. This pattern is widely used in Apple's own
-frameworks and third-party cross-platform libraries.
+**"Why bother? Nothing we build is affected."** The bare `__APPLE__` guard selects code that cannot compile where the header does not exist, so the file fails to compile against Apple's non-macOS SDKs. Downstream projects embedding Bitcoin Core build against those SDKs continuously (our Apple CI exercises the path on every commit), and per-platform compile receipts exist for both the patched and the pristine file (see Notes).
 
-### Related PRs & Issues
+**"Why not `TARGET_OS_OSX` from `<TargetConditionals.h>`?"** It works — an earlier draft of this patch used it and compiled on all four Apple platforms (receipts below) — but it would be the first use of `TargetConditionals` anywhere in the codebase, while `__has_include` on system headers is already established (`src/randomenv.cpp:46-52`, `src/util/threadnames.cpp:17`). The `__has_include` form also needs no new include line and tests the exact condition that fails.
 
-| PR/Issue | Title | Relevance |
-|---|---|---|
-| [#24303](https://github.com/bitcoin/bitcoin/issues/24303) | `The libbitcoinkernel Project` | Library extraction — makes Bitcoin Core embeddable in external apps |
-| [#11720](https://github.com/bitcoin/bitcoin/issues/11720) | `iOS Deployment Target for RPC` | Prior discussion of iOS as a target platform |
-| [#27587](https://github.com/bitcoin/bitcoin/issues/27587) | `Bitcoin Kernel Library Project Tracking` | Ongoing kernel library work |
+**"Why not a `HAVE_NET_ROUTE_H` configure check, like `HAVE_IFADDRS` in this same file?"** Concede the nearest precedent's difference first: #32405 converted existing configure probes to `__has_include`; it did not convert a platform guard, and no PR has performed exactly this transformation. Then the composition argument: both halves are established practice — `__has_include` as the header-availability test (#32405 deleted introspection probes in its favor; `ab878a7e` removed two more header probes outright), and platform-and-availability compound guards (`fs_helpers.cpp:114`'s `defined(__APPLE__) && defined(F_FULLFSYNC)`; the `MSG_NOSIGNAL`/`MSG_DONTWAIT` family, #9921). The composition is new only because `__APPLE__` is the sole platform macro spanning operating systems whose SDKs diverge. A new probe would also grow the diff into `introspection.cmake` and the config template, and `HAVE_IFADDRS` earns its probe by gating a portable fallback shared across many OSes — this block is a single-platform mechanism behind one header.
 
-*Issue states: see [patches/README.md](../README.md#cited-upstream-issues) (verified 2026-06-13).*
+**"Is `<sys/sysctl.h>` also missing?"** No — only `<net/route.h>` is absent from the non-macOS Apple SDKs; `<sys/sysctl.h>` ships on all of them (header table below). It stays inside the guard because the guarded block is its only consumer; hoisting it would add a dead include on every non-macOS Apple platform, which the include-what-you-use checks treat as errors in covered directories.
+
+**If the `MAC_OSX` history comes up** (#29834 → #29450 removed the custom macOS macro in 2025): this change adds no macOS-identity macro at all, so that cleanup is untouched — the guard asks about the header, not the OS.
+
+## Notes
+
+Header availability, verified against the installed Xcode 27.0 SDKs on 2026-07-02 (see the [CMake memo](cmake-ios-library-build.md) for the probe commands):
+
+| Header | macOS | iOS | tvOS | watchOS | visionOS |
+|--------|-------|-----|------|---------|----------|
+| `<net/route.h>` | Yes | No | No | No | No |
+| `<sys/sysctl.h>` | Yes | Yes | Yes | Yes | Yes |
+
+Filing-time context (checked 2026-07-18): `netif.cpp` and `src/common/` are under an active maintenance wave — #35658 (merged 2026-07-06) and #35659 (merged 2026-07-13) groomed the file, and #34995 (open) is bringing include-what-you-use enforcement to `src/common/`. Timing is favorable: the likely reviewers have the file paged in, and this patch's keep-headers-with-their-consumer discipline matches that effort. Watchpoint: if #34995 merges first, expect include shuffling — re-run `git apply --check` and rebase before filing.
+
+Compile verification, 2026-07-18, for the `__has_include` form. The whole file was compiled per platform (not just header probes), with pristine v31 as the control:
+
+| Translation unit | macOS | iOS | tvOS | visionOS |
+|---|---|---|---|---|
+| Patched, as applied (compound guard at both sites) | Compiles | Compiles | Compiles | Compiles |
+| Pristine v31 | Compiles | Fails | Fails | Fails |
+| Variant: `<sys/sysctl.h>` hoisted above the guard | Compiles | Compiles | Compiles | Compiles |
+| Earlier `TARGET_OS_OSX` draft (2026-07-17) | Compiles | Compiles | Compiles | Compiles |
+
+Every pristine failure is identical: `netif.cpp:28: fatal error: 'net/route.h' file not found`. Command shape: `xcrun --sdk <sdk> clang++ -std=c++20 -fsyntax-only -target <triple> -ISources/bitcoind/include -ISources/libbitcoinkernel/src Sources/bitcoind/src/common/netif.cpp`.
+
+The hoisted variant works everywhere but stays rejected: the guarded block is the only consumer of both headers, so hoisting `<sys/sysctl.h>` adds a dead include on every non-Mac Apple platform, and Bitcoin Core's CI runs include-what-you-use checks that treat violations in covered directories as errors. Both headers stay with their only consumer.
+
+Caveats: compile-level verification only — nothing was linked or run on tvOS/visionOS; the `Bitcoin` product remains unbuildable for tvOS for the unrelated child-process prohibition ([memo](tvos-execvp-feasibility.md)); CI exercises macOS and iOS only.

@@ -1,71 +1,131 @@
-# Upstreaming campaign — bitcoin/bitcoin
+# Upstreaming plan — bitcoin/bitcoin
 
-The plan for *how and in what order* to file the patches in `patches/bitcoin/`. The per-patch `.md` files hold the diffs and per-PR detail; this doc is the authority on sequencing and framing, and **supersedes the "strategy / PR 1 of 2" sections in the individual `.md` drafts where they conflict** (those predate the verification below).
+How we contribute the patches in [`bitcoin/`](bitcoin/) back to Bitcoin Core: what to work on first, what depends on what, and the rules every filing follows. Everything specific to a single patch — what its PR must say, which threads it cites — lives on that patch's card, at the top of the patch's own file.
 
-Issue states and the master-source novelty checks were verified **2026-06-14** (see `README.md` § "Cited upstream issues" for the register).
+House rule for this folder: every file must read cold. Plain words, short sentences, and a one-phrase explanation the first time any project term or issue number appears.
 
-## Situation
+Issue states and every "still needed?" check were last verified **2026-07-02** against Bitcoin Core's development branch (`master`). All five `.patch` files were verified to apply cleanly to the vendored v31.0 tree (`Vendor/bitcoin`, per `subtree.yaml`) on **2026-07-17**. Re-verify all of this before filing anything.
 
-All four PR-shaped patches are still needed on current `bitcoin/bitcoin` master (verified by reading master):
+## The pipeline
 
-| Patch | Still novel on master? | Evidence |
-|-------|------------------------|----------|
-| netif iOS guard | Yes | `src/common/netif.cpp` still uses bare `#elif defined(__APPLE__)` around `<net/route.h>`/`<sys/sysctl.h>`; no `TARGET_OS_OSX`. |
-| MAIN_FUNCTION guard | Yes | `src/compat/compat.h` still `#define`s `MAIN_FUNCTION` with no `#ifndef` guard. |
-| rpc once_flag removal | Yes | `src/rpc/server.cpp` still has `std::once_flag`/`call_once` in `InterruptRPC`/`StopRPC` (4 occurrences). |
-| shutdown resets | Yes | `src/init.cpp` still leaks the four process-globals across a second `bitcoind_main()`. |
+Five patches, one discussion thread, six filings. Three patches stand alone; the restart work is sequenced. Nothing in the first group blocks on anything.
 
-**The two issues the original drafts leaned on are closed — the framing must change:**
-- **#11720** ("iOS Deployment Target for RPC") closed (completed) 2023-04-27. Do **not** frame anything as "completing" or "closing" it. Anchor on the still-open kernel tracker **#27587** instead.
-- **#31289** (the `StopRPC()` startup-assert race) closed (completed) 2024-11-20 with **no fixing commit** — the race still reproduces on master. Do **not** write "Fixes #31289"; file the rpc fix fresh and reference #31289 as the historical report.
+**File anytime, in any order, one at a time — no thread needed:**
 
-**Citations that hold (merged):** **#35141** (node-context reset pattern for fuzz — upstream's own in-process-reinit need) and **#18702** (introduced `MAIN_FUNCTION`). Closed-unmerged PRs **#27711 / #31382 / #12557** may be cited only as "same direction," never as precedent.
+1. [Compile the network-interface file on iPhone-family SDKs](bitcoin/ios-netif-guard.md) — the same one-line `__has_include` change at two guard sites. Smallest first: it builds the track record.
+2. [Stop the late-log crash during teardown](bitcoin/logging-teardown-assertion.md) — a one-line fix to a code path Bitcoin Core's own test framework runs on every teardown.
+3. [Let the host app own `main()`](bitcoin/main-function-guard.md) — a two-line macro guard.
 
-**Local evidence the restart path works:** `Tests/BitcoinTests/DaemonSoakTests.swift` runs 5 in-process `start → bootstrap → stop → waitUntilStopped` cycles cleanly (passes in ~1.8s with rpc-server-reset + shutdown-reset applied). This is the concrete demonstration UP-3 needs.
+**The restart work — in this order:**
 
-## Filing order
+4. **Open the discussion thread** (pre-written text below). It states the problem — the node cannot restart inside one process — and asks maintainers to approve the approach before any code arrives.
+5. [Make the RPC server restartable](bitcoin/rpc-server-reset.md) — a pull request that fixes a real, still-reproducing startup crash and can be judged on that alone; it links the thread only as context. Merging it also unlocks step 6, which needs `InterruptRPC()`/`StopRPC()` to be callable again in a second lifecycle. (The small `ResetRPC()` helper ships upstream with its caller in step 6, not here.)
+6. [Reset four globals at shutdown](bitcoin/shutdown-reset.md) — the restart patch itself. Wait for approval on the thread (a "concept ACK": a maintainer thumbs-up on the idea), then open the pull request. It closes the thread.
 
-1. **netif guard** (UP-1) — smallest, behavior-preserving, no issue needed. Builds the track record.
-2. **MAIN_FUNCTION guard** (UP-4) — 2-line guard; file after the umbrella issue exists to point at.
-3. **Umbrella issue** (off #27587, draft below) — frames the embedding need; anchors UP-4/UP-6.
-4. **rpc once_flag removal** (UP-2) — fresh `rpc:` PR fixing the race.
-5. **shutdown resets** (UP-3) — issue-first (concept ACK before a PR); cite #35141 + the soak evidence.
+**Optional, independent, low priority:**
 
-Follow the org playbook in `README.md` § "Upstreaming playbook" (repro branch on `21-DOT-DEV/bitcoin`, smallest viable PR, `Assisted-by:` disclosure, no `@`-mentions, DrahtBot self-labels).
+- A short build-documentation PR recording the working iOS build command for the kernel library — the [CMake memo](bitcoin/cmake-ios-library-build.md) holds the command and the reasoning. File only if activity on #27587 (Bitcoin Core's kernel-library tracking issue) suggests appetite; the memo is a sufficient record otherwise.
+- A CI job in this repo (not upstream) that runs Bitcoin Core's own kernel test binary against our build of the library, backing the "no behavior change" claim every filing makes.
 
-## Umbrella issue (draft — anchor on #27587, not #11720)
+## The discussion thread (pre-written)
 
-> **Title:** `build: residual source gaps for building bitcoind/libbitcoinkernel on Apple non-macOS platforms`
+Post as a new issue on `bitcoin/bitcoin`. Fill each ⟨placeholder⟩ when the thing it names exists. This text is the single home of the campaign's argument; the patch cards only add per-PR detail.
+
+> **Title:** `process: bitcoind cannot restart within one process (four globals assert on a second bitcoind_main())`
 >
-> **Summary.** The kernel-library direction (#24303, tracked in #27587) makes "Bitcoin Core components inside an external app" a supported use, with working proofs of concept on iPhone: `Sjors/kernel-i-node` (signet blocks from an HTTP source validated by libbitcoinkernel) and a pure-SwiftPM build of `bitcoind` + `libbitcoinkernel` running on iOS/macOS. A small, bounded set of source changes is all that still stands between master and those builds. Each is a separate, behavior-preserving PR:
+> **Summary.** The kernel-library direction (#24303, tracked in #27587) makes "Bitcoin Core components inside an external app" a supported use, with working proofs on Apple platforms: Sjors/kernel-i-node (libbitcoinkernel validating signet blocks inside an iOS/macOS app, announced on #27587) and a pure-SwiftPM embedding of `bitcoind` + `libbitcoinkernel` in iOS/macOS apps with continuous external build coverage. This continues what #11720 explored before its "Superceded by kernel" close. For an embedded daemon the host app owns the process lifecycle: stop → reconfigure → start without relaunching is the normal cycle. Today four process-globals survive `Shutdown()` and assert on a second `bitcoind_main()` call: `g_shutdown`, `gArgs`, `LogInstance().m_buffering`, `fRPCInWarmup`.
 >
-> 1. **`src/common/netif.cpp`** — `<net/route.h>`/`<sys/sysctl.h>` are absent from the iOS SDK; narrow the `__APPLE__` guards to `__APPLE__ && TARGET_OS_OSX` (PR: ⟨UP-1 link⟩). Falls through to the existing unsupported-platform `std::nullopt` path.
-> 2. **`src/compat/compat.h`** — the host app owns `main()`; an `#ifndef` guard around `MAIN_FUNCTION` lets a build system rename the entry point (PR: ⟨UP-4 link⟩).
-> 3. **Build-config introspection for iOS** — `HAVE_SYSTEM` off and the randomness probes `TARGET_OS_OSX`-aware when targeting non-macOS Apple platforms (⟨UP-6⟩).
-> 4. **Process-global re-initialization** — on mobile, stop → reconfigure → start within one host process is the normal lifecycle; four globals currently assert on the second `bitcoind_main()` (tracked separately with a repro branch: ⟨UP-3 issue link⟩; also benefits in-process fuzz re-init, cf. #35141).
+> In-process resettability is also a property the fuzz suite already enforces per iteration: `CheckGlobals` aborts targets that leak PRNG or time state (#31486, #31549); stale cross-iteration node-context state produced real coverage bugs, fixed by per-iteration reset-and-reinstall (#34302, #35141); stability/determinism is tracked in #29018. The test framework likewise resets the logger and args between in-process lifecycles (`setup_common.cpp`), so production `Shutdown()` is the one lifecycle path without resets.
 >
-> **Explicitly not requested:** iOS CI, an Apple app in this repo, App Store anything, or packaging changes — downstream projects own all of that and provide continuous external build coverage for these paths.
+> The fix is two bounded, behavior-preserving PRs:
 >
-> *(This does not ask to reopen or close #11720; it scopes the residual build-system work the kernel direction implies. Disclose AI assistance per the #35304 precedent if applicable.)*
+> 1. **`src/rpc/server.cpp`** — remove the permanently one-shot `std::once_flag`s from `InterruptRPC()`/`StopRPC()` (both bodies are naturally idempotent; also removes the still-reproducible #31289 race). Continues #19111's direction for these flags. (PR: ⟨link to the RPC pull request⟩)
+> 2. **`src/init.cpp`** — reset the four process-globals at the end of `Shutdown()`, mirroring what `BasicTestingSetup` teardown already does. Repro branch with 5 clean in-process restart cycles: ⟨link to the repro branch⟩. (PR follows concept ACK here: ⟨link to the shutdown pull request⟩)
+>
+> **Open question:** reset at the end of `Shutdown()` (symmetric with the rest of its cleanup) or lazily at the next `InitContext()` (provably no effect on single-run behavior)? Either resolves the asserts; happy to implement whichever reviewers prefer. Relatedly, the logger reset deserves a properly named `BCLog::Logger` method rather than production code calling `DisconnectTestLogger()`.
+>
+> Two adjacent build-compat guards (the `MAIN_FUNCTION` override, ⟨link to that pull request⟩; the `net/route.h` guard for non-macOS Apple SDKs, ⟨link to that pull request⟩) round out the embedded-daemon path but stand alone and are not part of this issue.
+>
+> Process separation (#28722) does not reach this use case: `bitcoin-node` hosts the same process-globals, and the embedding platforms above cannot spawn helper processes, so in-process restart is their only lifecycle.
+>
+> **Explicitly not requested:** iOS CI, an Apple app in this repo, App Store anything, packaging changes, or new fuzz targets — whether a lifecycle-cycling fuzz target is worth having is a separate question these changes merely make possible. Downstream projects own packaging and provide continuous external build coverage for these paths. (For context, the kernel library itself already builds for iOS from stock CMake with no source changes — demonstrated against master by Sjors/kernel-i-node and reproduced on v31 — so nothing iOS-specific is requested in this issue at all; the `net/route.h` guard is a standalone PR.)
+>
+> *(This does not ask to reopen or close #11720; it scopes the in-process work the kernel direction implies. Disclose AI assistance per the #35304 precedent if applicable.)*
 
-## Per-PR notes
+## Platform reach
 
-**UP-1 netif — direct PR.** Title `net: guard macOS-only route headers for iOS build compatibility`. Rebase the `.patch` onto master (hunk line numbers differ; the change is the two `__APPLE__ → __APPLE__ && TARGET_OS_OSX` narrowings plus the `<TargetConditionals.h>` include). Drop advocacy ("increasingly relevant as mobile apps mature"); state the bare facts. Pre-empt "no iOS CI": no upstream CI change is requested, the guard is inert everywhere upstream builds, and downstream `apple-builds.yml` exercises the iOS path continuously.
+The three restart patches and the `main()` guard are OS-agnostic: they matter wherever bitcoind is embedded inside a host process, on any OS Bitcoin Core supports. Only the netif guard is Apple-specific, and its virtue upstream is being inert everywhere else.
 
-**UP-4 MAIN_FUNCTION — small PR.** Title `compat: allow overriding MAIN_FUNCTION via the build system`. Keep it to the 2-line `#ifndef` guard. Tie to the umbrella issue (one link), not #11720. Let maintainers decide whether a first-class CMake switch is wanted — raise that in the umbrella issue, not this PR.
+| Platform | Restart trio | `main()` guard | netif guard | Tested? |
+|---|---|---|---|---|
+| Linux | Benefits | Benefits | Inert (netlink branch) | Partly — the default suite (one in-process daemon lifecycle per run) runs in the Linux container CI (`docker-builds.yml`); the restart soak test is opt-in (`RUN_SOAK_TESTS=1`) and not run in CI anywhere yet. |
+| Android | Benefits (a JNI-embedded node has the same lifecycle) | Benefits | Inert (netlink) | Not set up. Stock CMake supports `-DCMAKE_SYSTEM_NAME=Android` with an NDK — the same recipe as the [iOS CMake memo](bitcoin/cmake-ios-library-build.md). |
+| Windows | Benefits | Benefits — the macro originated as a Windows fix (#18702) | Inert (iphlpapi branch) | Not from this repo. |
+| FreeBSD / OpenBSD | Benefits | Benefits | Inert | Not tested; low priority. |
+| macOS / iOS | Tested | Tested | Tested | CI on every commit. |
+| tvOS / visionOS | Compile-proven only | Compile-proven | Compile-proven ([receipts](bitcoin/ios-netif-guard.md)) | tvOS end-to-end is blocked ([memo](bitcoin/tvos-execvp-feasibility.md)); the visionOS simulator is the nearest untried Apple target. |
 
-**UP-2 rpc once_flag — fresh PR (not "Fixes #31289").** Title `rpc: remove std::once_flag from InterruptRPC/StopRPC`. Lead with the bug: the once_flag in `InterruptRPC()` can be consumed before `StartRPC()` sets `g_rpc_running`, so `StopRPC()`'s `assert(!g_rpc_running)` can fire — the race reported (and still unfixed) in #31289, which still reproduces on master. Both functions are naturally idempotent without the flag; add a regression test driving `InterruptRPC(); StartRPC(); InterruptRPC(); StopRPC();`. **Do not** include `ResetRPC()` here — it has no in-tree caller until UP-3, and "new API, zero callers" is a standard NACK; it lands with its caller in UP-3. Document the one observable change: `InterruptRPC()` before `StartRPC()` now early-returns silently instead of logging and burning the flag.
+Two upgrades worth making before the thread opens: run the opt-in soak test in the Linux container so the restart story has a non-Apple existence proof (a scheduled or secondary CI lane, mirroring the repo's existing `RUN_EXIT_TESTS` opt-in pattern, would keep that claim continuously true — soak tests belong out of the per-commit path); and an Android compile proof (an afternoon with the NDK, mirroring the iOS memo) to widen the demand story to the other mobile platform.
 
-**UP-3 shutdown resets — issue first.** Cite **#35141** prominently (upstream's own node-context-reset-for-fuzz need) and link the soak repro branch. Open questions for maintainers: reset at the end of `Shutdown()` vs. lazily at the next `InitContext()` (the latter provably can't affect single-run behavior); and the logger reset should be a properly-named `BCLog::Logger` method, not `DisconnectTestLogger()` called from production. The applied source resets **four** globals (`g_shutdown`, `gArgs`, `ResetRPC`, logger) — `shutdown-reset.md` is already corrected to say four. Evidence: `DaemonSoakTests` (5 clean in-process restart cycles) shows the end state once these land.
+## Cited threads
 
-## Complementary CI (optional, PKG-4)
+One row per Bitcoin Core issue or pull request our cards and the thread draft cite. States last verified 2026-07-02; re-check before filing anything that references them.
 
-A CI job that builds and runs upstream `test_kernel` against the SPM-built `libbitcoinkernel` (with the same defines the targets use) would back the "no behavior change" claim each PR makes and catch subtree/flag drift. Not required to file, but strengthens every UP narrative; start macOS-only.
+| Thread | State | What it is, and why we cite it |
+|--------|-------|--------------------------------|
+| [#31289](https://github.com/bitcoin/bitcoin/issues/31289) | Closed 2024-11-20, no fix landed | The startup crash the RPC patch removes. Still reproduces on master; cite as the historical report, never as "Fixes". |
+| [#19111](https://github.com/bitcoin/bitcoin/pull/19111) | Merged 2020-06-02 | Narrowed the same one-shot locks once before; precedent for the RPC patch. |
+| [#18452](https://github.com/bitcoin/bitcoin/pull/18452) | Merged 2020-05-29 | Added the double-call path those locks guard against; background for the RPC patch. |
+| [#34302](https://github.com/bitcoin/bitcoin/pull/34302) | Merged 2026-01-20 | Their fuzz targets now reset node state between in-process iterations; precedent for the shutdown patch. |
+| [#35141](https://github.com/bitcoin/bitcoin/pull/35141) | Merged 2026-05-23 | Extends #34302's reset pattern; shows it is the accepted idiom. |
+| [#31486](https://github.com/bitcoin/bitcoin/pull/31486) | Merged 2024-12-17 | Fuzz harness aborts on leaked random-number state; the enforced no-leftover-globals rule. |
+| [#31549](https://github.com/bitcoin/bitcoin/pull/31549) | Merged 2025-01-10 | Same rule for leaked system-time use. |
+| [#29018](https://github.com/bitcoin/bitcoin/issues/29018) | Open | Their tracker for fuzz stability and leftover global state; the problem class two of our patches live in. |
+| [#30537](https://github.com/bitcoin/bitcoin/pull/30537) | Merged 2024-07-31 | Kernel already tolerates repeated contexts in one process; supports the restart story. |
+| [#18702](https://github.com/bitcoin/bitcoin/pull/18702) | Merged 2020-04-22 | Origin of the `MAIN_FUNCTION` macro (a Windows security fix); lineage for the entry-point patch. |
+| [#25251](https://github.com/bitcoin/bitcoin/pull/25251) | Merged 2022-06-13 | Consolidated that macro into `compat.h`; second half of the lineage. |
+| [#24303](https://github.com/bitcoin/bitcoin/issues/24303) | Closed 2023-05-10 | The original kernel-library project issue; background for "embedding is a supported direction". |
+| [#27587](https://github.com/bitcoin/bitcoin/issues/27587) | Open | The living kernel-library tracker; the thread draft anchors here. |
+| [#11720](https://github.com/bitcoin/bitcoin/issues/11720) | Closed 2023-04-27 | The historical iOS thread, closed "Superceded by kernel"; cite as lineage only. |
+| [#21208](https://github.com/bitcoin/bitcoin/issues/21208) | Closed 2021-02-17 | A second "iOS build support" ask, closed as a duplicate of #11720; cited as evidence that platform-support framing gets closed on sight. |
+| [#29450](https://github.com/bitcoin/bitcoin/pull/29450) | Merged 2025-10-24 | Replaced the custom `MAC_OSX` macro with the standard `__APPLE__`; precedent for choosing the standard mechanism, and the source of the "didn't we just remove the macOS distinction?" objection the netif card answers. |
+| [#29834](https://github.com/bitcoin/bitcoin/pull/29834) | Merged 2025-05-11 | First step of the `MAC_OSX` removal (crypto directory); also the one-sentence-description example for compat PRs. |
+| [#35659](https://github.com/bitcoin/bitcoin/pull/35659) | Merged 2026-07-13 | Dropped outdated *BSD workarounds in `netif.cpp`; moved the netif guard sites on master to lines 21/220, so the netif patch rebases with context drift. |
+| [#30043](https://github.com/bitcoin/bitcoin/pull/30043) | Merged 2024-09-30 | Created `netif.cpp` with an availability gate inside its FreeBSD branch and the dummy-implementation fallback — the file's founding design precedent for the netif patch. |
+| [#32405](https://github.com/bitcoin/bitcoin/pull/32405) | Merged 2025-05-05 | Replaced configure header probes with `__has_include` in `randomenv.cpp` and `threadnames.cpp`; mechanism precedent (a different transformation — concede that if raised). |
+| [#9921](https://github.com/bitcoin/bitcoin/pull/9921) | Merged 2017-03-16 | Probed `MSG_DONTWAIT` "in the same way as `MSG_NOSIGNAL`"; part of the platform-facility-availability family the netif compound guard belongs to. |
+| [#35658](https://github.com/bitcoin/bitcoin/pull/35658) | Merged 2026-07-06 | Maintainer include-hygiene PR in `netif.cpp`; the description style model (mechanical claims, no failure narrative, unsupported platform as reference only) and evidence the file is actively groomed. |
+| [#34995](https://github.com/bitcoin/bitcoin/pull/34995) | Open | Include-what-you-use enforcement for `src/common/`; filing watchpoint — if it merges first, re-run the apply-check and rebase. |
+| [#33435](https://github.com/bitcoin/bitcoin/pull/33435) | Merged 2025-09-22 | Merged PR whose prose uses "unsupported platforms" verbatim; vocabulary precedent for the netif description. |
+| [#12557](https://github.com/bitcoin/bitcoin/pull/12557) | Closed unmerged 2020-04-23 | The old cross-compile-for-iOS attempt; same direction, never precedent. |
+| [#27711](https://github.com/bitcoin/bitcoin/pull/27711) | Closed unmerged 2023-07-08 | Tried removing shutdown globals from the kernel; same direction, never precedent. |
+| [#31382](https://github.com/bitcoin/bitcoin/pull/31382) | Closed unmerged 2026-02-20 | Tried automatic flush-on-destroy cleanup; same direction, never precedent. |
+| [#28722](https://github.com/bitcoin/bitcoin/issues/28722) | Open | Multiprocess tracking issue. Process separation is additive — monolithic binaries remain the default — and cannot replace in-process restart on platforms that cannot spawn processes. |
 
-## Filing checklist (per PR)
+## Rules for every filing
 
-- [ ] Repro/regression branch on `21-DOT-DEV/bitcoin` (per the #35293 → #35304 playbook).
-- [ ] Rebase the `.patch` onto current master; `git apply --check` clean.
-- [ ] PR title uses the area prefix; commit message imperative, no `@`-mentions.
-- [ ] `Assisted-by:` trailer if AI-assisted (per the #35304 precedent).
-- [ ] On merge: delete the local `.patch` + `.md` and move the Status row in `README.md` to "dropped".
+Distilled from Bitcoin Core's [CONTRIBUTING.md](https://github.com/bitcoin/bitcoin/blob/master/CONTRIBUTING.md), its [AI policy](https://github.com/bitcoin/bitcoin/blob/master/doc/AI_POLICY.md), and community practice ([Atack's guide](https://jonatack.github.io/articles/how-to-contribute-pull-requests-to-bitcoin-core)). The AI policy is binding, not advisory.
+
+**Before opening anything:**
+
+1. Follow the AI policy. These files are research and drafting aids — the PR body and every reviewer reply must be written by the human filer, in their own words, and the filer must be able to explain every change unaided. Doubt about author understanding is grounds for immediate closure, and PRs must not be opened or driven by autonomous agents. Quoting an AI interaction requires disclosure plus your own commentary. Our merged #35304 also carried an `Assisted-by:` commit trailer; keep doing that when it applies.
+2. Give review before asking for it, and keep giving it while waiting. The common rule of thumb is 5–15 reviews of other people's PRs per PR you open, and CONTRIBUTING's own advice for a stalled PR is "give review to others".
+3. Check the release schedule (pinned in the repo's issues). Filings during feature freeze — the pre-release window when only critical fixes land — wait until after the release.
+4. Build a reproducible branch on `21-DOT-DEV/bitcoin` (our public fork) demonstrating the bug or capability first. This is the path that worked for our one accepted fix (#35293, the report → #35304, the merged fix).
+5. Two trees matter, so check both. The local `.patch` must apply cleanly to the pristine vendored tree — `git apply --check --directory=Vendor/bitcoin patches/bitcoin/<name>.patch` (v31.0, per `subtree.yaml`) — and any line numbers quoted in a patch's write-up refer to that tree unless labeled otherwise. The upstream PR targets `master`: re-verify the patch is still needed there, rebase, and run CI on the fork before opening.
+
+**Writing the commits and the PR:**
+
+6. Smallest possible PR; the fix before any refactor. A PR merges when its improvement outweighs the review effort it asks for — say so where it is plainly true (the three standalone guards are one-minute reviews).
+7. Every commit compiles and passes tests on its own. Subject line at most 50 characters, starting with the area prefix (`rpc:`, `init:`, `net:`, `logging:`, `compat:`); then a blank line and a body that explains why, written in the imperative mood. Each card's PR title doubles as the commit subject, so it obeys the same cap.
+8. A bug-fix PR carries a test that demonstrates the bug and proves the fix whenever possible, and the description says how to test the change. If a test is impractical, say so and explain why.
+9. No `@`-mentions anywhere — they get copied into git history and spam notifications; ping people in follow-up comments instead. The project bot (DrahtBot) assigns labels; do not request them.
+
+**While a PR is open:**
+
+10. Squash fixup commits proactively. After any rebase or force-push, post the `git range-diff` output so reviewers can re-confirm their earlier review cheaply. Every push and comment notifies everyone subscribed, so batch them.
+11. Waiting is normal; spend it reviewing others' PRs. Do not open the next filing while the current one is active — land it, or let it clearly stall, first.
+
+**After a merge:**
+
+12. Delete the patch's `.md` and `.patch` here and update its entry in [`README.md`](README.md).

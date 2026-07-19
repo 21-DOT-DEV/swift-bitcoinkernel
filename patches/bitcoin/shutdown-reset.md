@@ -1,112 +1,25 @@
-# Bitcoin Core Upstream PR: Reset `g_shutdown` in `Shutdown()` for Restart Support
+# Reset four globals at shutdown
 
-Prepared draft for contributing `g_shutdown.reset()` to Bitcoin Core's `src/init.cpp`.
+`Shutdown()` tears down everything the node built — chain state, mempool, peers, indexes — but leaves four process-wide globals holding state from the finished run, and each one greets a second `bitcoind_main()` call with a fatal assertion. This patch resets all four at the very end of `Shutdown()`, which is exactly what Bitcoin Core's own test framework already does between in-process test runs. The result is a clean stop → reconfigure → start cycle for apps that embed the node.
 
-## PR Title
+The four globals, and the assertion each one trips on restart:
 
-```
-init: reset g_shutdown in Shutdown() to support in-process restart
-```
+1. `g_shutdown` — the shutdown signal; the next init asserts it is empty (`src/init.cpp:215`).
+2. `gArgs` — the registry of command-line options; re-registering asserts every option is new (`src/common/args.cpp:603`).
+3. `LogInstance().m_buffering` — the logger's startup mode; `StartLogging()` asserts it is on.
+4. `fRPCInWarmup` — the RPC "warming up" flag; `SetRPCWarmupFinished()` asserts it is set.
 
-## PR Description
+| | |
+|---|---|
+| **Status** | Applied here; not yet filed upstream. Still needed on master: `src/init.cpp` performs none of these resets (checked 2026-07-02). |
+| **Touches** | `src/init.cpp` — and, in the upstream PR only, `src/rpc/server.{cpp,h}`, which receive the `ResetRPC()` helper (locally that helper lives in the RPC patch). |
+| **Depends on** | [Make the RPC server restartable](rpc-server-reset.md) — its once-flag removal must merge upstream first so `InterruptRPC()`/`StopRPC()` can run again in a second lifecycle. It does not supply `ResetRPC()`: upstream, that helper ships here, with its caller. |
+| **File as** | Pull request only after the discussion thread (step 4 of [the pipeline](../UPSTREAMING.md#the-pipeline)) gets a maintainer thumbs-up on the approach. This PR closes the thread. |
+| **PR title** | `init: reset process globals in Shutdown()` |
+| **Cite** | The discussion thread ⟨link once open⟩. [#34302](https://github.com/bitcoin/bitcoin/pull/34302) / [#35141](https://github.com/bitcoin/bitcoin/pull/35141) — their fuzz targets already reset node state between in-process iterations. [#29018](https://github.com/bitcoin/bitcoin/issues/29018) — their open tracker for exactly this leftover-global-state problem class. [#30537](https://github.com/bitcoin/bitcoin/pull/30537) — the kernel side already tolerates repeated contexts per process. |
+| **Evidence** | `Tests/BitcoinTests/DaemonSoakTests.swift` — five clean stop/start cycles in one process with this patch applied (~1.8 s). Opt-in, not run in CI: `RUN_SOAK_TESTS=1 swift test --filter 'BitcoinTests.DaemonSoakTests'` (it runs alone because it owns the one daemon). |
 
-```markdown
-Add `g_shutdown.reset()`, `gArgs.ClearArgs()`, `ResetRPC()`, and
-`LogInstance().DisconnectTestLogger()` at the end of `Shutdown()` in
-`src/init.cpp`, clearing global state so that `bitcoind_main()` can be called
-again within the same process.
-
-**Motivation:**
-
-`Shutdown()` cleans up node-scoped state (chainstate, mempool, peers, indices,
-scheduler, ECC context, kernel context) but does not reset four process-global
-objects. Calling `bitcoind_main()` a second time hits fatal assertions:
-
-1. `init.cpp:215: assert(!g_shutdown)` — `InitContext()` asserts `g_shutdown`
-   is empty before emplacing the shutdown signal, but `Shutdown()` never resets it.
-2. `args.cpp:603: assert(ret.second)` — `AddArg()` asserts each argument is
-   inserted fresh, but `gArgs.m_available_args` still contains entries from the
-   previous run. `ParseParameters()` only clears `command_line_options`, not the
-   registered argument definitions.
-3. `StartLogging()` asserts `m_buffering` on entry, but the leaked singleton
-   logger persists across runs. `LogInstance().DisconnectTestLogger()` restores it.
-4. `SetRPCWarmupFinished()` asserts `fRPCInWarmup`, but it was cleared on the
-   previous run. `ResetRPC()` (added in the RPC server patch) restores it.
-
-This affects projects embedding Bitcoin Core as a library that need to
-start/stop/restart the daemon without relaunching the host process — for
-example, mobile apps (iOS/Android) and GUI applications that allow the user to
-change configuration and restart the node.
-
-`NodeContext` is stack-allocated fresh each `bitcoind_main()` invocation. The
-two globals above are the only ones that block a clean restart.
-
-**Change:**
-
-```diff
-     RemovePidFile(*node.args);
-
-+    g_shutdown.reset();
-+    gArgs.ClearArgs();
-+    ResetRPC();
-+    LogInstance().DisconnectTestLogger();
-+
-     LogInfo("Shutdown done");
- }
-```
-
-**Impact:**
-
-- Zero behavior change for single-run invocations (the normal case)
-- Enables `bitcoind_main()` to be called again after `Shutdown()` completes
-- No test changes required for existing tests
-- Does not affect consensus code
-- `ClearArgs()` and `DisconnectTestLogger()` are existing public methods — no new API
-- Follows the existing cleanup pattern in `Shutdown()` (all other node state
-  is already reset/destructed before this point)
-```
-
-## Commit Message
-
-```
-init: reset global state in Shutdown() to support in-process restart
-
-Add g_shutdown.reset(), gArgs.ClearArgs(), ResetRPC(), and
-LogInstance().DisconnectTestLogger() at the end of Shutdown(),
-clearing four process-global objects so that bitcoind_main() can be
-re-invoked within the same process.
-
-Shutdown() already cleans up all other node state (chainstate,
-mempool, peers, indices, scheduler, ECC, kernel context) but leaves
-four process-global objects stale:
-
-- g_shutdown (std::optional<util::SignalInterrupt>) — emplaced in
-  InitContext() which asserts it is empty on entry.
-- gArgs.m_available_args — populated by SetupServerArgs(). AddArg()
-  asserts each key is freshly inserted; ParseParameters() only clears
-  command_line_options, not the registered arg definitions.
-- LogInstance().m_buffering — set to false by StartLogging(), which
-  asserts it is true on entry. The leaked singleton logger persists
-  across restarts.
-- fRPCInWarmup — SetRPCWarmupFinished() asserts it; ResetRPC() (added
-  in the companion RPC server patch) restores it.
-
-ClearArgs() and DisconnectTestLogger() are existing public methods;
-ResetRPC() is added by the companion RPC server patch.
-
-This enables projects that embed Bitcoin Core as a library to restart
-the daemon without relaunching the host process, which is important
-for mobile apps and GUI applications that allow configuration changes
-followed by a restart.
-
-No behavior change for the normal single-run case.
-```
-
-## File Changed
-
-**`src/init.cpp`** — 4 lines added (`g_shutdown.reset()`, `gArgs.ClearArgs()`, `ResetRPC()`, `LogInstance().DisconnectTestLogger()`)
-
-### Diff (against current `master`)
+## The change
 
 ```diff
 diff --git a/src/init.cpp b/src/init.cpp
@@ -128,84 +41,26 @@ diff --git a/src/init.cpp b/src/init.cpp
  }
 ```
 
-> **Note:** Line numbers are approximate. The actual PR branch must be rebased
-> onto `master` before opening. The `Shutdown()` function may have shifted due
-> to upstream changes, but the insertion point (after `RemovePidFile`, before
-> `LogInfo("Shutdown done")`) should be unambiguous.
+The diff matches the vendored v31.0 tree and applies cleanly to it (checked 2026-07-17; the insertion point sits at `src/init.cpp:414-416` there). On master the function may have shifted, but the insertion point — after `RemovePidFile`, before the final "Shutdown done" log line — is unambiguous. Rebase onto current `master` before opening the PR.
 
-## Bitcoin Core PR Process Checklist
+## Writing the PR
 
-Per [CONTRIBUTING.md](https://github.com/bitcoin/bitcoin/blob/master/CONTRIBUTING.md):
+Must say:
 
-- [ ] Fork `bitcoin/bitcoin` and create a branch from `master`
-- [ ] Rebase the change onto current `master`
-- [ ] Verify the diff applies cleanly to current `master`'s `init.cpp`
-- [ ] Run the existing test suite: `ctest --test-dir build` (no new tests needed — no behavior change for single-run)
-- [ ] Consider adding a functional test that calls `bitcoind_main()` twice (optional — strengthens the PR)
-- [ ] PR title uses area prefix: `init:` (matches file location `src/init.cpp`)
-- [ ] Commit message follows project conventions (imperative mood, no `@` mentions)
-- [ ] No `@` mentions in PR description (use follow-up comments for pings)
-- [ ] Consider pinging reviewers who last touched `Shutdown()` (use `git blame src/init.cpp`)
+- The four globals and their assertions, exactly as listed above, with file and line.
+- It mirrors the test framework: `~BasicTestingSetup` already calls `LogInstance().DisconnectTestLogger()` and `gArgs.ClearArgs()` between in-process lifecycles (`src/test/util/setup_common.cpp:227,237`). This brings production shutdown to parity.
+- Zero behavior change for the normal single-run case; two of the four calls are existing public methods, and all other node state is already reset earlier in `Shutdown()`.
+- Implement whichever shape the thread approved. The open design question posed there: reset at the end of `Shutdown()`, or lazily at the next `InitContext()` (which provably cannot affect a single run)?
+- The evidence: five clean in-process restart cycles, with a link to the repro branch.
+- Offer an in-tree test in the PR itself — a test driving a second init/shutdown cycle — because bug-fix PRs are expected to carry the test that proves the fix. The external soak evidence supports the claim; it does not replace the test.
 
-## Context & Prior Art
+Must not:
 
-### How `g_shutdown` works today
+- Never claim the patch fixes their fuzzing. Preserved wording: "No upstream fuzz target drives a full `bitcoind_main()` init/shutdown cycle today, so this is alignment with an enforced direction, not the removal of an existing blocker."
+- Never claim it makes iOS work — the kernel library builds for iOS with no patches at all (see the [CMake memo](cmake-ios-library-build.md)).
 
-- **Type**: `static std::optional<util::SignalInterrupt>` (file-scope in `init.cpp`)
-- **Lifecycle**: emplaced in `InitContext()` (line ~216), used as the shutdown signal throughout the node's lifetime
-- **Signal path**: `HandleSIGTERM()` → `(*g_shutdown)()` → `SignalInterrupt::operator()()` → wakes `bitcoind_main()`'s `wait()` call
-- **Missing cleanup**: `Shutdown()` resets every other piece of global state (`node.chainman`, `node.mempool`, `node.kernel`, etc.) but never resets `g_shutdown`
+## Notes
 
-### Why this is safe
-
-| Concern | Status |
-|---|---|
-| Thread safety | `Shutdown()` is called after all threads are joined; no concurrent access to `g_shutdown` |
-| Signal handlers | Signal handlers (`HandleSIGTERM`) are unregistered before `Shutdown()` runs |
-| Destructor side effects | `util::SignalInterrupt` destructor is trivial (closes pipe fds) — safe to call here |
-| `NodeContext` reuse | `NodeContext` is stack-allocated in `bitcoind_main()` — fresh each invocation |
-| `gArgs` reuse | `ParseParameters()` calls `m_settings.command_line_options.clear()` — self-cleans |
-
-### The `Shutdown()` cleanup sequence
-
-```
-Shutdown() cleanup order:
-  1. Stop HTTP RPC, REST, RPC server, HTTP server
-  2. Stop chain clients (wallets)
-  3. Stop map port, peer manager, connection manager
-  4. Stop Tor, background init, scheduler
-  5. Reset peerman, connman, banman, addrman, netgroupman
-  6. Dump mempool, flush fee estimator
-  7. Flush chainstate to disk (twice)
-  8. Stop and destroy all indexes
-  9. Flush validation interface callbacks
-  10. Reset chain clients, mempool, chainman, validation_signals, scheduler, ecc, kernel
-  11. Remove PID file
-  → g_shutdown.reset(), gArgs.ClearArgs(), ResetRPC(), LogInstance().DisconnectTestLogger()  ← NEW (this PR)
-  12. Log "Shutdown done"
-```
-
-### Related PRs & Issues
-
-| PR/Issue | Title | Relevance |
-|---|---|---|
-| [#24303](https://github.com/bitcoin/bitcoin/issues/24303) | `The libbitcoinkernel Project` | Library extraction — makes Bitcoin Core embeddable |
-| [#27711](https://github.com/bitcoin/bitcoin/pull/27711) | `Remove shutdown from kernel library` | Moved shutdown signaling out of kernel, uses `kernel::Notifications` instead |
-| [#27587](https://github.com/bitcoin/bitcoin/issues/27587) | `Bitcoin Kernel Library Project Tracking` | Ongoing kernel library work |
-| [#31382](https://github.com/bitcoin/bitcoin/pull/31382) | `kernel: Flush in ChainstateManager destructor` | RAII-ifying shutdown cleanup — same direction as this PR |
-
-### Why a full restart works
-
-`bitcoind_main()` (expanded from `MAIN_FUNCTION` in `bitcoind.cpp`) creates a
-fresh `NodeContext` on the stack each invocation. The only globals that persist
-across calls are:
-
-| Global | Cleaned up? |
-|---|---|
-| `gArgs` (ArgsManager) | **No** — `ParseParameters()` only clears `command_line_options`, not `m_available_args`. This PR adds `ClearArgs()` |
-| `LogInstance()` (BCLog::Logger) | **No** — `m_buffering` set to `false` by `StartLogging()`, leaked singleton persists. This PR adds `DisconnectTestLogger()` |
-| `tableRPC` (CRPCTable) | Accumulates — safe (commands are additive, not conflicting) |
-| `g_shutdown` | **No** — this PR fixes it |
-| `LogInstance()` | Singleton, reused — safe |
-
-*Issue states: see [patches/README.md](../README.md#cited-upstream-issues) (verified 2026-06-13).*
+- Safety: `Shutdown()` runs after every thread is joined and signal handlers are unregistered, so nothing races the resets; they sit after every other teardown step and before only the final log line.
+- `NodeContext` (the per-run bundle of node state) is stack-allocated fresh on each `bitcoind_main()` call. These four globals are the only cross-run blockers; the RPC command table also persists, but harmlessly (registration is additive).
+- The logger reset borrows a test-framework method, `DisconnectTestLogger()`. The thread floats giving it a production-appropriate name; adopt whatever reviewers prefer.

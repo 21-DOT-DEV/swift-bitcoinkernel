@@ -1,30 +1,25 @@
-# Bitcoin Core Local Patch: Fix `DisconnectTestLogger` Assertion During Teardown
+# Stop the late-log crash during teardown
 
-**Date**: 2026-05-08
-**Status**: Applied (suitable for upstream)
-**Repo**: https://github.com/bitcoin/bitcoin
-**File**: `src/logging.cpp`
+`DisconnectTestLogger()` — the logger's between-lifecycles reset — closes the log file and nulls the file handle, but leaves the "write to file" switch on. A background thread that logs one line after that hits `assert(m_fileout != nullptr)` and aborts the process. Every test can pass and the process still exits non-zero. The fix is one line: turn the switch off too. Late messages are then dropped silently, which is fine — the output that matters was already captured.
 
-## Problem
+The crash sequence:
 
-During test teardown, `DisconnectTestLogger()` closes the log file and sets `m_fileout = nullptr`, but does not set `m_print_to_file = false`. When a background scheduler thread is still running and attempts to log after the logger is disconnected, `LogPrintStr()` hits:
+1. Teardown calls `DisconnectTestLogger()`.
+2. The log file is closed and the handle set to null.
+3. The "write to file" switch (`m_print_to_file`) stays on.
+4. A background thread (the scheduler, for example) logs a message.
+5. `LogPrintStr()` sees the switch on, asserts the handle is non-null, and aborts.
 
-```cpp
-// logging.cpp line 498
-if (m_print_to_file && !ratelimit) {
-    assert(m_fileout != nullptr);  // ← SIGABRT
-```
+| | |
+|---|---|
+| **Status** | Applied here; not yet filed upstream. Still needed on master: `DisconnectTestLogger()` still leaves `m_print_to_file` true (checked 2026-07-02). |
+| **Touches** | `src/logging.cpp` |
+| **Depends on** | Nothing. |
+| **File as** | Direct pull request, anytime — step 2 of [the pipeline](../UPSTREAMING.md#the-pipeline). Optional report-then-fix variant (the #35293 → #35304 pattern that worked before): open a small issue with the crash sequence first, but only if it ships with an upstream-shaped repro branch — without the repro, the direct PR is stronger. |
+| **PR title** | `logging: clear m_print_to_file on teardown` |
+| **Cite** | [#29018](https://github.com/bitcoin/bitcoin/issues/29018) — their open fuzz-stability tracker; an abort during teardown is that problem class. |
 
-The sequence:
-1. Test suite completes, teardown calls `DisconnectTestLogger()`
-2. `m_fileout` is set to `nullptr`, file is closed
-3. `m_print_to_file` remains `true`
-4. A background thread (scheduler, etc.) logs a message
-5. `assert(m_fileout != nullptr)` fires → process aborts with signal 6
-
-All tests pass — the assertion happens during process exit after the test suite reports success. But it causes a non-zero exit code.
-
-## Fix
+## The change
 
 ```diff
  void BCLog::Logger::DisconnectTestLogger()
@@ -37,8 +32,11 @@ All tests pass — the assertion happens during process exit after the test suit
      m_print_callbacks.clear();
 ```
 
-When `m_print_to_file` is `false`, the `if (m_print_to_file && !ratelimit)` guard in `LogPrintStr()` short-circuits before reaching the assertion. Background thread log messages are silently dropped during teardown — acceptable since the test output has already been captured.
+## Writing the PR
 
-## Why upstream
+Must say:
 
-This is a defensive improvement: `DisconnectTestLogger()` should set all logging state to "disconnected." The full daemon never hits the assertion in normal operation (all background threads are joined before disconnect), but adding `m_print_to_file = false` makes the code more robust against edge cases. It's a one-line change with zero risk — if `m_fileout` is null, `m_print_to_file` should be false.
+- The five-step sequence above; it is a one-line defensive fix — if the file handle is null, the write-to-file switch should be off.
+- The path is not test-only in practice: every `BasicTestingSetup` teardown runs it, including fuzz targets that build a full setup per input (`utxo_total_supply`), so a teardown abort is a stability liability of the #29018 kind.
+- Frame it as teardown robustness. No restart story needed.
+- Answer the test question either way: the crash needs a background thread racing teardown, so if a deterministic test is impractical, say so in the PR and explain why.
