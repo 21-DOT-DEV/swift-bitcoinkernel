@@ -54,6 +54,7 @@ struct SettingsView: View {
                 chainSection
                 advancedSection
                 loggingSection
+                displaySection
             }
             #if os(macOS)
             .formStyle(.grouped)
@@ -231,6 +232,20 @@ struct SettingsView: View {
             Text("Logging")
         } footer: {
             Text("Log categories and formatting controls arrive in a later release.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - Display section (immediate-apply, device preference)
+
+    private var displaySection: some View {
+        Section {
+            Toggle("Keep Screen Awake", isOn: $settings.keepScreenAwake)
+        } header: {
+            Text("Display")
+        } footer: {
+            Text("Stops the screen from locking while the app is open. Uses more battery.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }

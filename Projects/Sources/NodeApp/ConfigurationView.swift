@@ -80,6 +80,9 @@ struct ConfigurationView: View {
     // RPC
     @AppStorage("rpc_auth") private var rpcAuth = ""
 
+    // Display
+    @AppStorage("keep_screen_awake") private var keepScreenAwake = false
+
     private var selectedNetwork: Binding<BitcoinNetwork> {
         Binding(
             get: { BitcoinNetwork(rawValue: network) ?? .mainnet },
@@ -205,7 +208,15 @@ struct ConfigurationView: View {
                     Label("RPC Authentication", systemImage: "key")
                 } footer: {
                     Text("Format: username:salt$hash. Generated with rpcauth.py.")
-                }            }
+                }
+                Section {
+                    Toggle("Keep Screen Awake", isOn: $keepScreenAwake)
+                } header: {
+                    Label("Display", systemImage: "sun.max")
+                } footer: {
+                    Text("Stops the screen from locking while the app is open. Uses more battery.")
+                }
+            }
             .formStyle(.grouped)
             .navigationTitle("Configuration")
             .toolbar {

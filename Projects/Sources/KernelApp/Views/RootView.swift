@@ -35,6 +35,7 @@ struct RootView: View {
                 SettingsView(viewModel: viewModel, settings: settings, tor: tor)
             }
         }
+        .keepScreenAwake(settings.keepScreenAwake)
     }
 }
 

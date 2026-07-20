@@ -27,6 +27,8 @@ struct ContentView: View {
         source: RPCClient(url: InternalRPC.url, cookieFile: InternalRPC.cookieFileURL)
     )
 
+    @AppStorage("keep_screen_awake") private var keepScreenAwake = false
+
     var body: some View {
         TabView(selection: $selectedTab) {
             Tab("Dashboard", systemImage: "gauge.medium", value: .dashboard) {
@@ -61,6 +63,7 @@ struct ContentView: View {
                 torViewModel.start()
             }
         }
+        .keepScreenAwake(keepScreenAwake)
     }
 }
 
