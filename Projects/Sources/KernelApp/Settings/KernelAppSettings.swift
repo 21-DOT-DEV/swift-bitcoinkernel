@@ -99,6 +99,14 @@ final class KernelAppSettings {
     /// device's available logical cores at model-init time.
     let maxWorkerThreads: Int32
 
+    // MARK: - Display
+
+    /// Keeps the device screen awake while the app is on-screen. A device
+    /// preference; takes effect immediately (no kernel restart).
+    var keepScreenAwake: Bool {
+        didSet { defaults.set(keepScreenAwake, forKey: Key.keepScreenAwake) }
+    }
+
     // MARK: - Logging
 
     /// Master switch for attaching a ``LoggingConnection``. When `false`,
@@ -189,6 +197,9 @@ final class KernelAppSettings {
         self.maxWorkerThreads = Self.computeMaxWorkerThreads()
         let rawThreads = defaults.object(forKey: Key.workerThreadCount) as? Int ?? 0
         self.workerThreadCount = Self.clampWorkerThreadCount(Int32(rawThreads), upperBound: self.maxWorkerThreads)
+
+        // Display
+        self.keepScreenAwake = defaults.bool(forKey: Key.keepScreenAwake)
 
         // Logging
         self.loggingEnabled = (defaults.object(forKey: Key.loggingEnabled) as? Bool) ?? true
@@ -312,6 +323,7 @@ final class KernelAppSettings {
         static let dataDirectoryOverride = "kernel_data_directory_override"
         static let routeDownloadsThroughTor = "kernel_route_downloads_through_tor"
         static let workerThreadCount = "kernel_worker_thread_count"
+        static let keepScreenAwake = "kernel_keep_screen_awake"
         static let loggingEnabled = "kernel_logging_enabled"
         static let loggingInternal = "kernel_logging_internal"
         static let enabledLogCategories = "kernel_enabled_log_categories"

@@ -16,8 +16,9 @@ polish (not a library roadmap phase) say so in the header and leave the phase bl
 
 Each `plan.md` opens with a metadata table — **Feature / Status / Decisions /
 Assumptions** — then numbered sections (Goal, Scope, Design, Steps, Verification,
-Risks). Keep the **Status** row current: `Planned` → `Implemented` at merge.
+Risks). Keep the **Status** row current: `Planned` → `In Progress` (code complete on a branch) → `Implemented` at merge.
 
 | # | Feature | Phase | Status | Plan |
 |---|---|---|---|---|
 | 001 | App icons for the demo apps (NodeApp, KernelApp) — Icon Composer `.icon` / Liquid Glass | — · app polish | Planned | [plan.md](001-app-icons/plan.md) |
+| 002 | "Keep Screen Awake" toggle in both demo apps — prevent auto-lock (iOS) / display sleep (macOS) while running | — · app polish | In Progress | [plan.md](002-keep-screen-awake/plan.md) |
