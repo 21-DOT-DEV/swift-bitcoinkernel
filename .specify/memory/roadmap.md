@@ -1,7 +1,7 @@
 # swift-bitcoinkernel Product Roadmap
 
-**Version**: v2.2.4  
-**Last Updated**: 2026-06-04  
+**Version**: v2.3.0  
+**Last Updated**: 2026-08-01  
 **Status**: Active Development
 
 ---
@@ -38,6 +38,8 @@
 | 6 | Advanced P2P | FUTURE | [phase-6-advanced-p2p.md](roadmap/phase-6-advanced-p2p.md) |
 | 7 | Lightning Integration | FUTURE | [phase-7-lightning-integration.md](roadmap/phase-7-lightning-integration.md) |
 | 8 | RPC Server & Privacy | FUTURE | [phase-8-rpc-server.md](roadmap/phase-8-rpc-server.md) |
+| 9 | Distribution & Release Artifacts | PLANNED | [phase-9-distribution.md](roadmap/phase-9-distribution.md) |
+| 10 | Vendir Migration | PLANNED | [phase-10-vendir-migration.md](roadmap/phase-10-vendir-migration.md) |
 
 **Timeline Model**: Milestone-driven (phases complete when deliverables are done).
 
@@ -197,6 +199,7 @@ A potential soft fork (discussed on delvingbitcoin.org) that would fix the timew
 
 | Version | Date | Change Type | Description |
 |---------|------|-------------|-------------|
+| v2.3.0 | 2026-08-01 | MINOR | 2026 funding-round alignment (shared 2026 outreach roadmap): added Phase 9 (Distribution & Release Artifacts — XCFramework, CocoaPods continuity ahead of the 2026-12-02 trunk freeze) and Phase 10 (Vendir Migration); noted Phase 7.1 (UTXO Lookup API) as pulled into the funded window (Q8), developable independently since Phase 3. |
 | v2.2.4 | 2026-06-04 | PATCH | Added "Direct-to-Peer Transaction Broadcast (Libre-Relay)" as a Future Consideration: a Swift-native re-creation of `tx-pigeon` (reference link), scoped as the opinionated layer over Phase 4.5 broadcast and 6.2 service-flag discovery, not a committed phase. |
 | v2.2.3 | 2026-05-07 | PATCH | Added Filter Registration API (7.2) to Phase 7. Based on cross-implementation research across LDK, CLN, BDK, Kyoto, and Floresta. LDK's `Filter` trait pattern selected as best approach. |: change logs now describe features by BIP number, project names kept only in Reference lines as implementation pointers. Global risks use BIP numbers. Mirrors v2.2.1 Floresta/Utreexo treatment. |
 | v2.2.1 | 2026-05-07 | PATCH | Added Utreexo as a Future Consideration in index and Phase 6 note. Clarified that Floresta references are for P2P infrastructure (wire protocol, BIP 324, mempool), not Utreexo itself. |

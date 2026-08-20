@@ -3,6 +3,7 @@
 **Goal**: Make `BitcoinKernel` a first-class Bitcoin backend for Core Lightning (CLN) by implementing the CLN Bitcoin backend plugin interface, adding UTXO lookup APIs to the kernel, and providing Lightning-aware fee estimation.
 
 **Status**: FUTURE  
+**Funding**: 7.1 (UTXO Lookup API) is pulled into the 2026 funding window — scheduled in Q8 of the shared 2026 roadmap; developable independently since Phase 3 (complete)  
 **Last Updated**: 2026-05-07
 
 ---
