@@ -110,6 +110,14 @@ final class KernelAppViewModel {
     @ObservationIgnored private let kernelFactory: KernelFactory
     @ObservationIgnored private let blockSourceFactory: BlockSourceFactory
 
+    /// Drives the wait-for-Tor poll below. Production uses the stdlib
+    /// `ContinuousClock`; tests inject a `TestClock` so the poll advances on
+    /// virtual time instead of stalling a test bundle for real seconds. Same
+    /// arrangement as ``TorViewModel``, which takes a clock for its retry
+    /// backoff — production code touches only the stdlib `Clock` protocol, so
+    /// swift-clocks stays a test-only dependency.
+    @ObservationIgnored private let clock: any Clock<Duration>
+
     @ObservationIgnored private var currentSync: BlockchainSync?
 
     /// Observer task that waits for Tor to finish bootstrapping when
@@ -128,12 +136,14 @@ final class KernelAppViewModel {
         settings: KernelAppSettings,
         tor: TorViewModel,
         kernelFactory: @escaping KernelFactory = KernelAppViewModel.defaultKernelFactory,
-        blockSourceFactory: @escaping BlockSourceFactory = KernelAppViewModel.defaultBlockSourceFactory
+        blockSourceFactory: @escaping BlockSourceFactory = KernelAppViewModel.defaultBlockSourceFactory,
+        clock: any Clock<Duration> = ContinuousClock()
     ) {
         self.settings = settings
         self.tor = tor
         self.kernelFactory = kernelFactory
         self.blockSourceFactory = blockSourceFactory
+        self.clock = clock
     }
 
     // MARK: - Lifecycle
@@ -298,6 +308,22 @@ final class KernelAppViewModel {
         currentSync = nil
     }
 
+    #if DEBUG
+    /// Test hook: awaits the in-flight wait-for-Tor observer.
+    ///
+    /// Mirrors ``TorViewModel/awaitSettled()``. With an injected clock a test
+    /// advances virtual time to fire one poll iteration, then awaits this to
+    /// know the resumed iteration finished its work — instead of polling real
+    /// time and hoping. Returns immediately when no observer is running.
+    ///
+    /// Only await this when the observer is expected to *terminate* (Tor became
+    /// ready, Tor failed terminally, or it was cancelled). While Tor is still
+    /// bootstrapping the observer loops forever by design, and so would this.
+    internal func awaitTorWait() async {
+        await torWaitTask?.value
+    }
+    #endif
+
     /// Cancel any in-flight wait-for-Tor observer. Idempotent.
     private func cancelTorWait() {
         torWaitTask?.cancel()
@@ -456,7 +482,7 @@ final class KernelAppViewModel {
                 // and more portable than an Observation subscription
                 // from a non-View context.
                 self.snapshot.statusText = self.torStatusText()
-                try? await Task.sleep(for: .milliseconds(250))
+                try? await self.clock.sleep(for: .milliseconds(250))
             }
         }
     }

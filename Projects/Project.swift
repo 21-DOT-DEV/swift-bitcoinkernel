@@ -120,7 +120,20 @@ let project = Project(
             product: .unitTests,
             bundleId: "dev.21.KernelAppTests",
             deploymentTargets: deploymentTargets,
-            sources: ["Sources/KernelAppTests/**", "Sources/SharedTests/**"],
+            // The last two entries reach up into the Swift package's own test
+            // helpers rather than duplicating them. `.kernelSerialized` makes
+            // engine-touching tests take turns across ALL suites in a bundle;
+            // Apple's built-in `.serialized` only orders tests within one suite,
+            // which is why four suites here could each build a Bitcoin engine
+            // simultaneously. Referenced (not copied) so a fix lands once.
+            // Listed as explicit files, not a wildcard: that folder also holds a
+            // `MockBlockSource.swift` that would collide with this bundle's own.
+            sources: [
+                "Sources/KernelAppTests/**",
+                "Sources/SharedTests/**",
+                "../Tests/BitcoinKernelTests/Support/KernelSerialization.swift",
+                "../Tests/BitcoinKernelTests/Support/AsyncSemaphore.swift",
+            ],
             dependencies: [.target(name: "KernelApp"), .package(product: "Clocks")],
             settings: .settings(
                 configurations: [

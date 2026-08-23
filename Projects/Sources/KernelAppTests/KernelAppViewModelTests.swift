@@ -109,7 +109,7 @@ private final class KernelFactorySpy {
     }
 }
 
-@Suite("KernelAppViewModel — Lifecycle")
+@Suite("KernelAppViewModel — Lifecycle", .kernelSerialized)
 @MainActor
 struct KernelAppViewModelLifecycleTests {
 
@@ -182,16 +182,35 @@ struct KernelAppViewModelLifecycleTests {
 @MainActor
 struct KernelAppViewModelReindexTests {
 
-    /// Build a view model wired to the factory spy. Returns the spy + the
-    /// usual parts so tests can assert calls and drive sync.
-    private func makeWithSpy(
-        bestTipHeight: Int = 0
-    ) -> (
-        vm: KernelAppViewModel,
-        spy: KernelFactorySpy,
-        mock: MockBlockSource,
-        tmpDir: URL
-    ) {
+    // MARK: - Rebuild-mode argument plumbing
+
+    /// Records each `reindex:` argument the view model hands its kernel factory.
+    private actor ReindexCallRecorder {
+        private(set) var calls: [ReindexMode?] = []
+        func record(_ mode: ReindexMode?) { calls.append(mode) }
+    }
+
+    /// Shared setup for both rebuild-mode tests: a view model whose kernel
+    /// factory records the `reindex:` argument and then throws.
+    ///
+    /// Throwing keeps both tests off real databases, for two different reasons
+    /// worth keeping straight:
+    ///
+    /// - `.full` **must** avoid a real reopen — reading the chain tip after a
+    ///   wipe of both databases crashes inside the C library. See
+    ///   [bitcoin/bitcoin#35293](https://github.com/bitcoin/bitcoin/issues/35293).
+    /// - `.chainstate` no longer needs one — proving that a real reopen succeeds
+    ///   moved down to `BlockchainSyncTeardownTests`
+    ///   (`shutdownReleasesDataDirectoryBeforeReopen`), which is deterministic,
+    ///   runs on every platform, and needs no simulator.
+    ///
+    /// What remains here is the view model's own contract: it forwards the mode
+    /// it was handed, unchanged.
+    private func makeRecordingViewModel(
+        label: String
+    ) -> (vm: KernelAppViewModel, recorder: ReindexCallRecorder) {
+        struct StubError: Error {}
+
         let suite = "dev.21.KernelAppViewModelTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
@@ -199,111 +218,59 @@ struct KernelAppViewModelReindexTests {
         let settings = KernelAppSettings(defaults: defaults)
         settings.chainType = .regtest
         settings.blockSourceEndpoint = URL(string: "https://example.test/api")!
-        let tmpDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("KernelAppViewModelTests-\(UUID().uuidString)", isDirectory: true)
-        settings.dataDirectoryOverride = tmpDir
 
-        let mock = MockBlockSource(bestTip: BlockTip(
-            hash: Data(repeating: 0xAA, count: 32),
-            height: bestTipHeight
-        ))
-        let spy = KernelFactorySpy()
-
-        let vm = KernelAppViewModel(
-            settings: settings,
-            tor: TorViewModel(subsystem: "test.KernelAppViewModelReindexTests"),
-            kernelFactory: spy.factory(),
-            blockSourceFactory: { _, _ in mock }
-        )
-        return (vm, spy, mock, tmpDir)
-    }
-
-    // MARK: - Chainstate-only reindex
-
-    @Test("requestReindex(.chainstate) tears down and rebuilds the kernel with the chainstate wipe flag")
-    func requestReindexChainstateInvokesFactoryWithCorrectFlag() async {
-        let parts = makeWithSpy()
-
-        // Bring up an initial kernel via start(), let it finish.
-        await parts.vm.start()
-        if let kernel = parts.vm.residentKernel {
-            let genesisHash = kernel.manager.bestEntry.blockHash.data
-            parts.mock.setBestTip(BlockTip(hash: genesisHash, height: 0))
-        }
-        await parts.vm.syncTask?.value
-        #expect(parts.spy.calls.count == 1)
-        #expect(parts.spy.calls[0].reindex == nil)
-
-        // Trigger the chainstate reindex.
-        await parts.vm.requestReindex(.chainstate)
-        if let kernel = parts.vm.residentKernel {
-            let genesisHash = kernel.manager.bestEntry.blockHash.data
-            parts.mock.setBestTip(BlockTip(hash: genesisHash, height: 0))
-        }
-        await parts.vm.syncTask?.value
-
-        #expect(parts.spy.calls.count == 2)
-        #expect(parts.spy.calls[1].reindex == .chainstate)
-        #expect(parts.vm.snapshot.phase == .finished)
-
-        // Explicit ordered cleanup. Not strictly required (kernel deinit
-        // handles a removed data dir gracefully — verified in
-        // `Tests/BitcoinKernelTests/UpstreamConcernsTests.swift`), but
-        // good hygiene since `defer` can't await `stop()`.
-        await parts.vm.stop()
-        try? FileManager.default.removeItem(at: parts.tmpDir)
-    }
-
-    // MARK: - Full reindex
-
-    /// Test that `requestReindex(.full)` invokes the factory with the
-    /// expected `reindex` argument. Uses a recording-but-throwing factory
-    /// because reading `bestEntry` after a `(true, true)` reopen SEGVs. See
-    /// [bitcoin/bitcoin#35293](https://github.com/bitcoin/bitcoin/issues/35293)
-    /// for the full report. The view-model contract is that it passes the
-    /// right enum through; that's all this test needs to prove.
-    @Test("requestReindex(.full) invokes the factory with reindex == .full")
-    func requestReindexFullInvokesFactoryWithCorrectFlag() async {
-        struct StubError: Error {}
-
-        let suite = "dev.21.KernelAppViewModelTests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        let settings = KernelAppSettings(defaults: defaults)
-        settings.chainType = .regtest
-        settings.blockSourceEndpoint = URL(string: "https://example.test/api")!
-
-        // Recording factory that throws — the view model should still
-        // pass the reindex argument through before construction fails.
-        actor CallRecorder { var calls: [ReindexMode?] = [] ; func record(_ r: ReindexMode?) { calls.append(r) } }
-        let recorder = CallRecorder()
+        let recorder = ReindexCallRecorder()
         let factory: KernelAppViewModel.KernelFactory = { @Sendable _, _, _, reindex in
             await recorder.record(reindex)
             throw StubError()
         }
-        let mock = MockBlockSource(bestTip: BlockTip(hash: Data(repeating: 0xAA, count: 32), height: 0))
+        let mock = MockBlockSource(
+            bestTip: BlockTip(hash: Data(repeating: 0xAA, count: 32), height: 0)
+        )
 
         let vm = KernelAppViewModel(
             settings: settings,
-            tor: TorViewModel(subsystem: "test.KernelAppViewModelReindexTests.full"),
+            tor: TorViewModel(subsystem: "test.KernelAppViewModelReindexTests.\(label)"),
             kernelFactory: factory,
             blockSourceFactory: { _, _ in mock }
         )
+        return (vm, recorder)
+    }
 
-        // First start fails (factory throws) — but records the call.
-        await vm.start()
-        // Second call: reindex propagates as .full.
-        await vm.requestReindex(.full)
+    // MARK: - Chainstate-only reindex
 
-        let recordedCalls = await recorder.calls
-        #expect(recordedCalls.count == 2)
-        #expect(recordedCalls[0] == nil)
-        #expect(recordedCalls[1] == .full)
+    @Test("requestReindex(.chainstate) passes the chainstate wipe flag to the kernel factory")
+    func requestReindexChainstateInvokesFactoryWithCorrectFlag() async {
+        let parts = makeRecordingViewModel(label: "chainstate")
+
+        await parts.vm.start()                       // records nil
+        await parts.vm.requestReindex(.chainstate)   // records .chainstate
+
+        let calls = await parts.recorder.calls
+        #expect(calls.count == 2)
+        #expect(calls[0] == nil)
+        #expect(calls[1] == .chainstate)
+    }
+
+    // MARK: - Full reindex
+
+    @Test("requestReindex(.full) passes the full wipe flag to the kernel factory")
+    func requestReindexFullInvokesFactoryWithCorrectFlag() async {
+        let parts = makeRecordingViewModel(label: "full")
+
+        await parts.vm.start()                 // records nil
+        await parts.vm.requestReindex(.full)   // records .full
+
+        let calls = await parts.recorder.calls
+        #expect(calls.count == 2)
+        #expect(calls[0] == nil)
+        #expect(calls[1] == .full)
     }
 }
 
 // MARK: - Settings-change policy
 
-@Suite("KernelAppViewModel — Settings-change policy", .serialized)
+@Suite("KernelAppViewModel — Settings-change policy", .serialized, .kernelSerialized)
 @MainActor
 struct KernelAppViewModelSettingsChangeTests {
 
