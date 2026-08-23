@@ -12,6 +12,26 @@
 //  Testing does not (as of this writing) ship a native primitive for
 //  waiting on an `@Observable` predicate to flip; `confirmation` is for
 //  discrete event callbacks, not state observation.
+//
+//  ── REACH FOR AN INJECTED CLOCK FIRST ──────────────────────────────────
+//
+//  This polls the REAL clock, so every call spends real seconds and its
+//  timeout is a bet on how loaded the machine is. That bet has lost here
+//  twice: `TorViewModelRaceTests` timed out on CI (runs 27073490520 and
+//  27059121579), and a later run stalled seven seconds on a test that only
+//  compares two strings.
+//
+//  If the thing you are waiting on is driven by a `Clock` — a retry
+//  backoff, a poll interval, any `sleep` — inject a `TestClock` and advance
+//  it instead. `TorViewModel` (`clock:`) and `KernelAppViewModel` (`clock:`)
+//  both take one for exactly this. Virtual time cannot be starved by a busy
+//  runner. As of this writing that migration left this helper with ZERO
+//  callers; it is kept as the escape hatch for waits genuinely outside any
+//  clock's control (a real filesystem event, a third-party callback).
+//
+//  What it is NOT for: a stand-in for `Task.sleep(for:)` with a bigger
+//  number. If you find yourself widening a timeout to make CI pass, the
+//  wait belongs on a clock you control.
 
 import Foundation
 import Testing
