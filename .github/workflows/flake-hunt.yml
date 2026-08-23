@@ -25,9 +25,13 @@ on:
         options: [ios, macos]
         default: ios
       iterations:
-        description: Max iterations (stops early on the first failure)
+        description: Number of iterations to run
         type: string
-        default: "50"
+        default: "100"
+      stop_early:
+        description: Stop at the first failure (off = run all iterations and count them)
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -77,9 +81,20 @@ jobs:
             -destination "$DESTINATION" -derivedDataPath "$DERIVED_DATA" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
 
-      # -test-iterations N with -run-tests-until-failure runs the bundle up to N
-      # times and stops the moment one iteration fails. Clean exit = N
-      # consecutive passes; failure = the log names the iteration that broke.
+      # Two modes, because they answer different questions.
+      #
+      #   stop_early = false (default): run all N iterations and report how many
+      #     failed. This is the only way to MEASURE a rate — accepted guidance is
+      #     to repeat a suspect suite and calculate its failure rate rather than
+      #     trust anecdote.
+      #   stop_early = true: stop the moment one iteration fails. Faster answer
+      #     when you only care whether it fails at all.
+      #
+      # On iteration count: the failure this job was built for showed up about
+      # once in 30 runs. A clean run of N iterations gives 1-(1-p)^N confidence
+      # it is really fixed — at p=1/30 that is 82% for N=50 but 97% for N=100,
+      # and only 57% at N=50 if the true rate is half what we observed. Hence the
+      # default of 100. Do not lower it without redoing that arithmetic.
       #
       # -retry-tests-on-failure is deliberately NOT used. It silently re-runs
       # failed tests, which would hide the exact thing this job exists to find,
@@ -96,14 +111,18 @@ jobs:
           SCHEME: ${{ inputs.app }}
           PLATFORM: ${{ inputs.platform }}
           ITERATIONS: ${{ inputs.iterations }}
+          STOP_EARLY: ${{ inputs.stop_early }}
         run: |
           RESULTS="${RUNNER_TEMP:-/tmp}/xcresults"
           mkdir -p "$RESULTS"
+          # Positional params keep the optional flag quote-safe.
+          if [ "$STOP_EARLY" = "true" ]; then set -- -run-tests-until-failure; else set --; fi
+          echo "Running $ITERATIONS iterations (stop_early=$STOP_EARLY)"
           xcodebuild test-without-building \
             -skipMacroValidation -skipPackagePluginValidation \
             -workspace "$WORKSPACE" -scheme "$SCHEME" \
             -destination "$DESTINATION" -derivedDataPath "$DERIVED_DATA" \
-            -test-iterations "$ITERATIONS" -run-tests-until-failure \
+            -test-iterations "$ITERATIONS" "$@" \
             -resultBundlePath "$RESULTS/$SCHEME-$PLATFORM-hunt.xcresult" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
 

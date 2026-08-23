@@ -18,6 +18,7 @@
 //  surfaced to the `blockSourceFactory` in the plumbing test below.
 
 import BitcoinKernel
+import Clocks
 import Foundation
 import Testing
 import Tor
@@ -33,6 +34,11 @@ private struct TorTestParts {
     let fake: FakeTorSession
     let mock: MockBlockSource
     let tmpDir: URL
+    /// Shared by `TorViewModel` (retry backoff) and `KernelAppViewModel` (the
+    /// wait-for-Tor poll). Advancing it fires both on virtual time, so these
+    /// tests spend no real seconds waiting and cannot be broken by a loaded
+    /// CI machine.
+    let clock: TestClock<Duration>
     /// Every `HostPort` passed to the block-source factory, captured in
     /// invocation order so tests can assert on plumbing.
     let capturedSocks: SocksRecorder
@@ -66,9 +72,11 @@ private func makeTorParts(
     settings.dataDirectoryOverride = tmpDir
 
     let fake = FakeTorSession(mode: sessionMode)
+    let clock = TestClock<Duration>()
     let tor = TorViewModel(
         subsystem: "test.KernelAppViewModelTorTests",
         backoffSchedule: backoffSchedule,
+        clock: clock,
         makeSession: { _ in fake }
     )
 
@@ -99,7 +107,8 @@ private func makeTorParts(
                 recorder.record(socks)
             }
             return mock
-        }
+        },
+        clock: clock
     )
     return TorTestParts(
         vm: vm,
@@ -108,6 +117,7 @@ private func makeTorParts(
         fake: fake,
         mock: mock,
         tmpDir: tmpDir,
+        clock: clock,
         capturedSocks: recorder
     )
 }
@@ -121,7 +131,7 @@ private func makeTorParts(
 
 // MARK: - Suite
 
-@Suite("KernelAppViewModel — Tor integration", .serialized)
+@Suite("KernelAppViewModel — Tor integration", .serialized, .kernelSerialized)
 @MainActor
 struct KernelAppViewModelTorTests {
 
@@ -157,14 +167,17 @@ struct KernelAppViewModelTorTests {
         await parts.vm.start()
         #expect(parts.vm.snapshot.phase == .waitingForTor)
 
-        // Release the FakeTorSession bootstrap gate — TorViewModel
-        // flips to .running and isReady == true. The observer polls
-        // every 250ms; give it up to a second to notice.
+        // Release the FakeTorSession bootstrap gate — TorViewModel flips to
+        // .running and isReady == true. `awaitSettled()` returns once that
+        // transition is complete, so there is nothing to poll for.
         await parts.fake.releaseBootstrap()
-        try await waitFor(timeout: .seconds(2)) { parts.tor.isReady }
-        try await waitFor(timeout: .seconds(2)) {
-            parts.vm.snapshot.phase != .waitingForTor
-        }
+        await parts.tor.awaitSettled()
+        #expect(parts.tor.isReady)
+
+        // Fire one 250ms poll iteration of the observer on virtual time, then
+        // wait for the kick it triggers. No real seconds elapse.
+        await parts.clock.advance(by: .milliseconds(250))
+        await parts.vm.awaitTorWait()
 
         // After kick: kernel was opened and the factory was called with
         // the fake's SOCKS endpoint.
@@ -200,8 +213,14 @@ struct KernelAppViewModelTorTests {
         // NOT spring back to life and open a kernel.
         parts.tor.start()
         await parts.fake.releaseBootstrap()
-        try await waitFor(timeout: .seconds(1)) { parts.tor.isReady }
-        try? await Task.sleep(for: .milliseconds(400))
+        await parts.tor.awaitSettled()
+        #expect(parts.tor.isReady)
+
+        // Advance far past several poll intervals. A live observer would have
+        // rebuilt the kernel by now; a cancelled one has no sleeper to wake.
+        // This demonstrates absence rather than just waiting and hoping.
+        await parts.clock.advance(by: .seconds(5))
+        await parts.vm.awaitTorWait()
 
         #expect(parts.vm.residentKernel == nil,
                 "stopped observer must not rebuild the kernel post-hoc")
@@ -226,15 +245,18 @@ struct KernelAppViewModelTorTests {
         await parts.vm.start()
         #expect(parts.vm.snapshot.phase == .waitingForTor)
 
-        // Wait for TorViewModel to exhaust its retry schedule.
-        try await waitFor(timeout: .seconds(2)) {
-            parts.tor.displayState == .failed && parts.tor.nextRetryAt == nil
-        }
-        // Observer polls at 250ms; give it a wide margin.
-        try await waitFor(timeout: .seconds(2)) {
-            if case .failed = parts.vm.snapshot.phase { return true }
-            return false
-        }
+        // Drive the retry schedule to exhaustion on virtual time. The initial
+        // attempt has already failed, so one advance per scheduled delay fires
+        // the remaining retries.
+        await parts.tor.awaitSettled()
+        await parts.clock.advance(by: .milliseconds(10))
+        await parts.tor.awaitSettled()
+        #expect(parts.tor.displayState == .failed)
+        #expect(parts.tor.nextRetryAt == nil)
+
+        // One poll iteration for the observer to notice and surface .failed.
+        await parts.clock.advance(by: .milliseconds(250))
+        await parts.vm.awaitTorWait()
 
         if case .failed(let reason) = parts.vm.snapshot.phase {
             #expect(reason.lowercased().contains("tor"),
@@ -284,7 +306,8 @@ struct KernelAppViewModelTorTests {
         // TorViewModel's makeSession closure.
         parts.tor.start()
         await parts.fake.releaseBootstrap()
-        try await waitFor(timeout: .seconds(2)) { parts.tor.isReady }
+        await parts.tor.awaitSettled()
+        #expect(parts.tor.isReady)
 
         await parts.vm.start()
 

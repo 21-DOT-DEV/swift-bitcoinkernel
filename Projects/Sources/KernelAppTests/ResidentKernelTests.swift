@@ -16,7 +16,7 @@ import Foundation
 import Testing
 @testable import KernelApp
 
-@Suite("ResidentKernel")
+@Suite("ResidentKernel", .kernelSerialized)
 @MainActor
 struct ResidentKernelTests {
 
