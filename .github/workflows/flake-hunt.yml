@@ -1,0 +1,119 @@
+name: Flake Hunt
+
+# Hand-triggered only — never on push or pull_request.
+#
+# Repeats one app's test bundle many times on the same runner class where
+# load-dependent failures actually appear, and stops at the first one. Two uses:
+# measure how often a suspected flake fails BEFORE a fix, then prove zero
+# failures over the same iteration count AFTER it. A single green CI run says
+# almost nothing about a failure that shows up once in thirty runs.
+#
+# The build/test split matters here: the bundle is compiled once, so each extra
+# iteration costs roughly one test pass (~20s for KernelApp's 101 tests) rather
+# than a full rebuild.
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: Scheme to hunt
+        type: choice
+        options: [KernelApp, NodeApp]
+        default: KernelApp
+      platform:
+        description: Destination platform
+        type: choice
+        options: [ios, macos]
+        default: ios
+      iterations:
+        description: Max iterations (stops early on the first failure)
+        type: string
+        default: "50"
+
+permissions: {}
+
+jobs:
+  hunt:
+    name: ${{ inputs.app }} (${{ inputs.platform }}) x${{ inputs.iterations }}
+    runs-on: macos-26
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    env:
+      DEVELOPER_DIR: "/Applications/Xcode_26.4.app/Contents/Developer"
+      WORKSPACE: Projects/Bitcoin.xcworkspace
+      DERIVED_DATA: .derivedData
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Generate workspace
+        run: swift package --disable-sandbox tuist generate -p Projects/ --no-open
+
+      # Mirrors tuist-apps.yml's destination resolution: resolve an iPhone by
+      # UDID at runtime so simulator-name churn across Xcode versions can't
+      # break the job.
+      - name: Resolve destination
+        env:
+          PLATFORM: ${{ inputs.platform }}
+        run: |
+          case "$PLATFORM" in
+            macos)
+              echo "DESTINATION=platform=macOS" >> "$GITHUB_ENV" ;;
+            ios)
+              UDID=$(xcrun simctl list devices available | grep -E 'iPhone 1[6-9]' | grep -oE '[0-9A-Fa-f-]{36}' | head -1)
+              [ -z "$UDID" ] && UDID=$(xcrun simctl list devices available | grep 'iPhone' | grep -oE '[0-9A-Fa-f-]{36}' | head -1)
+              if [ -z "$UDID" ]; then echo "::error::no available iPhone simulator on the runner"; exit 1; fi
+              echo "DESTINATION=platform=iOS Simulator,id=$UDID" >> "$GITHUB_ENV" ;;
+            *)
+              echo "::error::unhandled platform '$PLATFORM' — add a -destination case"; exit 1 ;;
+          esac
+
+      - name: Build ${{ inputs.app }} (${{ inputs.platform }})
+        env:
+          SCHEME: ${{ inputs.app }}
+        run: |
+          xcodebuild build-for-testing \
+            -skipMacroValidation -skipPackagePluginValidation \
+            -workspace "$WORKSPACE" -scheme "$SCHEME" \
+            -destination "$DESTINATION" -derivedDataPath "$DERIVED_DATA" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+
+      # -test-iterations N with -run-tests-until-failure runs the bundle up to N
+      # times and stops the moment one iteration fails. Clean exit = N
+      # consecutive passes; failure = the log names the iteration that broke.
+      #
+      # -retry-tests-on-failure is deliberately NOT used. It silently re-runs
+      # failed tests, which would hide the exact thing this job exists to find,
+      # and it is known to report wrong failure counts
+      # (XCTestHTMLReport/XCTestHTMLReport#217).
+      #
+      # CAVEAT: the simulator launch-crash flake that tuist-apps.yml retries
+      # ("Early unexpected exit" / "test runner crashed before establishing
+      # connection") aborts the whole invocation rather than one iteration.
+      # If the hunt ends early, grep the log for that signature before
+      # attributing the failure to the code under test.
+      - name: Hunt ${{ inputs.app }} (${{ inputs.platform }})
+        env:
+          SCHEME: ${{ inputs.app }}
+          PLATFORM: ${{ inputs.platform }}
+          ITERATIONS: ${{ inputs.iterations }}
+        run: |
+          RESULTS="${RUNNER_TEMP:-/tmp}/xcresults"
+          mkdir -p "$RESULTS"
+          xcodebuild test-without-building \
+            -skipMacroValidation -skipPackagePluginValidation \
+            -workspace "$WORKSPACE" -scheme "$SCHEME" \
+            -destination "$DESTINATION" -derivedDataPath "$DERIVED_DATA" \
+            -test-iterations "$ITERATIONS" -run-tests-until-failure \
+            -resultBundlePath "$RESULTS/$SCHEME-$PLATFORM-hunt.xcresult" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+
+      # always(), not failure(): a clean hunt's bundle carries the per-iteration
+      # timings that justify calling a flake fixed.
+      - name: Upload hunt results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: xcresult-hunt-${{ inputs.app }}-${{ inputs.platform }}
+          path: ${{ runner.temp }}/xcresults
+          retention-days: 14
+          if-no-files-found: ignore
