@@ -93,6 +93,35 @@ public struct BlockchainSync: Sendable {
         Updates(storage: storage)
     }
 
+    /// Stop any running sync and wait for its background producer to finish.
+    ///
+    /// `AsyncStream.onTermination` cancels the producer when a consumer stops
+    /// iterating, but cancellation is only a *request*: the producer keeps
+    /// running — and keeps this sync's ``ChainstateManager`` alive, holding the
+    /// LevelDB lock on its data directory — until it next observes that it was
+    /// cancelled. Callers that tear a sync down and then reopen the *same* data
+    /// directory must await this first. A reindex is the motivating case: without
+    /// it, the reopen intermittently fails with
+    /// ``KernelError/chainstateManagerCreationFailed`` because the previous
+    /// databases are still open.
+    ///
+    /// Idempotent, and safe to call when no sync is running.
+    ///
+    /// ```swift
+    /// await sync.shutdown()          // producer is provably done
+    /// residentKernel = nil           // last reference drops; databases close
+    /// let rebuilt = try await ResidentKernel.make(…)   // safe to reopen
+    /// ```
+    public func shutdown() async {
+        let producers = storage.drainProducers()
+        guard !producers.isEmpty else { return }
+        for producer in producers { producer.cancel() }
+        // Unblock any producer parked inside a long `processBlock` C call so the
+        // cancellation it just received can actually be observed.
+        _ = storage.context.interrupt()
+        for producer in producers { await producer.value }
+    }
+
     /// A single-consumer `AsyncSequence` of ``Update`` values emitted as
     /// the sync engine drives the chainstate forward.
     ///
@@ -138,6 +167,10 @@ public struct BlockchainSync: Sendable {
                     let task = Task {
                         await runSyncLoop(storage: storage, continuation: continuation)
                     }
+                    // Hand the producer to shared storage so callers can await
+                    // its completion via ``BlockchainSync/shutdown()``. The
+                    // `onTermination` cancel below is a request, not a barrier.
+                    storage.track(producer: task)
                     continuation.onTermination = { @Sendable _ in
                         task.cancel()
                         _ = context.interrupt()

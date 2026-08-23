@@ -288,6 +288,13 @@ final class KernelAppViewModel {
             await task.value
             syncTask = nil
         }
+        // Cancelling the consumer above only *requests* that the engine's
+        // background producer stop. Until it actually unwinds it keeps the
+        // resident kernel alive, and with it the LevelDB lock on the data
+        // directory. `requestReindex(_:)` reopens that exact directory as soon
+        // as `stop()` returns, so without this barrier the reopen intermittently
+        // fails with "Chainstate manager creation failed".
+        await currentSync?.shutdown()
         currentSync = nil
     }
 

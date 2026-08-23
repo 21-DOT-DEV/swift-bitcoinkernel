@@ -123,6 +123,8 @@ jobs:
           MAX=1
           if [ "$PLATFORM" = "ios" ]; then MAX=5; fi
           LOG="${RUNNER_TEMP:-/tmp}/twb-$SCHEME-$PLATFORM.log"
+          RESULTS="${RUNNER_TEMP:-/tmp}/xcresults"
+          mkdir -p "$RESULTS"
           attempt=1
           while true; do
             echo "::group::test-without-building $SCHEME ($PLATFORM) — attempt $attempt/$MAX"
@@ -131,6 +133,7 @@ jobs:
               -skipMacroValidation -skipPackagePluginValidation \
               -workspace "$WORKSPACE" -scheme "$SCHEME" \
               -destination "$DESTINATION" -derivedDataPath "$DERIVED_DATA" \
+              -resultBundlePath "$RESULTS/$SCHEME-$PLATFORM-attempt-$attempt.xcresult" \
               CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO 2>&1 | tee "$LOG"
             rc=${PIPESTATUS[0]}
             set -e
@@ -147,3 +150,21 @@ jobs:
             echo "Simulator launch-crash flake — re-running tests without rebuild (attempt $((attempt + 1))/$MAX)"
             attempt=$((attempt + 1))
           done
+
+      # Xcode's structured record of the run. Without it the only evidence a
+      # failure leaves is this step's log, which flushes in batches — the
+      # 2026-08-20 KernelApp (ios) failure printed at 07:35:35 an event that
+      # actually happened at 07:35:33, which destroyed the timing needed to see
+      # which test groups overlapped. The `if:` is REQUIRED: a step with no
+      # condition is skipped once an earlier step failed, i.e. exactly when the
+      # bundle is worth having. One bundle per attempt (the retry loop above
+      # would otherwise collide — xcodebuild refuses an existing bundle path),
+      # and one artifact name per matrix row so concurrent rows don't clash.
+      - name: Upload test results (${{ matrix.app }}, ${{ matrix.platform }})
+        if: failure() && matrix.action == 'test'
+        uses: actions/upload-artifact@v7
+        with:
+          name: xcresult-${{ matrix.app }}-${{ matrix.platform }}
+          path: ${{ runner.temp }}/xcresults
+          retention-days: 14
+          if-no-files-found: ignore
