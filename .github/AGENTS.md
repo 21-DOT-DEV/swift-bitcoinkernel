@@ -11,6 +11,7 @@ This directory contains GitHub configuration and CI workflows.
 | `docker-builds.yml` | push/PR to `main` | Linux build+test via `docker build .` |
 | `docc-release.yml` | release published or manual | Matrix build of DocC archives (Bitcoin + BitcoinKernel), upload to release assets |
 | `flake-hunt.yml` | manual only | Repeat one demo app's test bundle N times on CI hardware to hunt (or disprove) an intermittent failure. Never runs on push or PR. |
+| `development-docs.yml` | push/PR to `main`, only when `Development/**`, `.vale.ini`, `.vale/**` or the workflow itself changes | Unit-test the checker in `Development/Tools`, verify every plan and decision record's frontmatter and that the generated index tables are current (`plans --check`), lint plan structure with Vale, and print document lengths as advisory output. Runs on `macos-26` because Swift ships preinstalled; never builds the package itself. |
 
 **Platform coverage (package)**: macOS (build+test), iOS (build only), visionOS (build only), tvOS (BitcoinKernel only — `Bitcoin` depends on `bitcoind`'s `execvp()` call which is `__TVOS_PROHIBITED`). Linux via Docker. watchOS is blocked by additional POSIX prohibitions (`fork`, `execvp`, etc.) and not in the matrix.
 
@@ -50,3 +51,4 @@ This directory contains GitHub configuration and CI workflows.
 - **tvOS cross-compile (BitcoinKernel only)**: same shape, but use `-scheme "BitcoinKernel"` and `generic/platform=tvOS`. The umbrella scheme fails on tvOS — see Gotchas.
 - **DocC validation**: `swift package generate-documentation --target Bitcoin --analyze --warnings-as-errors` (repeat for `BitcoinKernel`)
 - **Tuist demo apps**: `swift package --disable-sandbox tuist generate -p Projects/ --no-open`, then `swift package --disable-sandbox tuist test <NodeApp|KernelApp> -p Projects/ --platform <macos|ios>`
+- **Planning documents**: `swift test --package-path Development/Tools` (checker unit tests) · `swift run --package-path Development/Tools plans --check` (frontmatter valid, indexes current; omit `--check` to rewrite them) · `vale Development/` (plan structure). All three are fast and need no package build.
