@@ -1,0 +1,52 @@
+name: Development Docs
+
+on:
+  push:
+    branches: [main]
+    paths: ['Development/**', '.vale.ini', '.vale/**', '.github/workflows/development-docs.yml']
+  pull_request:
+    branches: [main]
+    paths: ['Development/**', '.vale.ini', '.vale/**', '.github/workflows/development-docs.yml']
+
+permissions: {}
+
+concurrency:
+  group: development-docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Plans & decision records
+    # Apple machine because Swift ships preinstalled; the checker is its own
+    # dependency-free package, so this never builds the project itself.
+    runs-on: macos-26
+    # actions/checkout needs this to fetch a private repository; every other
+    # workflow in this repository grants it the same way.
+    permissions:
+      contents: read
+    env:
+      DEVELOPER_DIR: "/Applications/Xcode_26.4.app/Contents/Developer"
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Unit-test the checker
+        run: swift test --package-path Development/Tools
+
+      - name: Validate frontmatter and index freshness
+        run: swift run --package-path Development/Tools plans --check
+
+      - name: Install Vale
+        run: brew install vale
+
+      - name: Lint plan structure
+        run: vale Development/
+
+      # Advisory only, and deliberately not a failure: length is a symptom, not
+      # the defect. This prints the numbers so a real threshold can be set later
+      # from observation rather than guessed at now.
+      - name: Report plan length
+        run: |
+          echo "| lines | file |"
+          echo "|---|---|"
+          find Development -name '*.md' -not -path '*/.build/*' -exec wc -l {} + \
+            | sort -rn | sed 's/^ *//' | awk 'NF==2 && $2!="total" {printf "| %s | %s |\n", $1, $2}'

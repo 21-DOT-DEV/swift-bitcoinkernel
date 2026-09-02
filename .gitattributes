@@ -40,8 +40,9 @@ patches/**                  export-ignore
 .build/**                   export-ignore linguist-vendored
 .github/**                  export-ignore linguist-vendored
 .swiftpm/**                 export-ignore linguist-vendored
-.specify/**                 export-ignore linguist-vendored
-.windsurf/**                export-ignore linguist-vendored
+Development/**              export-ignore linguist-vendored
+.vale/**                    export-ignore linguist-vendored
+.vale.ini                   export-ignore
 
 # CI/CD and tooling configs
 Dockerfile                  export-ignore
