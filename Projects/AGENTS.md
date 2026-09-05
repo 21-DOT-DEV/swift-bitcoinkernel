@@ -72,7 +72,7 @@ let args = DaemonConfig.buildArguments()
 let args = DaemonConfig.buildArguments(torProxy: torViewModel.proxyAddress)
 ```
 
-When `torProxy` is `nil` and `tor_enabled` is true, the `-proxy=` argument is omitted (Tor not yet bootstrapped — the daemon should start *without* a stale proxy and reconnect later). When `tor_enabled` is false, the `torProxy` parameter is ignored.
+When `torProxy` is `nil` and `tor_enabled` is true, the `-proxy=` argument is omitted (Tor not yet bootstrapped — the daemon should start *without* a stale proxy and reconnect later). **This describes the interface path only.** An unattended run started by a Shortcuts action refuses to start at all in that case rather than connecting directly, because nobody is watching to notice (`NodeAutomation.startArguments`; see `Development/ADRs/0006-unattended-runs-never-bypass-tor.md`). When `tor_enabled` is false, the `torProxy` parameter is ignored.
 
 ### Manual Tor integration testing (network-gated)
 

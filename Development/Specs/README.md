@@ -45,4 +45,5 @@ disagree. Do not hand-edit it.
 |---|---|---|---|---|
 | 001 | App icons for the demo apps | — | In Progress | [plan.md](001-app-icons/plan.md) |
 | 002 | Keep Screen Awake toggle in both demo apps | — | Implemented | [plan.md](002-keep-screen-awake/plan.md) |
+| 003 | Home automation action that runs the node unattended | — | Planned | [plan.md](003-node-automation-action/plan.md) |
 <!-- END GENERATED INDEX -->

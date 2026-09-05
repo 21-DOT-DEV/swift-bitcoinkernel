@@ -20,9 +20,12 @@ enum AppTab: String, Hashable {
 
 struct ContentView: View {
     @State private var selectedTab: AppTab = .dashboard
-    @State private var nodeViewModel = NodeViewModel()
+    // Owned by the process, not by this screen, so a background-launched action can
+    // reach them when no interface exists. Everything below reads them exactly as it
+    // did when they were created here.
+    private var nodeViewModel: NodeViewModel { NodeSession.shared.node }
+    private var torViewModel: TorViewModel { NodeSession.shared.tor }
     @State private var commandsViewModel = CommandsViewModel()
-    @State private var torViewModel = TorViewModel(subsystem: "dev.21.NodeApp")
     @State private var dashboardViewModel = DashboardViewModel(
         source: RPCClient(url: InternalRPC.url, cookieFile: InternalRPC.cookieFileURL)
     )
