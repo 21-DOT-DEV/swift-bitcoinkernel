@@ -9,6 +9,10 @@ superseded_by: null
 
 # 0007 — An unattended action watches its own clock rather than waiting to be told to stop
 
+> Amended by ADR 0009, which narrows when this applies. An unattended run now leaves the
+> node running by default, so there is usually nothing to stop and no time to reserve.
+> Everything below still governs the case where stopping was explicitly asked for.
+
 ## Context
 
 An action triggered by an automation gets roughly 30 seconds. The obvious design is

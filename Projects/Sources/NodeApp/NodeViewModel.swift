@@ -33,7 +33,6 @@ final class NodeViewModel {
 
     /// The most recent start failure surfaced to the UI, if any. Cleared on a
     /// fresh `start()` and when an RPC poll subsequently succeeds.
-    private(set) var lastStartError: NodeError?
 
     /// The `TorViewModel.sessionID` captured when the daemon was launched, if any.
     ///
@@ -63,7 +62,6 @@ final class NodeViewModel {
 
     func start(arguments: [String], torSession: UUID? = nil, torSocksPort: UInt16? = nil) {
         guard nodeState == .stopped else { return }
-        lastStartError = nil
         startRunCounter += 1
         let run = startRunCounter
 
@@ -87,8 +85,14 @@ final class NodeViewModel {
                 )
                 nodeLogger.info("Direct RPC bridge bootstrapped")
             } catch {
+                // Not a failure worth reporting: the quicker in-process route to the
+                // node did not get set up, and every request falls back to the
+                // ordinary one, which works. Recording it as a start failure is what
+                // put "Another instance may hold the data directory" on screen while
+                // a node was seven minutes into loading its block index, perfectly
+                // healthy. The dashboard shows whatever the node itself last said,
+                // which during start-up is its own description of the phase.
                 nodeLogger.warning("Bridge bootstrap failed: \(error.localizedDescription) — HTTP fallback active")
-                lastStartError = .rpcUnavailable
             }
             // Guard against a stop() that raced ahead of us.
             if nodeState == .starting {
@@ -174,7 +178,6 @@ final class NodeViewModel {
             let info = try await client.getBlockchainInfo()
             guard !Task.isCancelled, nodeState == .running else { return }
             isSyncing = info.initialblockdownload
-            lastStartError = nil
             Self.persistLastKnown(height: info.blocks, chain: info.chain)
         } catch {
             nodeLogger.debug("Sync state poll failed: \(error.localizedDescription)")

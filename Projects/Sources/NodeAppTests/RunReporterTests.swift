@@ -34,37 +34,27 @@ struct RunOutcomeTests {
         #expect(message.lowercased().contains("left"))
     }
 
-    @Test func acompletedRunStatesTheGainAsAFloor() {
-        // The node keeps downloading through shutdown and the height is read before
-        // it, so a bare number would understate the run. Matches the dialog wording.
-        let message = RunOutcome.completed(
-            height: 554_355, blocksGained: 20, connections: 3
-        ).message
-        #expect(message.contains("at least"))
-        #expect(message.contains("20"))
+    @Test func acompletedRunReportsProgressSinceTheLastCheck() {
+        // Not blocks gained during the action, which is now always about zero: the
+        // action returns as soon as the node answers and the node carries on
+        // downloading for minutes afterwards. Measuring from the last recorded height
+        // captures that, and it is the only figure that shows the feature working.
+        let message = RunOutcome.completed(height: 570_926, blocksSinceLastCheck: 2_145).message
+        #expect(message.contains("2145") || message.contains("2,145"))
+        #expect(message.lowercased().contains("since"))
     }
 
-    @Test func aRunThatGainedNothingWithNoPeersSaysSo() {
-        // Two runs in three currently gain nothing because no peer connects in time.
-        // A report that hides this looks like a broken node rather than a short window.
-        let message = RunOutcome.completed(
-            height: 554_355, blocksGained: 0, connections: 0
-        ).message
-        #expect(message.lowercased().contains("no connections"))
+    @Test func noProgressSinceTheLastCheckIsSaidPlainly() {
+        let message = RunOutcome.completed(height: 570_926, blocksSinceLastCheck: 0).message
+        #expect(message.lowercased().contains("no new blocks"))
     }
 
-    @Test func aRunThatGainedNothingDespitePeersDoesNotBlameTheNetwork() {
-        let message = RunOutcome.completed(
-            height: 554_355, blocksGained: 0, connections: 4
-        ).message
-        #expect(!message.lowercased().contains("no connections"))
-    }
-
-    @Test func anUnmeasuredGainIsNotReportedAsZero() {
-        let message = RunOutcome.completed(
-            height: 554_355, blocksGained: nil, connections: 1
-        ).message
-        #expect(!message.contains("at least"))
+    @Test func anUnmeasurableGainIsNotReportedAsZero() {
+        // Never having recorded a height is a different statement from having
+        // recorded one and found it unchanged.
+        let message = RunOutcome.completed(height: 570_926, blocksSinceLastCheck: nil).message
+        #expect(!message.lowercased().contains("no new blocks"))
+        #expect(message.contains("570926") || message.contains("570,926"))
     }
 
     @Test func aFailureCarriesItsReasonVerbatim() {
@@ -78,35 +68,24 @@ struct RunOutcomeTests {
         let all: [RunOutcome] = [
             .refusedPrivateNetworkUnavailable,
             .adopted(height: 1),
-            .completed(height: 1, blocksGained: nil, connections: nil),
+            .completed(height: 1, blocksSinceLastCheck: nil),
             .failed(reason: "x")
         ]
         for outcome in all { #expect(!outcome.message.isEmpty) }
     }
 }
 
-/// Stands in for a reporter that fails at every opportunity. Declared at file scope
-/// rather than nested in the suite, where the conformance does not resolve.
-private struct HostileReporter: RunReporter {
-    func begin(startHeight: Int?, deadline: ContinuousClock.Instant) async {}
-    func finish(_ outcome: RunOutcome) async {}
-}
+#if os(iOS)
+@Suite("The Shortcuts list stays in step with the fuller one")
+struct OutcomeDerivationTests {
 
-@Suite("Reporting never breaks a run")
-struct RunReporterContractTests {
-
-    @Test func theProtocolOffersNoWayToFailARun() async {
-        // Not a behavioural test — a shape test. `begin` and `finish` are async and
-        // non-throwing by design, so a reporting failure cannot propagate into the
-        // sync. If either ever gains `throws`, this stops compiling.
-        let reporter: any RunReporter = HostileReporter()
-        await reporter.begin(startHeight: nil, deadline: .now)
-        await reporter.finish(.failed(reason: "ignored"))
-    }
-
-    @Test func theNoOpReporterIsTheMacOSDefault() async {
-        let reporter = NoOpReporter()
-        await reporter.begin(startHeight: 1, deadline: .now)
-        await reporter.finish(.adopted(height: 1))
+    @Test func eachSituationMapsToItsShortcutsEquivalent() {
+        // The value of deriving is not this test — it is that adding a new case to
+        // RunOutcome stops the app compiling until the mapping accounts for it.
+        #expect(NodeRunOutcome(.adopted(height: 1)) == .alreadyRunning)
+        #expect(NodeRunOutcome(.refusedPrivateNetworkUnavailable) == .waitingOnPrivateNetwork)
+        #expect(NodeRunOutcome(.failed(reason: "x")) == .couldNotStart)
+        #expect(NodeRunOutcome(.completed(height: 1, blocksSinceLastCheck: nil)) == .startedAndRan)
     }
 }
+#endif

@@ -13,185 +13,22 @@ import Bitcoin
 import Foundation
 import os.log
 
-// Phone and tablet only. A home automation runs from a home hub — a HomePod, Apple
-// TV, or iPad — and never from a Mac, so this feature's purpose is unreachable there.
-// See Development/Specs/003-node-automation-action/plan.md §2.
-//
-// Excluded at compile time rather than by an availability annotation: an annotation
-// still compiles the file on macOS and only refuses it at runtime, which would ship
-// the action's code into a build that must never offer it. `os(iOS)` covers both
-// iPhone and iPad.
+// Phone and tablet only, for the reason recorded in
+// Development/Specs/003-node-automation-action/plan.md §2. Excluded at compile
+// time rather than by an availability annotation, which would still compile this
+// into a Mac build and only refuse it at runtime.
 #if os(iOS)
 
-// UIKit only for the background-task assertion below; the rest of this file is
-// framework-agnostic. Imported inside the guard because macOS has no UIKit.
-import UIKit
-
-/// Everything this action reports to the system log, under one category so it can be
-/// filtered to on its own.
-///
-/// Written at `notice` level rather than `debug` on purpose: debug messages are held
-/// in memory only and are gone by the time anyone reads the log after a failed
-/// automation. Values are marked public explicitly, because dynamic values are
-/// redacted by default and a log full of `<private>` answers nothing.
-///
-/// Subsystem and category follow what the app already uses elsewhere — the app's
-/// identifier, then a word naming the area.
-enum RunLog {
-    static let logger = Logger(subsystem: "dev.21.NodeApp", category: "Shortcut")
-
-    static func entered(privacyEnabled: Bool) {
-        logger.notice("run: entered, privacy network enabled = \(privacyEnabled, privacy: .public)")
-    }
-
-    static func decided(_ step: String) {
-        logger.notice("run: step = \(step, privacy: .public)")
-    }
-
-    static func mark(_ event: String, msSinceStart: Int) {
-        logger.notice("run: \(event, privacy: .public) at \(msSinceStart, privacy: .public) ms")
-    }
-
-    static func interrupted(msSinceStart: Int) {
-        // The reason the run ended, which the failure notice never says.
-        logger.notice("run: INTERRUPTED by the system at \(msSinceStart, privacy: .public) ms")
-    }
-
-    static func finished(outcome: String, height: Int, msSinceStart: Int) {
-        logger.notice(
-            "run: finished \(outcome, privacy: .public), height \(height, privacy: .public), total \(msSinceStart, privacy: .public) ms")
-    }
-
-    static func failed(_ reason: String, msSinceStart: Int) {
-        logger.error("run: FAILED \(reason, privacy: .public) at \(msSinceStart, privacy: .public) ms")
-    }
-}
-
-/// What an unattended run did.
-enum NodeRunOutcome: String, AppEnum {
-    case startedAndRan
-    case alreadyRunning
-    case waitingOnPrivateNetwork
-    case couldNotStart
-
-    static var typeDisplayRepresentation: TypeDisplayRepresentation { "Node Run Outcome" }
-
-    static var caseDisplayRepresentations: [NodeRunOutcome: DisplayRepresentation] {
-        [.startedAndRan: "Started and ran",
-         .alreadyRunning: "Already running",
-         .waitingOnPrivateNetwork: "Waiting on private network",
-         .couldNotStart: "Could not start"]
-    }
-}
-
-/// What the action hands back.
-///
-/// Four named fields, each usable as its own variable in the next step of someone's
-/// automation. Height alone misleads: a node tracks both the height it has fully
-/// validated and the headers it knows about, and during catch-up the second runs far
-/// ahead of the first, so a height with no remaining-blocks figure reads as "caught
-/// up" when it is not.
-///
-/// These names are a commitment — renaming or removing one silently breaks
-/// automations people have already built.
-struct NodeRunReport: TransientAppEntity {
-    static var typeDisplayRepresentation: TypeDisplayRepresentation { "Node Run Report" }
-
-    @Property(title: "Outcome") var outcome: NodeRunOutcome
-    /// Which chain the height belongs to. A height means nothing without it.
-    @Property(title: "Chain") var chain: String
-    @Property(title: "Block height") var blockHeight: Int
-    @Property(title: "Blocks behind") var blocksBehind: Int
-    /// Minutes since the height was recorded, when it came from saved data rather
-    /// than a live reading. Absent means the figure is live.
-    @Property(title: "Height age in minutes") var heightAgeMinutes: Int?
-    /// How long the node was genuinely running. Startup produces no blocks, so this
-    /// is the only interval in which the height could have moved.
-    @Property(title: "Seconds running") var secondsRunning: Double
-    /// Blocks gained during this run, measured at both ends rather than inferred by
-    /// comparing against the previous run. Absent when it could not be measured.
-    @Property(title: "Blocks gained") var blocksGained: Int?
-    /// Connections the node had when the run ended. A run that gained nothing with
-    /// zero connections is explained; one with peers is a different problem.
-    @Property(title: "Connections") var connections: Int?
-
-    var displayRepresentation: DisplayRepresentation { DisplayRepresentation(title: "\(summary)") }
-
-    var summary: String {
-        switch outcome {
-        case .startedAndRan:
-            let ran = String(format: "%.1f", secondsRunning)
-            let gained = NodeAutomation.gainPhrase(blocksGained)
-            let behind = blocksBehind > 0 ? ", \(blocksBehind) behind" : ""
-            // Nothing gained with nobody to gain it from is a different problem from
-            // nothing gained despite peers, and only the report can tell them apart.
-            let peers = (blocksGained == 0 && connections == 0) ? " No connections." : ""
-            return "Ran \(ran)s on \(chain): \(gained), now at \(blockHeight)\(behind).\(peers)"
-        case .alreadyRunning:
-            return "Already running; left alone. Height \(blockHeight) on \(chain)\(ageSuffix)."
-        case .waitingOnPrivateNetwork:
-            return "Spent the run establishing the private network; the node did not start."
-        case .couldNotStart:
-            return "The node did not come up in time; nothing was synced."
-        }
-    }
-
-    private var ageSuffix: String {
-        guard let heightAgeMinutes else { return "" }
-        return " (recorded \(heightAgeMinutes) minutes ago)"
-    }
-
-    init() {}
-
-    init(outcome: NodeRunOutcome, chain: String, blockHeight: Int, blocksBehind: Int,
-         heightAgeMinutes: Int?, secondsRunning: Double,
-         blocksGained: Int? = nil, connections: Int? = nil) {
-        self.init()
-        self.outcome = outcome
-        self.chain = chain
-        self.blockHeight = blockHeight
-        self.blocksBehind = blocksBehind
-        self.heightAgeMinutes = heightAgeMinutes
-        self.secondsRunning = secondsRunning
-        self.blocksGained = blocksGained
-        self.connections = connections
-    }
-}
-
-/// Holds the system's "do not suspend this app" assertion for the length of a run.
-///
-/// The log showed the app raising none at all, which lets the system freeze it partway
-/// through. For a Bitcoin node that means the data directory stays locked and the next
-/// run cannot start. The expiry callback is a backstop only: it is given a couple of
-/// seconds and a clean shutdown has been measured at up to 4.8, so shutting down must
-/// already be underway by then rather than starting there.
+/// Whether a shutdown has finished. A reference so the polling loop and the task
+/// doing the work see the same value; both are on the main actor, so no lock.
 @MainActor
-final class BackgroundAssertion {
-    private var id: UIBackgroundTaskIdentifier = .invalid
-
-    init(name: String, onExpiry: @escaping @MainActor () -> Void) {
-        id = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
-            // Documented to be called on the main thread. Asserting that rather than
-            // hopping to it: a hop would land after the system has already killed us.
-            MainActor.assumeIsolated {
-                onExpiry()
-                self?.end()
-            }
-        }
-    }
-
-    /// Deliberately safe to call twice, because both the normal path and the expiry
-    /// callback end it and either can come first. Not ending it at all, or ending it
-    /// twice, both get the app killed.
-    func end() {
-        guard id != .invalid else { return }
-        UIApplication.shared.endBackgroundTask(id)
-        id = .invalid
-    }
+private final class ShutdownProgress {
+    var finished = false
 }
 
 /// Starts the node unattended, lets it run for the window the system allows, shuts it
 /// down cleanly, and reports what happened.
+
 struct SyncNodeIntent: AppIntent {
     static let title: LocalizedStringResource = "Sync Bitcoin Node"
     static let description = IntentDescription(
@@ -204,8 +41,24 @@ struct SyncNodeIntent: AppIntent {
         """)
     static let openAppWhenRun = false
 
+    /// Whether to stop the node when the action finishes.
+    ///
+    /// Off by default, and that default is the point. The action gets about 27
+    /// seconds, but the node it starts carries on for minutes afterwards, which is
+    /// when it actually downloads anything. Switching this on returns the phone's
+    /// resources sooner at the cost of most of what the run would have achieved.
+    @Parameter(
+        title: "Stop the node when finished",
+        description:
+            "Leave this off to let the node keep syncing in the background after the action finishes, which is when most blocks arrive. Turn it on to stop the node as soon as the action ends.",
+        default: false
+    )
+    var stopWhenFinished: Bool
+
     @MainActor
-    func perform() async throws -> some IntentResult & ReturnsValue<NodeRunReport> & ProvidesDialog {
+    func perform() async throws -> some IntentResult & ReturnsValue<NodeRunReport>
+        & ProvidesDialog
+    {
         let started = ContinuousClock.now
         let deadline = NodeAutomation.workDeadline(from: started)
         func ms() -> Int { Int(started.duration(to: .now) / .milliseconds(1)) }
@@ -219,7 +72,7 @@ struct SyncNodeIntent: AppIntent {
         // On an unattended run the dialog this action returns has nowhere to be
         // displayed — nobody is watching a 3am automation — so this is the only
         // evidence the run happened (ADR 0006).
-        let reporter: any RunReporter = NotificationReporter()
+        let reporter = NotificationReporter()
 
         let session = NodeSession.shared
         let privacyEnabled = UserDefaults.standard.bool(forKey: "tor_enabled")
@@ -233,7 +86,7 @@ struct SyncNodeIntent: AppIntent {
         case .reportExistingNode:
             RunLog.decided("reportExistingNode")
             let existing = Self.savedReport(outcome: .alreadyRunning)
-            await reporter.finish(.adopted(height: existing.blockHeight))
+            await reporter.post(.adopted(height: existing.blockHeight))
             return Self.finish(existing, ms: ms())
 
         case .waitForPrivateNetwork:
@@ -242,7 +95,7 @@ struct SyncNodeIntent: AppIntent {
             RunLog.mark("privacy network start requested", msSinceStart: ms())
             await Self.holdUntil(deadline, log: { RunLog.interrupted(msSinceStart: ms()) })
             RunLog.mark("privacy network ready = \(session.tor.isReady)", msSinceStart: ms())
-            await reporter.finish(.refusedPrivateNetworkUnavailable)
+            await reporter.post(.refusedPrivateNetworkUnavailable)
             return Self.finish(Self.savedReport(outcome: .waitingOnPrivateNetwork), ms: ms())
 
         case .startNode:
@@ -250,7 +103,8 @@ struct SyncNodeIntent: AppIntent {
             // Checked and set together, so two runs triggered close together cannot
             // both believe they own the node.
             guard session.claimForAutomation() else {
-                RunLog.failed("another unattended run already holds the session", msSinceStart: ms())
+                RunLog.failed(
+                    "another unattended run already holds the session", msSinceStart: ms())
                 return Self.finish(Self.savedReport(outcome: .alreadyRunning), ms: ms())
             }
             defer { session.releaseAutomation() }
@@ -264,12 +118,15 @@ struct SyncNodeIntent: AppIntent {
                 )
             } catch {
                 // ADR 0006: never start on a direct connection.
-                RunLog.failed("refused to start without the private network", msSinceStart: ms())
-                await reporter.finish(.refusedPrivateNetworkUnavailable)
-                return Self.finish(Self.savedReport(outcome: .waitingOnPrivateNetwork), ms: ms())
+                RunLog.failed(
+                    "refused to start without the private network", msSinceStart: ms())
+                await reporter.post(.refusedPrivateNetworkUnavailable)
+                return Self.finish(
+                    Self.savedReport(outcome: .waitingOnPrivateNetwork), ms: ms())
             }
 
-            let socksPort = privacyEnabled
+            let socksPort =
+                privacyEnabled
                 ? session.tor.socksEndpoint.map { UInt16(clamping: $0.port) }
                 : nil
             session.node.start(
@@ -283,55 +140,88 @@ struct SyncNodeIntent: AppIntent {
             // Not a fixed wait: a length chosen so one thing finishes before another
             // reports how busy the machine is, not whether the code works (ADR 0007
             // and its sibling in the other project).
-            guard let ready = await Self.waitUntilAnswering(session: session, deadline: deadline) else {
-                RunLog.failed("node never reported ready before the deadline", msSinceStart: ms())
-                await reporter.finish(.failed(reason: "it did not come up in time"))
-                await Self.shutDown(session: session, ms: ms)
+            guard
+                let ready = await Self.waitUntilAnswering(session: session, deadline: deadline)
+            else {
+                RunLog.failed(
+                    "node never reported ready before the deadline", msSinceStart: ms())
+                await reporter.post(.failed(reason: "it did not come up in time"))
+                if NodeAutomation.shouldRequestShutdown(
+                    nodeAnswered: false, askedToStop: stopWhenFinished
+                ) {
+                    _ = await Self.shutDown(
+                        session: session, within: NodeAutomation.shutdownReserve, ms: ms)
+                }
+                // Left running deliberately. It finishes its start-up on its own
+                // thread or dies with the process; either way the run returns instead
+                // of hanging until the system kills it.
                 return Self.finish(Self.savedReport(outcome: .couldNotStart), ms: ms())
             }
-            let baseline = ready.reading
-            RunLog.mark("node READY at height \(baseline.height)", msSinceStart: ms())
+            RunLog.mark("node READY at height \(ready.reading.height)", msSinceStart: ms())
 
-            await Self.holdUntil(deadline, log: { RunLog.interrupted(msSinceStart: ms()) })
-            let stoppedAt = ContinuousClock.now
-            let running = NodeAutomation.secondsRunning(readyAt: ready.at, stoppedAt: stoppedAt)
-            RunLog.mark("hold ended after \(String(format: "%.1f", running))s running", msSinceStart: ms())
+            // Progress is measured from the last height this app recorded, not from
+            // the start of this run. The run itself gains almost nothing — it is
+            // about to return — while the node carries on downloading for minutes
+            // after it does. Measuring from the recorded height is what captures
+            // that, and it is the only figure showing the feature works at all.
+            let previous = NodeViewModel.lastKnown.map {
+                NodeAutomation.LiveReading(chain: $0.chain, height: $0.height, blocksBehind: 0)
+            }
+            let sinceLastCheck = NodeAutomation.blocksGained(from: previous, to: ready.reading)
+            NodeViewModel.persistLastKnown(
+                height: ready.reading.height, chain: ready.reading.chain)
 
-            // Read while the node is still up: after shutdown there is nothing to ask.
-            let live = await Self.readLive(session: session, ms: ms)
-            let peers = await Self.readConnections(session: session, ms: ms)
-            RunLog.mark("connections = \(peers.map(String.init) ?? "unknown")", msSinceStart: ms())
-
-            // Reported before the shutdown wait rather than after. The wait cannot be
-            // interrupted and has run to 5.1 s, so a run killed inside it would
-            // otherwise report nothing at all. The height cannot be re-read after
-            // shutdown either way, so nothing is lost by reporting early.
-            await reporter.finish(.completed(
-                height: live?.height ?? Self.savedReport(outcome: .startedAndRan).blockHeight,
-                blocksGained: NodeAutomation.blocksGained(from: baseline, to: live),
-                connections: peers
-            ))
-
-            let shutdownBegan = ContinuousClock.now
-            await Self.shutDown(session: session, ms: ms)
-            let shutdownTook = shutdownBegan.duration(to: .now)
-            if NodeAutomation.shutdownOverran(shutdownTook) {
+            // Only wait if we were asked to stop the node afterwards. Waiting
+            // otherwise buys nothing: the blocks arrive after this returns either
+            // way, and lingering only pushes the run toward the system's cut-off,
+            // which has already produced one visible timeout.
+            var ran = 0.0
+            var live: NodeAutomation.LiveReading? = nil
+            var peers: Int? = nil
+            if NodeAutomation.shouldRequestShutdown(
+                nodeAnswered: true, askedToStop: stopWhenFinished
+            ) {
+                await Self.holdUntil(deadline, log: { RunLog.interrupted(msSinceStart: ms()) })
+                ran = NodeAutomation.secondsRunning(readyAt: ready.at, stoppedAt: .now)
+                // Read while the node is still up: after it stops there is nothing
+                // left to ask.
+                live = await Self.readLive(session: session, ms: ms)
+                peers = await Self.readConnections(session: session, ms: ms)
                 RunLog.mark(
-                    "shutdown OVERRAN its reserve: took \(shutdownTook), held back \(NodeAutomation.shutdownReserve)",
+                    "waited \(String(format: "%.1f", ran))s, connections = \(peers.map(String.init) ?? "unknown")",
                     msSinceStart: ms())
             }
 
-            guard let live else {
-                let report = Self.savedReport(outcome: .startedAndRan)
-                report.secondsRunning = running
-                report.connections = peers
-                return Self.finish(report, ms: ms())
+            let tip = live ?? ready.reading
+            await reporter.post(
+                .completed(height: tip.height, blocksSinceLastCheck: sinceLastCheck))
+
+            if NodeAutomation.shouldRequestShutdown(
+                nodeAnswered: true, askedToStop: stopWhenFinished
+            ) {
+                let shutdownBegan = ContinuousClock.now
+                _ = await Self.shutDown(
+                    session: session, within: NodeAutomation.shutdownReserve, ms: ms
+                )
+                let took = shutdownBegan.duration(to: .now)
+                if NodeAutomation.shutdownOverran(took) {
+                    RunLog.mark(
+                        "shutdown OVERRAN its reserve: took \(took), held back \(NodeAutomation.shutdownReserve)",
+                        msSinceStart: ms())
+                }
+            } else {
+                RunLog.mark("left the node running, as configured", msSinceStart: ms())
             }
+
+            // The three run-specific figures stay absent unless the run actually
+            // waited and measured them. Absent says "not measured"; zero would say
+            // "measured, and it was nothing", and confusing those is what made the
+            // earlier reporting misleading.
             let report = NodeRunReport(
-                outcome: .startedAndRan, chain: live.chain, blockHeight: live.height,
-                blocksBehind: live.blocksBehind, heightAgeMinutes: nil, secondsRunning: running,
-                blocksGained: NodeAutomation.blocksGained(from: baseline, to: live),
-                connections: peers
+                outcome: .startedAndRan, chain: tip.chain, blockHeight: tip.height,
+                blocksBehind: tip.blocksBehind, heightAgeMinutes: nil,
+                secondsRunning: stopWhenFinished ? ran : nil,
+                blocksSinceLastCheck: sinceLastCheck, connections: peers
             )
             return Self.finish(report, ms: ms())
         }
@@ -393,16 +283,47 @@ struct SyncNodeIntent: AppIntent {
         do {
             return NodeAutomation.reading(from: try await session.reader.blockchainInfo())
         } catch {
-            RunLog.failed("live reading failed: \(error.localizedDescription)", msSinceStart: ms())
+            RunLog.failed(
+                "live reading failed: \(error.localizedDescription)", msSinceStart: ms())
             return nil
         }
     }
 
+    /// Asks the node to stop and waits at most `limit` for it. Returns whether it
+    /// finished in time.
+    ///
+    /// This bounds the *waiting*, not the shutdown — the shutdown itself still cannot
+    /// be interrupted (ADR 0007), and this does not try to. The distinction is the
+    /// whole point: a run that waits forever gets killed by the system and shows the
+    /// person a timeout error, while a run that stops waiting returns cleanly and the
+    /// daemon finishes on its own thread or dies with the process. Same outcome for
+    /// the node, minus the error and minus the ungraceful kill of everything else.
+    ///
+    /// Polls rather than racing in a task group, because a group waits for every
+    /// child before it returns — the loser would keep the run blocked exactly as
+    /// before. The blocking wait itself is already on a detached thread
+    /// (`NodeViewModel.performStop`), so the main actor stays free to poll.
     @MainActor
-    private static func shutDown(session: NodeSession, ms: () -> Int) async {
+    private static func shutDown(
+        session: NodeSession, within limit: Duration, ms: () -> Int
+    ) async -> Bool {
         RunLog.mark("shutdown started", msSinceStart: ms())
-        await session.node.performStop()
-        RunLog.mark("shutdown finished", msSinceStart: ms())
+        let progress = ShutdownProgress()
+        Task { @MainActor in
+            await session.node.performStop()
+            progress.finished = true
+        }
+        let stopWaitingAt = ContinuousClock.now.advanced(by: limit)
+        while ContinuousClock.now < stopWaitingAt {
+            if progress.finished {
+                RunLog.mark("shutdown finished", msSinceStart: ms())
+                return true
+            }
+            do { try await Task.sleep(for: .milliseconds(100)) } catch { break }
+        }
+        RunLog.mark(
+            "shutdown UNFINISHED after \(limit); returning without it", msSinceStart: ms())
+        return false
     }
 
     /// Builds a report from the saved tip, since a node that is starting, stopping, or
@@ -412,20 +333,23 @@ struct SyncNodeIntent: AppIntent {
         guard let last = NodeViewModel.lastKnown else {
             // Nothing has ever been recorded. Blocks-behind is -1 for "unknown" here
             // too: zero would claim the node is caught up at height zero.
-            return NodeRunReport(outcome: outcome, chain: "unknown", blockHeight: 0,
-                                 blocksBehind: -1, heightAgeMinutes: nil, secondsRunning: 0)
+            return NodeRunReport(
+                outcome: outcome, chain: "unknown", blockHeight: 0,
+                blocksBehind: -1, heightAgeMinutes: nil, secondsRunning: nil)
         }
         let age = Int(Date().timeIntervalSince(last.date) / 60)
         // Blocks-behind is unknown from a saved figure; it is reported as -1 rather
         // than 0, because 0 would claim the node is caught up.
-        return NodeRunReport(outcome: outcome, chain: last.chain, blockHeight: last.height,
-                             blocksBehind: -1, heightAgeMinutes: age, secondsRunning: 0)
+        return NodeRunReport(
+            outcome: outcome, chain: last.chain, blockHeight: last.height,
+            blocksBehind: -1, heightAgeMinutes: age, secondsRunning: nil)
     }
 
     private static func finish(
         _ report: NodeRunReport, ms: Int
     ) -> some IntentResult & ReturnsValue<NodeRunReport> & ProvidesDialog {
-        RunLog.finished(outcome: report.outcome.rawValue, height: report.blockHeight, msSinceStart: ms)
+        RunLog.finished(
+            outcome: report.outcome.rawValue, height: report.blockHeight, msSinceStart: ms)
         return .result(value: report, dialog: IntentDialog(stringLiteral: report.summary))
     }
 }
@@ -433,14 +357,5 @@ struct SyncNodeIntent: AppIntent {
 /// Publishes the action so it appears in Shortcuts and can be added to a Home
 /// automation. Gated by availability rather than a compile-time condition, because
 /// this list accepts only platform-availability conditions.
-struct NodeAppShortcuts: AppShortcutsProvider {
-    static var appShortcuts: [AppShortcut] {
-        AppShortcut(
-            intent: SyncNodeIntent(),
-            phrases: ["Sync my node in \(.applicationName)"],
-            shortTitle: "Sync Bitcoin Node",
-            systemImageName: "bitcoinsign.circle"
-        )
-    }
-}
+
 #endif

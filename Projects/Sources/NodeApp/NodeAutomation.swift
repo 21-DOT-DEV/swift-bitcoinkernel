@@ -109,6 +109,25 @@ enum NodeAutomation {
         let blocksBehind: Int
     }
 
+    /// Whether a run should ask the node to stop.
+    ///
+    /// Two conditions, and both must hold.
+    ///
+    /// The person has to have asked for it. The action's own time is capped at about
+    /// 27 seconds, but the node it starts keeps running long after the action returns
+    /// — measured between 8 and 15 minutes — and that is when blocks actually arrive.
+    /// Stopping at the end of the action discarded all of it, so leaving the node
+    /// running is the default and stopping is opt-in.
+    ///
+    /// And only a node that answered at least once. One that never did is still inside
+    /// its own start-up, where a stop request cannot be serviced, and the wait for
+    /// it cannot be interrupted (ADR 0007) — so asking blocks until the system kills
+    /// the run. A device run on a locked phone took 121 s to load its block index,
+    /// hit this path, and was reported to the person as a timeout.
+    static func shouldRequestShutdown(nodeAnswered: Bool, askedToStop: Bool) -> Bool {
+        nodeAnswered && askedToStop
+    }
+
     /// Whether shutting down took longer than the time held back for it.
     ///
     /// Four device runs took 0.34, 2.07, 3.81 and 5.10 s against a 6 s reserve —
@@ -117,16 +136,6 @@ enum NodeAutomation {
     /// and each run reports its own overrun rather than the number being guessed.
     static func shutdownOverran(_ took: Duration) -> Bool { took > shutdownReserve }
 
-    /// Phrases a measured gain as a floor.
-    ///
-    /// The node keeps downloading while it shuts down, and the height is read before
-    /// shutdown starts, so the counted figure is at or below the true one — never
-    /// above. Device runs showed up to 11 blocks arriving in that gap. Stating a bare
-    /// number would understate the run by about a third.
-    static func gainPhrase(_ gained: Int?) -> String {
-        guard let gained else { return "gain not measured" }
-        return "at least +\(gained) blocks"
-    }
 
     /// Blocks gained between the start and end of a run.
     ///

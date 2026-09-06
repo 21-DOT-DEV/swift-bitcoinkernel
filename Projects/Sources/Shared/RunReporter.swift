@@ -20,13 +20,14 @@ public enum RunOutcome: Sendable, Equatable {
     case refusedPrivateNetworkUnavailable
     /// A node was already running, so it was read and left alone (ADR 0005).
     case adopted(height: Int)
-    /// Ran until the deadline.
+    /// The node was started.
     ///
-    /// `blocksGained` is a floor, never an exact count: the node keeps downloading
-    /// while it shuts down and the height is read before that begins. Device runs
-    /// showed up to 11 blocks arriving in that gap. `nil` means it could not be
-    /// measured at all, which is a different statement from zero.
-    case completed(height: Int, blocksGained: Int?, connections: Int?)
+    /// `blocksSinceLastCheck` counts from the last height this app recorded, not from
+    /// the start of this run. The run itself gains almost nothing — it returns as soon
+    /// as the node answers — while the node carries on downloading for minutes
+    /// afterwards. Measuring from the last recorded height is what captures that.
+    /// `nil` means no height was ever recorded, which is not the same as no progress.
+    case completed(height: Int, blocksSinceLastCheck: Int?)
     /// The node never came up in the time available.
     case failed(reason: String)
 
@@ -41,44 +42,15 @@ public enum RunOutcome: Sendable, Equatable {
         case let .adopted(height):
             return "A node was already running at height \(height) and was left alone."
 
-        case let .completed(height, blocksGained, connections):
-            var sentence = "Ran to height \(height)"
-            if let blocksGained {
-                sentence += ", gaining at least \(blocksGained) blocks"
-            }
-            sentence += "."
-            // Gaining nothing with nobody to gain it from is a short-window problem;
-            // gaining nothing despite peers is a different one. Only saying which
-            // stops a working feature from looking broken.
-            if blocksGained == 0, connections == 0 {
-                sentence += " No connections were made in time."
-            }
-            return sentence
+        case let .completed(height, blocksSinceLastCheck):
+            let tip = "Node running at height \(height)."
+            guard let blocksSinceLastCheck else { return tip }
+            return blocksSinceLastCheck == 0
+                ? tip + " No new blocks since the last check."
+                : tip + " \(blocksSinceLastCheck) blocks since the last check."
 
         case let .failed(reason):
             return "The node did not start: \(reason)."
         }
     }
-}
-
-/// Where a run reports to.
-///
-/// Neither method throws, and that is the point rather than an oversight: reporting
-/// is a side effect of a run and must never be able to fail one. An implementation
-/// that cannot deliver stays silent.
-public protocol RunReporter: Sendable {
-    /// Called before the private-network gate, so a refusal is still reported.
-    ///
-    /// Takes the deadline on the continuous clock — the same clock the run's own
-    /// budget uses — rather than a wall-clock date. Converting is the reporter's
-    /// problem, and only some reporters need to.
-    func begin(startHeight: Int?, deadline: ContinuousClock.Instant) async
-    func finish(_ outcome: RunOutcome) async
-}
-
-/// Reports nowhere. The default, and the whole implementation on macOS.
-public struct NoOpReporter: RunReporter {
-    public init() {}
-    public func begin(startHeight: Int?, deadline: ContinuousClock.Instant) async {}
-    public func finish(_ outcome: RunOutcome) async {}
 }

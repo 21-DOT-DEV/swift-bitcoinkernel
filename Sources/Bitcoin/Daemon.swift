@@ -70,7 +70,27 @@ public enum Daemon {
 
         let allArguments: [String] = ["bitcoind"] + arguments
 
-        Thread.detachNewThread {
+        // Created and configured rather than detached directly, because
+        // `Thread.detachNewThread` gives no way to set a quality of service. It must be
+        // set before the thread starts, which is why it is done here.
+        //
+        // `.utility` is the honest description either way: this runs for minutes with
+        // nobody waiting on it, and the default band claims more urgency than that.
+        //
+        // It is also a speculative attempt at a measured problem. Loading the block
+        // index takes 12-14 seconds when the screen is unlocked and 47 to 424 seconds
+        // when it is locked. The cause is not established. One possibility is that the
+        // system throttles disk reads for the lowest scheduling band, which this would
+        // avoid; another is that the app is being suspended and resumed repeatedly,
+        // which looks identical from outside and which this would not affect at all.
+        // There is no visibility inside the load to tell them apart.
+        //
+        // Evidence that a thread's own setting survives a limit applied to the whole
+        // app while it is in the background is weak, and what exists suggests it may
+        // not. Treat this as cheap to try and easy to measure — the node logs both ends
+        // of the load — not as a fix. A null result does not disprove throttling; it
+        // only rules out this lever.
+        let daemonThread = Thread {
             // Clear the sticky g_socks5_interrupt flag left over from the
             // previous shutdown. Upstream Bitcoin Core never resets it
             // because in the normal OS-process model the process exits
@@ -98,6 +118,9 @@ public enum Daemon {
             isRunning.withLock { $0 = false }
             finished.signal()
         }
+        daemonThread.name = "bitcoind"
+        daemonThread.qualityOfService = .utility
+        daemonThread.start()
     }
 
     // MARK: - Bridge Bootstrap

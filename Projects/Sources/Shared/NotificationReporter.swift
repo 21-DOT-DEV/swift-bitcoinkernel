@@ -19,18 +19,23 @@ import UserNotifications
 /// Notification Center until it is read. And the card's advantage — updating in place
 /// rather than stacking up — needs a stack to be worth having, which one run a day
 /// does not produce. See Development/Specs/003-node-automation-action/plan.md §7.
-public struct NotificationReporter: RunReporter {
+public struct NotificationReporter {
 
     /// A fixed identifier, so each run replaces the previous run's notification
     /// rather than adding to a pile. This is the update-in-place behaviour the Live
     /// Activity was wanted for, without a widget extension to deliver it.
-    private static let identifier = "dev.21.NodeApp.unattended-run"
+    ///
+    /// Derived from the running app rather than hard-coded, because this file is
+    /// compiled into both apps and each needs its own.
+    private static var identifier: String {
+        (Bundle.main.bundleIdentifier ?? "dev.21.app") + ".unattended-run"
+    }
 
     public init() {}
 
-    public func begin(startHeight: Int?, deadline: ContinuousClock.Instant) async {}
-
-    public func finish(_ outcome: RunOutcome) async {
+    /// Posts the one message an unattended run produces. Never throws: reporting is
+    /// a side effect of a run and must not be able to fail one.
+    public func post(_ outcome: RunOutcome) async {
         let center = UNUserNotificationCenter.current()
         guard await Self.canPost(center) else { return }
 

@@ -62,13 +62,7 @@ struct DashboardView: View {
                 }
             }
         } else if viewModel.chain == nil {
-            if let startError = nodeViewModel.lastStartError {
-                ContentUnavailableView {
-                    Label(startError.title, systemImage: "exclamationmark.triangle")
-                } description: {
-                    Text(startError.recovery)
-                }
-            } else if let error = viewModel.lastError {
+            if let error = viewModel.lastError {
                 ContentUnavailableView {
                     Label("Waiting for RPC", systemImage: "antenna.radiowaves.left.and.right.slash")
                 } description: {

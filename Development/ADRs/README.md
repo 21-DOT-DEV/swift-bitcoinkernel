@@ -43,4 +43,6 @@ The table below is generated from those frontmatter blocks. Do not hand-edit it.
 | 0005 | [Shortcuts actions run inside the app, and only stop a node they started](0005-shortcuts-actions-run-in-the-app.md) | Accepted | 2026-09-03 |
 | 0006 | [An unattended run never falls back to a direct connection](0006-unattended-runs-never-bypass-tor.md) | Accepted | 2026-09-03 |
 | 0007 | [An unattended action watches its own clock rather than waiting to be told to stop](0007-unattended-actions-own-their-deadline.md) | Accepted | 2026-09-04 |
+| 0008 | [Unattended timings are measured on a locked device, never an unlocked one](0008-unattended-timings-are-measured-on-a-locked-device.md) | Accepted | 2026-09-06 |
+| 0009 | [An unattended run leaves the node running unless asked to stop it](0009-unattended-runs-leave-the-node-running.md) | Accepted | 2026-09-06 |
 <!-- END GENERATED INDEX -->

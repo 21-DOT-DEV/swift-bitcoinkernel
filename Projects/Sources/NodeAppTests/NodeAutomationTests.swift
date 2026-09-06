@@ -195,20 +195,27 @@ private func chainInfo(_ json: String) throws -> BlockchainInfo {
     #expect(!NodeAutomation.shutdownOverran(NodeAutomation.shutdownReserve))
 }
 
-// MARK: - Reporting the gain as a floor
+// MARK: - Whether to ask the node to stop at all
 
-@Test func phrasesAGainAsAFloorBecauseSyncingContinuesThroughShutdown() {
-    // The node keeps downloading while it shuts down and the height is read before
-    // that starts, so the counted figure is at or below the true one — never above.
-    #expect(NodeAutomation.gainPhrase(19) == "at least +19 blocks")
+@Test func onlyStopsANodeThatGotFarEnoughToAnswer() {
+    // A node that never answered is still inside its own start-up, where a stop
+    // cannot be serviced — and the wait for it cannot be interrupted (ADR 0007).
+    // Asking anyway hung a device run until Shortcuts killed it, which the person
+    // saw as "Sync Bitcoin Node timeout".
+    #expect(!NodeAutomation.shouldRequestShutdown(nodeAnswered: false, askedToStop: true))
 }
 
-@Test func saysNothingWasCountedRatherThanClaimingZero() {
-    #expect(NodeAutomation.gainPhrase(nil) == "gain not measured")
+@Test func leavesTheNodeRunningUnlessAskedToStopIt() {
+    // The action's own time is capped at about 27 seconds, but the node it starts
+    // keeps running far longer — measured at 8 to 15 minutes — and that is when
+    // blocks actually arrive. Stopping at the end of the action threw all of it
+    // away: one device run stopped a healthy node after 6 seconds having made no
+    // connections at all.
+    #expect(!NodeAutomation.shouldRequestShutdown(nodeAnswered: true, askedToStop: false))
+    #expect(NodeAutomation.shouldRequestShutdown(nodeAnswered: true, askedToStop: true))
 }
 
-@Test func aMeasuredZeroIsStillReportedAsAFloor() {
-    // "at least +0" reads oddly but is the truthful statement: blocks may well have
-    // arrived during shutdown. Claiming a flat zero would not be.
-    #expect(NodeAutomation.gainPhrase(0) == "at least +0 blocks")
+@Test func beingAskedToStopCannotOverrideANodeThatNeverAnswered() {
+    // The switch is a preference; the hang it would cause is not negotiable.
+    #expect(!NodeAutomation.shouldRequestShutdown(nodeAnswered: false, askedToStop: true))
 }
