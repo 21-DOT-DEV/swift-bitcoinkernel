@@ -21,12 +21,17 @@ protocol DashboardDataSource: Sendable {
     func blockchainInfo() async throws -> BlockchainInfo
     func peers() async throws -> [PeerInfo]
     func mempoolInfo() async throws -> MempoolInfo
+    /// Summary connection counts. Deliberately not the full peer list, which
+    /// returns an object per connected peer; only the count is needed and the
+    /// summary is a handful of numbers.
+    func networkInfo() async throws -> NetworkInfo
 }
 
 extension RPCClient: DashboardDataSource {
     func blockchainInfo() async throws -> BlockchainInfo { try await getBlockchainInfo() }
     func peers() async throws -> [PeerInfo] { try await getPeerInfo() }
     func mempoolInfo() async throws -> MempoolInfo { try await getMempoolInfo() }
+    func networkInfo() async throws -> NetworkInfo { try await getNetworkInfo() }
 }
 
 // MARK: - Display summaries (pure value types, computed from RPC results)

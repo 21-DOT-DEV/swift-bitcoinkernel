@@ -53,3 +53,20 @@ that makes this safe. An outright kill — force-quit, or memory reclaimed under
 pressure — still stops the node mid-write and cannot be prevented by any mechanism.
 
 This binds the second app's action when it is built.
+
+## Correction, 2026-09-05
+
+"Roughly 30 seconds" above is measured to be wrong, and the error mattered. On device,
+the system's out-of-time warning arrived 27.4 s and 27.9 s after the run began, and
+both runs finished about a third of a second after it — late, because they were
+budgeting against 30. Clean shutdown was separately measured between 0.36 s and 4.8 s.
+
+The window is therefore treated as **27 seconds with 6 held back for shutdown**, so
+work stops at 21 and even the slowest observed shutdown finishes before the warning
+(`Projects/Sources/NodeApp/NodeAutomation.swift`, `budget` and `shutdownReserve`).
+
+This does not change the decision — the action still watches its own clock — only the
+number it watches for. The app additionally raises a "do not suspend me" assertion for
+the length of a run, which the log showed it was not doing at all; its expiry callback
+is a backstop, not where shutdown begins, since it is given less time than a shutdown
+can take.

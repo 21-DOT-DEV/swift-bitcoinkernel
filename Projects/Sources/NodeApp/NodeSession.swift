@@ -8,6 +8,7 @@
 //  See the accompanying file LICENSE for information
 //
 
+import Bitcoin
 import Foundation
 
 /// The node and privacy-network controllers, owned by the process rather than by a
@@ -30,13 +31,34 @@ final class NodeSession {
     let node = NodeViewModel()
     let tor = TorViewModel(subsystem: "dev.21.NodeApp")
 
-    /// Whether the node currently running was started by an unattended action rather
-    /// than by someone using the app.
+    /// A connection to the running daemon for reading its state.
+    ///
+    /// Owned here rather than created per run, because the action's defining property
+    /// is that it runs when no screen exists. It is typed as the reading seam the app
+    /// already defines for this, so the logic that consumes it can be tested against a
+    /// fake (`Projects/Sources/NodeApp/Dashboard.swift:20`).
+    let reader: any DashboardDataSource = RPCClient(
+        url: InternalRPC.url, cookieFile: InternalRPC.cookieFileURL
+    )
+
+    /// Whether an unattended run currently holds this session.
     ///
     /// An action shuts down only what it started; finding the node already running
     /// means reporting and leaving it alone, so an automation firing mid-session
     /// cannot stop a node someone is watching (ADR 0005).
-    var startedByAutomation = false
+    private(set) var startedByAutomation = false
+
+    /// Claims the session for an unattended run, or refuses if one already holds it.
+    ///
+    /// Checked and set together with no waiting in between, so two runs triggered
+    /// close together cannot both believe they own the node.
+    func claimForAutomation() -> Bool {
+        guard !startedByAutomation else { return false }
+        startedByAutomation = true
+        return true
+    }
+
+    func releaseAutomation() { startedByAutomation = false }
 
     private init() {}
 }

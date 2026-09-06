@@ -26,6 +26,12 @@ struct DashboardViewModelTests {
         func blockchainInfo() async throws -> BlockchainInfo { info }
         func peers() async throws -> [PeerInfo] { peerList }
         func mempoolInfo() async throws -> MempoolInfo { pool }
+        /// The dashboard does not read this; only the unattended action does. Kept
+        /// unimplemented rather than faked so a future dashboard use fails loudly
+        /// here instead of quietly reading a made-up connection count.
+        func networkInfo() async throws -> NetworkInfo {
+            throw CocoaError(.featureUnsupported)
+        }
     }
 
     private static func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {

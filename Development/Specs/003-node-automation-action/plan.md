@@ -4,7 +4,7 @@ title: Home automation action that runs the node unattended
 phase: null
 status: Planned
 updated: 2026-09-03
-adrs: [0005, 0006, 0007]
+adrs: [0005, 0006, 0007, 0008]
 ---
 
 # Home automation action that runs the node unattended
@@ -217,13 +217,99 @@ deadline therefore reserves time for it rather than starting it at the limit.
 - [ ] After a normal run, restarting the app finds the chain state intact.
 - [ ] After a run ended by force-quitting from the app switcher mid-sync, the app
       starts again and recovers without asking for a full rebuild.
-- [ ] Record the height gained per run — the measurement in §1.
+- [x] Record the height gained per run — the measurement in §1.
+
+### What five device runs actually measured, 2026-09-05
+
+Recorded as a range, not an average: the average of a run that gained nothing and a
+run that gained 45 blocks describes neither, and there were too few runs to call the
+spread noise.
+
+| What was measured | Range across runs |
+| --- | --- |
+| Blocks gained in a run | 0, 6, 23, 45 |
+| Time before the node answered at all | ~12 s |
+| Total window before the system's out-of-time warning | 27.4 s and 27.9 s |
+| Time to shut the node down cleanly | 0.36 s to 4.8 s |
+
+Three things follow, and they drove the changes now in the code:
+
+1. **The window is 27 seconds, not 30**, so runs were landing late. Recorded as a
+   dated correction on ADR 0007 (the record that says an unattended action watches its
+   own clock), since the number binds the second app's action too.
+2. **Roughly twelve of those seconds are start-up, and none of it is recoverable.**
+   Asking the node directly every 250 ms instead of waiting for the app's own flag
+   changed nothing, so the cost is inside the node. Its log breaks the twelve down the
+   same way on every start:
+
+   | Start-up phase | Time |
+   | --- | --- |
+   | Wallet check, peer addresses, ban list | under 1 s |
+   | **Loading the block index** | **10–11 s** |
+   | Verifying the last 6 blocks | ~1 s |
+   | Starting network threads, done | under 1 s |
+
+   Loading the block index dominates and no setting shortens it — it is reading the
+   index off disk, and every run is a fresh start. The verification pass is the only
+   part any setting touches, worth about a second, and naming that setting explicitly
+   makes the node **shut down during start-up** rather than skip the check when memory
+   is short ([bitcoin/bitcoin#25574](https://github.com/bitcoin/bitcoin/pull/25574)) —
+   the worst failure available to an unattended run, for a one-second saving. Decision:
+   change nothing about start-up.
+3. **The reported gain is a floor, not a count.** The node keeps downloading while it
+   shuts down and the height is read before that begins, so up to 11 blocks per run go
+   uncounted. Runs report "at least +N" rather than a bare number.
+
+4. **Shutting down is getting slower** — 0.34, 2.07, 3.81, 5.10 s across four runs
+   against a 6 s reserve. The likeliest cause is the amount of freshly-synced state to
+   write out. Four samples cannot say whether it levels off, so the reserve stays at 6
+   and each run now reports its own overrun instead of the number being guessed at.
+
+### The measurements above are attended, and that turns out to matter
+
+Everything in the table above was measured with someone watching the screen. The first
+screen-locked runs were 3.5× to 9× slower at loading the block index — 121 s and 47 s
+against 12–14 s — which is more than the whole window. ADR 0008 records the rule that
+came out of it: an unattended timing is measured with the screen locked.
+
+Two consequences are already in the code. A run never asks a node that has not answered
+to stop, and every wait on the node is bounded, because the uninterruptible stop (ADR
+0007) applied to a node still starting up is what turned a slow run into a visible
+timeout and an ungraceful kill.
+
+### How a run reports, and why it is not a dialog
+
+The action returns a dialog, and on an unattended run that dialog reaches nobody:
+there is no Siri session and no interface to display it in. ADR 0006 assumes the
+person receives the refusal message, so something has to deliver it.
+
+Runs report through `RunReporter` (`Projects/Sources/Shared/RunReporter.swift`), a
+two-method protocol carrying no ActivityKit, UserNotifications or App Intents types.
+That keeps the wording under test on the macOS leg of CI, which is the only leg that
+can test any of this — a background-launched action cannot be exercised in CI at all.
+
+Three properties are deliberate:
+
+- **Neither method throws.** Reporting is a side effect of a run and must never be
+  able to fail one. An implementation that cannot deliver stays silent.
+- **The refusal is reported before the private-network gate**, so a run that never
+  starts the node still produces a message.
+- **The completed case is reported before the shutdown wait**, which cannot be
+  interrupted and has been measured at up to 5.1 s. A run killed inside that wait
+  would otherwise report nothing. The height cannot be re-read after shutdown anyway,
+  so reporting early costs nothing.
+
+The implementation is a local notification with a fixed identifier, so each run
+replaces the last rather than accumulating, and with provisional authorisation, which
+is granted without a prompt and delivers quietly. A run must never be the thing that
+asks for permission — it has no interface in which to ask.
 
 ## 6. Risks and mitigations
 
 - The window may be too short to gain any blocks, making the feature a status
-  report rather than a sync. → That is precisely what §5's measurement establishes;
-  the follow-up in §7 exists for that outcome.
+  report rather than a sync. → Measured (§5): it gains something on most runs but not
+  all. That is enough for the narrower purpose stated in §7 and not enough for the
+  broader one, which is why the longer version stays a follow-up.
 - A kill with no warning stops the node mid-write, leaving its databases unclean. →
   Unrecoverable data loss is not the usual outcome: the node replays blocks on next
   start, which is far quicker than a full rebuild, and only asks for a rebuild if it
@@ -240,9 +326,50 @@ deadline therefore reserves time for it rather than starting it at the limit.
 
 ## 7. Out of scope (follow-ups)
 
-- The longer visible-progress version, which trades silence for minutes of runtime
-  and shows a progress card. Build only if §5's measurement shows the short window
-  is not worth having.
+> **What the short version is actually for, and what it cannot do.** At roughly 25
+> blocks a run against the network's roughly 144 a day, this keeps an already
+> nearly-current node current — about six triggers a day covers the daily rate.
+>
+> It cannot catch a node up, and the gap is not close. The device this was measured on
+> was 26% synced (height 554,310, downloading blocks dated December 2018), roughly
+> 346,000 behind. At 25 blocks a run and eight runs a day that is about **4.7 years**.
+> Anyone not already near the tip needs the initial-block-download work below, and the
+> action must not be presented as a way to get there.
+
+- **The longer visible version, and the extraction that goes with it.** An action
+  triggered through Shortcuts is granted permission to start a live progress card
+  even with the app in the background, which is the exception that makes an
+  unattended long run possible at all. That version is the second caller of this
+  feature's logic, so **its first step is extracting the shared core**: a budget that
+  can end early, progress reporting for whatever is watching, and a stop that runs
+  once and cannot be half-done. Only the trigger and the reporting surface differ
+  between the two.
+
+- **A Live Activity card instead of the notification.** Deferred, not rejected. The
+  card's advantage is updating in place rather than stacking up, which needs a stack
+  to be worth having — at one run a day there is no stack. And its receipt is removed
+  four hours after the run ends, so an overnight run's card is gone before anyone
+  wakes, while a notification waits until it is read. If the cadence ever becomes
+  hourly, both of those reverse and the card earns its place; it drops in behind
+  `RunReporter` with no change to the run itself. Note that a card grants **no extra
+  running time** — it is a display, and the run is still bounded by the same window.
+
+- **Bitcoin Core's init-message notifier gains a subscriber on every node start and
+  never drops one.** Confirmed in the node's log: after four starts in one app
+  process, every `init message:` line is written four times, while every other line is
+  written once. This is the same class of problem as the SOCKS flag already worked
+  around at `Sources/Bitcoin/Daemon.swift:66-73` — a global upstream never resets
+  because a normal process exits after shutdown, whereas ours restarts the node inside
+  a living process. The effect today is about ten duplicated log lines per run, so it
+  is not urgent, but it is unreleased state accumulating across restarts and the fix
+  belongs with the other reset shims. Worth filing upstream.
+
+- **Initial block download started from inside the app**, using the iOS 26
+  continued-processing task. That mechanism **must be submitted while the app is on
+  screen** and needs steady progress or the system ends it, so it can never serve an
+  unattended automation — it is the right tool for someone tapping sync and then
+  leaving the app, and the wrong tool for the daily refresh above. Recording this
+  because the two are easy to confuse.
 - Relocating chain data into a shared container, which would unlock a Home Screen
   panel or a Control Centre button. Cheaper now than after chains grow.
 - The equivalent action for KernelApp, which drives its own sync loop and so can
