@@ -33,4 +33,5 @@ The table below is generated from those frontmatter blocks. Do not hand-edit it.
 | 0002 | [Peer-to-peer networking replaces the remote-node HTTP client model](0002-p2p-replaces-remote-node-client.md) | Accepted | 2026-05-07 |
 | 0003 | [Use Icon Composer .icon bundles for the demo app icons](0003-icon-composer-bundles-for-demo-app-icons.md) | Accepted | 2026-07-16 |
 | 0004 | [Keep the screen awake through high-level Foundation and UIKit APIs](0004-foundation-apis-for-keeping-the-screen-awake.md) | Accepted | 2026-07-20 |
+| 0005 | [Shortcuts actions run inside the app, in the background, with no shared container](0005-shortcuts-actions-run-in-the-app.md) | Accepted | 2026-09-06 |
 <!-- END GENERATED INDEX -->
