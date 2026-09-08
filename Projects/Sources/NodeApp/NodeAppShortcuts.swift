@@ -22,32 +22,39 @@ import AppIntents
 /// it to tell one app's actions apart from another's, and a phrase without it is
 /// accepted at build time but never matches at runtime.
 struct NodeAppShortcuts: AppShortcutsProvider {
-    // One user-visible action, backed by the longer-running type on iOS 27 and
-    // the baseline type on iOS 18–26. The extended run only takes effect for the
-    // type the system launches, so the right type must be the one registered —
-    // hence the branch here rather than delegation. The iOS 27 branch is behind
-    // the same compiler fence as the type itself, so the everyday Xcode 26 build
-    // omits it. See plan §3.5.
-    //
-    // `AppShortcutsBuilder` accepts only a straight list of shortcuts — it has no
-    // support for `if`/`else` — so the list is assembled by hand and handed back
-    // with an explicit `return`, which also opts this body out of the builder.
+    /// Written as literal `AppShortcut(...)` calls — no brackets, no commas, no helper
+    /// properties, no `.init(`. This shape is mandatory, not stylistic.
+    ///
+    /// A separate build step reads this list out of the *source text* to bake the app's
+    /// actions into the bundle, so the Shortcuts app can list them without launching
+    /// us. It works from compile-time constant values the compiler emits, and resolves
+    /// nothing at runtime.
+    ///
+    /// What that build step does and does not accept, established by testing each
+    /// shape against Xcode 26.4 and 27:
+    ///
+    /// - A computed helper property returning an `AppShortcut`, handed back with an
+    ///   explicit `return`, **fails**: it opts out of the builder, so no constant
+    ///   exists to read, and the build stops with "Expected an 'AppShortcut'
+    ///   initialization call".
+    /// - A bare `if #available(…) { AppShortcut(…) }` **is accepted** — the builder
+    ///   handles that one construct specially.
+    /// - `if #available(…) { … } else { … }` **fails** with "closure containing control
+    ///   flow statement cannot be used with result builder". General branching is out.
+    ///
+    /// That last point is why there are two actions rather than one whose backing type
+    /// changes with the system version: choosing between types needs an `else`. So the
+    /// baseline is registered unconditionally, and the iOS 27 longer-running variant is
+    /// added alongside it. On iOS 18–26 only the baseline exists; on iOS 27 a person
+    /// sees both and picks the extended one to get the longer run. See plan §3.5.
+    ///
+    /// The compile fence is load-bearing, not defensive: without it Xcode 26.4 fails
+    /// with "cannot find 'SyncNodeLongRunningIntent' in scope", because that type's own
+    /// file is fenced out on toolchains without the iOS 27 SDK.
     static var appShortcuts: [AppShortcut] {
-        #if compiler(>=6.4)
-        if #available(iOS 27.0, *) {
-            return [longRunningShortcut]
-        }
-        #endif
-        return [baselineShortcut]
-    }
-
-    // Several natural phrasings, as Apple recommends, so more than one way of
-    // asking lands on the same action. Every phrase must contain the app name
-    // (`\(.applicationName)`), or it is accepted at build time but never matches
-    // at run time. English only for now; localization is a follow-up (plan §7).
-    // The phrase list is repeated per shortcut because a phrase is typed to its
-    // specific intent and cannot be shared across two intent types.
-    private static var baselineShortcut: AppShortcut {
+        // Several natural phrasings, as Apple recommends, so more than one way of
+        // asking lands on the same action. English only for now; localization is a
+        // follow-up (plan §7).
         AppShortcut(
             intent: SyncNodeIntent(),
             phrases: [
@@ -58,23 +65,22 @@ struct NodeAppShortcuts: AppShortcutsProvider {
             shortTitle: "Sync Bitcoin Node",
             systemImageName: "bitcoinsign.circle"
         )
+        #if compiler(>=6.4)
+        // Distinct phrases and title: two actions that sounded alike would leave the
+        // person — and Siri — no way to tell which one they were asking for.
+        if #available(iOS 27.0, *) {
+            AppShortcut(
+                intent: SyncNodeLongRunningIntent(),
+                phrases: [
+                    "Sync my node with progress in \(.applicationName)",
+                    "Sync my Bitcoin node with progress in \(.applicationName)",
+                ],
+                shortTitle: "Sync Bitcoin Node (Extended)",
+                systemImageName: "bitcoinsign.circle"
+            )
+        }
+        #endif
     }
-
-    #if compiler(>=6.4)
-    @available(iOS 27.0, *)
-    private static var longRunningShortcut: AppShortcut {
-        AppShortcut(
-            intent: SyncNodeLongRunningIntent(),
-            phrases: [
-                "Sync my node in \(.applicationName)",
-                "Sync my Bitcoin node in \(.applicationName)",
-                "Run a node sync in \(.applicationName)",
-            ],
-            shortTitle: "Sync Bitcoin Node",
-            systemImageName: "bitcoinsign.circle"
-        )
-    }
-    #endif
 }
 
 #endif
