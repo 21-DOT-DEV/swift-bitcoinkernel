@@ -20,9 +20,14 @@ enum AppTab: String, Hashable {
 
 struct ContentView: View {
     @State private var selectedTab: AppTab = .dashboard
-    @State private var nodeViewModel = NodeViewModel()
+    // Owned by the process (`NodeSession`), not by this screen, so a
+    // background-launched action can reach them when no interface exists. The
+    // views below read them exactly as they did when this screen created them;
+    // `@Observable` updates still flow because the properties are accessed in
+    // `body`. See ADR 0005 and plan §3.2.
+    private var nodeViewModel: NodeViewModel { NodeSession.shared.node }
+    private var torViewModel: TorViewModel { NodeSession.shared.tor }
     @State private var commandsViewModel = CommandsViewModel()
-    @State private var torViewModel = TorViewModel(subsystem: "dev.21.NodeApp")
     @State private var dashboardViewModel = DashboardViewModel(
         source: RPCClient(url: InternalRPC.url, cookieFile: InternalRPC.cookieFileURL)
     )
