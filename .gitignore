@@ -13,8 +13,11 @@ xcuserdata/
 ## compatibility with Xcode 3 and earlier (ignoring not required starting Xcode 4)
 build/
 DerivedData/
-# Custom -derivedDataPath used by CI and local repro (tuist-apps.yml, Projects/AGENTS.md)
-.derivedData/
+# Custom -derivedDataPath used by CI and local repro (tuist-apps.yml, Projects/AGENTS.md).
+# The suffixed forms are per-toolchain build folders (for example .derivedData-26 and
+# .derivedData-27), kept separate so a build under one Xcode does not clobber another's
+# output when both are used side by side.
+.derivedData*/
 *.moved-aside
 *.pbxuser
 !default.pbxuser
