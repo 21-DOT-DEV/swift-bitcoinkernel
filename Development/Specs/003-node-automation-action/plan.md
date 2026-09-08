@@ -120,10 +120,17 @@ older Xcode:
   Necessary because a runtime `@available` check cannot rescue a symbol the
   compiled-against SDK lacks; the compiler version stands in for "iOS 27 SDK present",
   reliable because each Xcode ships a fixed compiler+SDK pair.
-- **One visible action, type chosen by system version** — `NodeAppShortcuts` publishes
-  a single action, long-running type on iOS 27, baseline on iOS 18–26. The extended
-  runtime goes only to the type the system launches, so that must be the registered
-  one; delegation would not get the window.
+- **Two actions, not one that switches type.** The extended runtime goes only to the
+  type the system launches, so the long-running type must itself be registered —
+  delegation from the baseline would not get the window. Registering *one* action whose
+  backing type changes with the system version is impossible: it needs an `if/else`, and
+  the list of published actions is read from source text as compile-time constants, which
+  accepts a bare `if #available(…)` but rejects general branching ("closure containing
+  control flow statement cannot be used with result builder"). Helper properties are
+  rejected too. So `NodeAppShortcuts` registers the baseline unconditionally and adds
+  the iOS 27 variant alongside, with distinct phrases and title. On iOS 18–26 a person
+  sees one action; on iOS 27, two. Each shape was tested against Xcode 26.4 and 27; the
+  rules are recorded beside the code.
 - **Clean-stop hook** — also conforms to `CancellableIntent`, so a stop (by the person,
   or by the system on timeout) can run a graceful shutdown. Logs only in the skeleton.
 
@@ -185,7 +192,10 @@ framework-dependent, cannot be exercised in CI, and lands with its caller (§7).
       line.
 - [ ] Triggered with no screen present, the app launches in the background and the
       action runs without opening the app.
-- [ ] On iOS 27, a run shows a progress card, and its stop button ends the run.
+- [ ] On iOS 18–26, only the baseline action appears, and the app does not crash at
+      launch — the one unverified risk in registering an availability-gated action.
+- [ ] On iOS 27, both actions appear; the extended one shows a progress card, and its
+      stop button ends the run and logs `run: cancelled (userCancelled)`.
 - [ ] (Later) Triggered with the phone locked and the app not running, the node starts.
 - [ ] (Later) With the private network on and unreachable, the action refuses and the
       node never starts — confirmed by no direct connections being made, not by reading
