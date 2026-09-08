@@ -45,12 +45,34 @@ struct SyncNodeIntent: AppIntent {
     static let description = IntentDescription(
         "Starts a background Bitcoin node sync run and reports what happened. Runs without opening the app.")
 
-    /// Left in the background: this action is built for unattended automations,
-    /// which never bring the app on screen. See ADR 0005.
-    static let openAppWhenRun = false
+    // This action always runs in the background — it is built for unattended
+    // automations, which never bring the app on screen (ADR 0005). How to declare
+    // that splits by OS: `supportedModes` on iOS 26+, and the older `openAppWhenRun`
+    // for iOS 18–25 (this app's oldest-supported OS). Both are declared so the
+    // behaviour holds on every supported system. The old flag is marked deprecated in
+    // its own declaration to match the iOS 26 SDK and keep the build warning-free;
+    // when the app's floor reaches iOS 26 it is removed and only `supportedModes`
+    // remains (plan §7).
+    @available(iOS 26.0, *)
+    static var supportedModes: IntentModes { .background }
+
+    @available(iOS, deprecated: 26.0, message: "Superseded by supportedModes; kept for iOS 18–25.")
+    static var openAppWhenRun: Bool { false }
 
     private static let log = Logger(subsystem: "dev.21.NodeApp", category: "Shortcut")
 
+    /// Runs on the main actor (the thread that owns user-interface state). The
+    /// process-owned `NodeSession` this action reaches at the later start step is
+    /// `@MainActor`-isolated, and under Swift 6 an un-isolated `perform()` cannot
+    /// touch it. Isolating the whole method is the right call here: it mostly
+    /// orchestrates main-actor state, while the node's heavy work runs on its own
+    /// background thread and every wait is an `await` that frees this thread. Any
+    /// future heavy or synchronous step added here must be pushed off the main actor
+    /// explicitly (for example a detached task), never run inline. See
+    /// Development/Specs/003-node-automation-action/plan.md §3.4. The stub does not
+    /// touch `NodeSession` yet; the annotation lands now so the decision is compiler-
+    /// enforced rather than remembered.
+    @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
         let started = ContinuousClock.now
         Self.log.notice("run: entered (stub)")

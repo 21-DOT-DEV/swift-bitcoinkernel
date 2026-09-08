@@ -1,0 +1,33 @@
+//
+//  NodeSession.swift
+//  21-DOT-DEV/swift-bitcoinkernel
+//
+//  Copyright (c) 2026-present Timechain Software Initiative, Inc.
+//  Distributed under the MIT software license
+//
+//  See the accompanying file LICENSE for information
+//
+
+import Foundation
+
+/// The node controller and the address-hiding-network (Tor) controller, owned by
+/// the process rather than by a screen.
+///
+/// They used to be created inside `ContentView`, so they existed only while an
+/// interface did. A Shortcuts action launched in the background has no interface,
+/// so nothing would own them and the action would have nothing to reach. Owning
+/// them here means the same objects are available whether or not a window is on
+/// screen.
+///
+/// Nothing outside the app's own screens uses this yet — the background action is
+/// a later change — but the ownership move is the groundwork it needs. See
+/// `Development/Specs/003-node-automation-action/plan.md` §3.2 and ADR 0005.
+@MainActor
+final class NodeSession {
+    static let shared = NodeSession()
+
+    let node = NodeViewModel()
+    let tor = TorViewModel(subsystem: "dev.21.NodeApp")
+
+    private init() {}
+}

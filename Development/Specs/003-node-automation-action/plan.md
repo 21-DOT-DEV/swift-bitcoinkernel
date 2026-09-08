@@ -3,7 +3,7 @@ feature: 003
 title: Action that runs the node unattended from a Shortcuts automation
 phase: null
 status: In Progress
-updated: 2026-09-06
+updated: 2026-09-07
 adrs: [0005]
 ---
 
@@ -87,16 +87,42 @@ notification, leave the node running — is deliberately not in the skeleton. Th
 decisions are planned direction in §7, each to become its own ADR when its code
 lands and its behaviour is measured on this branch rather than inherited.
 
+### 3.4 Reaching the process-owned state across the thread boundary
+
+The holder `NodeSession` is isolated to the main actor (the thread that owns
+user-interface state), because it holds the node and address-hiding-network
+view-models, which are main-actor types. The action's run method `perform()`
+(`SyncNodeIntent.swift`) runs off that thread by default, and under Swift 6 (this
+project's language mode) an un-isolated `perform()` is a hard compile error the moment
+it touches `NodeSession` — so the start step cannot build without crossing that line.
+
+The chosen path: mark `perform()` itself `@MainActor` so all its work runs on the
+main actor. This fits because the method mostly orchestrates main-actor state, while
+the node's heavy work already runs on its own background thread and every wait is an
+`await` that frees the main actor — so nothing blocks it. The rejected alternatives
+were hopping onto the main actor at each access (`await MainActor.run { … }`, which
+suits a method that is mostly background work touching state occasionally — the
+opposite of this one) and un-isolating the holder (which would let two threads touch
+the same view-models and race). The one rule this carries: any future heavy or
+synchronous step added inside `perform()` must be pushed off the main actor
+explicitly, never run inline. The annotation is applied to the skeleton now, before
+the start step exists, so the decision is compiler-enforced rather than remembered.
+This is a standard Swift-concurrency idiom, recorded here rather than as an ADR, and
+it applies the same way to the later KernelApp action.
+
 ## 4. Implementation steps
 
 1. The action and its registration, background-only, logging and returning text.
-   **(this stage)**
-2. A process-owned owner for the node and private-network controllers, reachable with
-   no screen present. (§7)
-3. Decision logic as free functions with no framework types, unit-tested. (§7)
+   **(shipped, #42)**
+2. A process-owned owner (`NodeSession`) for the node and address-hiding-network
+   controllers, reachable with no screen present; the main screen reads it instead of
+   creating its own. **(this change)**
+3. The decisions a run makes as free functions with no framework types (`NodeAutomation`:
+   which step to take, and the refuse-to-start-without-a-proxy guard), unit-tested.
+   **(this change)**
 4. Start the node behind the private-network gate; report through a silent
-   notification. (§7)
-5. Device verification with the screen locked (§5).
+   notification. (later)
+5. Device verification with the screen locked (§5). (later, on device)
 
 ## 5. Verification
 
@@ -118,6 +144,13 @@ lands and its behaviour is measured on this branch rather than inherited.
   here; it must be re-measured on this branch before any budget or deadline rests on
   it. → The real run will report honestly and return rather than hang; nothing in the
   skeleton is exposed to this yet.
+- **A background-launched action gets only about 30 seconds, and after it returns the
+  system may pause or shut down the app — which stops the node, because the node runs
+  inside the app's own process.** This is the defining constraint of the feature,
+  stated in Apple's documentation and by Apple support engineers. → The action never
+  depends on more than that window: it returns as soon as the node first answers. How
+  long the node keeps running afterwards is not guaranteed; the ways one might extend
+  it, and why none is a reliable fix today, are laid out in §7.
 - **The node's survival after the action returns is an observation to reproduce, not a
   promise.** The prior implementation saw it; this branch has not. → Nothing will be
   built that depends on a particular duration; the feature degrades to a status report
@@ -160,12 +193,41 @@ process-crossing plumbing is added only when a second process actually exists.
 - **The sister KernelApp's action.** ADR 0005 is written to bind it, and the two
   planned decisions above are meant to as well, but the shared abstraction is better
   designed once two real cases exist rather than guessed from one.
-- **The longer execution window (`LongRunningIntent`, iOS 27).** Extends execution
-  past the ~30-second limit and renders a progress card without card code. The app's
-  floor is iOS 18, and raising it drops every device below iOS 27, so this waits.
-  Whether an unattended trigger even qualifies for the longer window is unknown and
-  needs a probe before anything is built on it. The action is kept a thin, quick
-  adapter so adopting it is a conformance change, not a rewrite.
+- **Keeping the node running after the action returns — the open problem.** The system
+  gives no third-party app a guaranteed always-on background process, so the node runs
+  only until the system chooses to pause the app. The options, none of them a reliable
+  fix today:
+    - **A longer execution window (`LongRunningIntent`, iOS 27 — a way to keep the
+      action running past the ~30-second limit while it reports progress).** Extends
+      execution and renders a progress card without any card code. The most promising
+      path. Blocked two ways: the app's oldest-supported OS is iOS 18, and raising it to
+      iOS 27 drops every device below that; and whether an unattended trigger (one that
+      fires with nobody watching) even qualifies for the longer window is unknown and
+      needs a probe first. The action is kept a thin, quick adapter so adopting it is a
+      conformance change, not a rewrite.
+    - **A background maintenance job (`BGProcessingTask` — a task the system runs later,
+      on its own schedule).** Runs for minutes, but only opportunistically — when the
+      device is idle, and it can be told to require charging or a network — and it ends
+      the moment the person touches the phone. Not a reliable host, but it could
+      *opportunistically* extend the node's runtime after a run. **Follow-up experiment
+      worth trying:** once the node-start slice exists, measure whether scheduling one of
+      these after a run gains meaningful blocks while the phone is charging and idle.
+      Uncertain payoff; must be measured on a device.
+    - **A user-tap background task (`BGContinuedProcessingTask`, iOS 26).** Rejected: it
+      must be started by an explicit tap and shows progress UI, so it cannot serve an
+      unattended automation that fires with nobody watching.
+    - **An allowed always-on background mode (audio, location, and the like).** Rejected:
+      none of them describes a Bitcoin node, and claiming one invites app-store
+      rejection.
+    - **Accept that the system pauses the node — the current posture.** Start the node,
+      report, and let it run until the system suspends it. The feature degrades to a
+      status report if the node does not survive, which is honest and safe. This holds
+      until one of the options above is proven on a device.
+- **Finish the background-flag modernization.** The action declares both the newer
+  `supportedModes` (iOS 26+) and the older `openAppWhenRun` (iOS 18–25) for the same
+  "run in the background" behaviour, so it is correct on every supported system today.
+  When the app's oldest-supported OS reaches iOS 26, drop the old flag and keep only
+  `supportedModes`.
 - **A structured return entity.** The action returns a simple text value today.
   Upgrade to a multi-field entity only if a later Shortcut step needs to branch on
   individual figures (height, chain, blocks behind); until then the simple value is
