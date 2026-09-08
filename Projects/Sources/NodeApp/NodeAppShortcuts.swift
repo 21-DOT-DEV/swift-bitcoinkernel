@@ -66,17 +66,19 @@ struct NodeAppShortcuts: AppShortcutsProvider {
             systemImageName: "bitcoinsign.circle"
         )
         #if compiler(>=6.4)
-        // Distinct phrases and title: two actions that sounded alike would leave the
-        // person — and Siri — no way to tell which one they were asking for.
+        // A separate action rather than a variant of the one above: different verb,
+        // different spoken phrases, different icon. On iOS 27 a person sees both
+        // listed, so two entries that read or sounded alike would leave them — and
+        // Siri — no way to tell which they were choosing.
         if #available(iOS 27.0, *) {
             AppShortcut(
                 intent: SyncNodeLongRunningIntent(),
                 phrases: [
-                    "Sync my node with progress in \(.applicationName)",
-                    "Sync my Bitcoin node with progress in \(.applicationName)",
+                    "Keep my node syncing in \(.applicationName)",
+                    "Keep my Bitcoin node syncing in \(.applicationName)",
                 ],
-                shortTitle: "Sync Bitcoin Node (Extended)",
-                systemImageName: "bitcoinsign.circle"
+                shortTitle: "Keep Node Syncing",
+                systemImageName: "arrow.trianglehead.2.clockwise"
             )
         }
         #endif

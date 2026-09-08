@@ -128,9 +128,37 @@ older Xcode:
   accepts a bare `if #available(…)` but rejects general branching ("closure containing
   control flow statement cannot be used with result builder"). Helper properties are
   rejected too. So `NodeAppShortcuts` registers the baseline unconditionally and adds
-  the iOS 27 variant alongside, with distinct phrases and title. On iOS 18–26 a person
-  sees one action; on iOS 27, two. Each shape was tested against Xcode 26.4 and 27; the
-  rules are recorded beside the code.
+  the iOS 27 variant alongside. On iOS 18–26 a person sees one action; on iOS 27, two.
+  Each shape was tested against Xcode 26.4 and 27; the rules are recorded beside the
+  code. A further wall found by testing: **only one type in the app may publish the
+  actions list** ("Only 1 `AppShortcutsProvider` conformance is allowed"), so a second
+  provider is not an escape route — and the sister KernelApp cannot add its own to this
+  app either.
+
+**Naming, so the two are not confusable.** They are named as two different actions
+rather than a base and a variant: **Sync Bitcoin Node** (short run) and **Keep Bitcoin
+Node Syncing** (runs past the usual limit, with a progress display that can be
+stopped), each with its own spoken phrases and icon. Both were previously called "Sync
+Bitcoin Node", which left two indistinguishable entries side by side when building an
+automation. The second name is also written to read well on its own, because it is the
+one that survives the other's retirement; a name like "… (Extended)" would end up
+referring to a sibling that no longer exists.
+
+**What is safe to rename later, and what is not.** A saved automation refers to an
+action by its **code-level type name** (here `SyncNodeLongRunningIntent`), not by the
+name a person reads. So:
+
+| Changing… | Breaks a saved automation? |
+|---|---|
+| The displayed name or the description | No — label only |
+| The code-level type name, or a setting's variable name or type | **Yes** — that is the stored reference |
+| A spoken phrase | No, but it breaks the words someone learned to say, and how they find the action |
+
+That makes the *type* names the durable commitment, so they are worth settling before
+release; displayed names stay adjustable, and spoken phrases should not be rewritten
+casually even though nothing breaks. If a type name ever must change, keep the old type
+as a deprecated stand-in that forwards to the new one rather than deleting it — which is
+also the mechanism for retiring the short-run action (§7).
 - **Clean-stop hook** — also conforms to `CancellableIntent`, so a stop (by the person,
   or by the system on timeout) can run a graceful shutdown. Logs only in the skeleton.
 
@@ -194,8 +222,9 @@ framework-dependent, cannot be exercised in CI, and lands with its caller (§7).
       action runs without opening the app.
 - [ ] On iOS 18–26, only the baseline action appears, and the app does not crash at
       launch — the one unverified risk in registering an availability-gated action.
-- [ ] On iOS 27, both actions appear; the extended one shows a progress card, and its
-      stop button ends the run and logs `run: cancelled (userCancelled)`.
+- [ ] On iOS 27, both actions appear, are told apart at a glance by name and icon, and
+      "Keep Bitcoin Node Syncing" shows a progress display whose stop button ends the
+      run and logs `run: cancelled (userCancelled)`.
 - [ ] (Later) Triggered with the phone locked and the app not running, the node starts.
 - [ ] (Later) With the private network on and unreachable, the action refuses and the
       node never starts — confirmed by no direct connections being made, not by reading
@@ -289,6 +318,11 @@ Ordered roughly by when each is needed.
 - **Retire the older background-run flag.** The action declares both `supportedModes`
   (iOS 26+) and `openAppWhenRun` (iOS 18–25) for the same behaviour. When the
   oldest-supported OS reaches iOS 26, drop the old flag.
+- **Retire the short-run action, once only the iOS 27 one is wanted.** Do not delete it:
+  anyone who built it into a larger shortcut would silently lose that step. Mark it
+  deprecated with `replacedBy` pointing at `SyncNodeLongRunningIntent`, so people are
+  guided to the survivor and existing automations keep working. Blocked until the app's
+  oldest-supported OS reaches iOS 27.
 - **A structured return entity.** Upgrade from the simple text value only if a later
   Shortcut step needs to branch on individual figures (height, chain, blocks behind).
 - **Localized phrases and description.** The `title` is already localizable; the spoken

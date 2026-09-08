@@ -43,7 +43,7 @@ import os.log
 struct SyncNodeIntent: AppIntent {
     static let title: LocalizedStringResource = "Sync Bitcoin Node"
     static let description = IntentDescription(
-        "Starts a background Bitcoin node sync run and reports what happened. Runs without opening the app.")
+        "Starts the Bitcoin node, lets it sync for the short time a background action is allowed, and reports what happened. Runs without opening the app. On iOS 27, Keep Bitcoin Node Syncing runs for longer.")
 
     // This action always runs in the background — it is built for unattended
     // automations, which never bring the app on screen (ADR 0005). How to declare

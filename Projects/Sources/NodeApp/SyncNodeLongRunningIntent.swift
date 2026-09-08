@@ -23,7 +23,8 @@ import os.log
 // compiler+SDK pair. See Development/Specs/003-node-automation-action/plan.md §3.5.
 #if compiler(>=6.4)
 
-/// The longer-running form of the "Sync Bitcoin Node" action, for iOS 27+.
+/// "Keep Bitcoin Node Syncing" — a separate action, iOS 27+, that runs past the time
+/// limit the short-run action lives within.
 ///
 /// A background action normally gets about 30 seconds; conforming to
 /// `LongRunningIntent` and wrapping the work in `performBackgroundTask` lets it run
@@ -38,9 +39,16 @@ import os.log
 /// graceful node shutdown will take, but for now it only logs.
 @available(iOS 27.0, *)
 struct SyncNodeLongRunningIntent: LongRunningIntent, CancellableIntent {
-    static let title: LocalizedStringResource = "Sync Bitcoin Node"
+    // Named to stand on its own, not as a variant of the other action. Two reasons.
+    // A person on iOS 27 sees both actions listed, and two entries reading "Sync
+    // Bitcoin Node" would be indistinguishable. And this is the action that survives:
+    // when the baseline retires, a name like "… (Extended)" would be left referring to
+    // a sibling nobody remembers — and renaming it then is not an option, because
+    // saved automations find an action by its identifier, so a rename reads as a
+    // deletion and breaks them.
+    static let title: LocalizedStringResource = "Keep Bitcoin Node Syncing"
     static let description = IntentDescription(
-        "Starts a background Bitcoin node sync run, keeps it going past the usual limit while showing progress, and reports what happened. Runs without opening the app.")
+        "Starts the Bitcoin node and keeps it syncing past the usual background time limit, showing progress you can stop at any time. Runs without opening the app.")
 
     // Runs entirely in the background — this is built for unattended automations
     // (ADR 0005). The type is iOS 27-only, so the modern declaration is all that is
@@ -64,7 +72,10 @@ struct SyncNodeLongRunningIntent: LongRunningIntent, CancellableIntent {
         let message = try await performBackgroundTask(options: []) {
             // Skeleton body — no node work yet (see the type's doc comment).
             Self.log.notice("run: background task begin (long-running stub)")
-            return "Sync Bitcoin Node ran (long-running stub — no node started yet)."
+            // Names this action, not the other one. The text is handed back to the
+            // Shortcuts app and spoken by Siri, so saying "Sync Bitcoin Node" here
+            // would report the baseline action's name for a run of this one.
+            return "Keep Bitcoin Node Syncing ran (long-running stub — no node started yet)."
         } onCancel: { reason in
             // No node to stop yet; the real graceful shutdown lands with the
             // node-start slice. Logged so a stopped run is visible in the console.
