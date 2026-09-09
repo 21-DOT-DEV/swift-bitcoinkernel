@@ -220,11 +220,17 @@ framework-dependent, cannot be exercised in CI, and lands with its caller (§7).
       line.
 - [ ] Triggered with no screen present, the app launches in the background and the
       action runs without opening the app.
-- [ ] On iOS 18–26, only the baseline action appears, and the app does not crash at
-      launch — the one unverified risk in registering an availability-gated action.
-- [ ] On iOS 27, both actions appear, are told apart at a glance by name and icon, and
-      "Keep Bitcoin Node Syncing" shows a progress display whose stop button ends the
-      run and logs `run: cancelled (userCancelled)`.
+- [x] On iOS 18–26, only the short-run action appears and the app does not crash at
+      launch. This was the one unverified risk in registering an action that only exists
+      on newer systems; it does not occur, so no fallback is needed.
+- [x] On iOS 27, "Keep Bitcoin Node Syncing" shows a progress display, confirming the
+      extended time window engages.
+- [ ] On iOS 27, that display's stop button ends the run and logs
+      `run: cancelled (userCancelled)`. Not yet exercisable: the first attempt showed
+      the display appear at 0% and vanish before it could be tapped, because the
+      skeleton finishes in milliseconds. A temporary paced loop now holds a run open for
+      about 30 seconds so the button can be reached; it is removed when real node work
+      replaces it.
 - [ ] (Later) Triggered with the phone locked and the app not running, the node starts.
 - [ ] (Later) With the private network on and unreachable, the action refuses and the
       node never starts — confirmed by no direct connections being made, not by reading
@@ -245,6 +251,12 @@ framework-dependent, cannot be exercised in CI, and lands with its caller (§7).
   "about to be stopped" signal is the iOS 27 stop hook (§3.5), which is where a graceful
   shutdown belongs; otherwise state is written as the run goes and the node replays its
   own on-disk state next start.
+- **A run that stops reporting progress can be cut short by the system.** On the iOS 27
+  action, advancing progress is what keeps the extended time window open — not
+  decoration. A first version set the total before the run and the completed count
+  after it, so the display sat at 0% throughout (seen on device) and a real run would
+  have risked being killed by the very mechanism meant to keep it alive. → Progress is
+  advanced from inside the run, repeatedly; the real node work must keep doing so.
 - **A locked-screen start can take minutes.** Observed on the prior implementation, not
   yet measured here. → Must be re-measured on this branch before any budget rests on
   it; the real run reports honestly and returns rather than hangs.
