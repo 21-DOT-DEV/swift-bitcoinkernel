@@ -23,10 +23,21 @@ struct DashboardViewModelTests {
         let info: BlockchainInfo
         let peerList: [PeerInfo]
         let pool: MempoolInfo
+        /// Connection counts, when a test cares. The dashboard does not read them, so
+        /// this defaults to absent and reports being unavailable rather than inventing
+        /// a number a test might silently rely on.
+        var network: NetworkInfo? = nil
+
         func blockchainInfo() async throws -> BlockchainInfo { info }
         func peers() async throws -> [PeerInfo] { peerList }
         func mempoolInfo() async throws -> MempoolInfo { pool }
+        func networkInfo() async throws -> NetworkInfo {
+            guard let network else { throw FixtureUnavailable.networkInfo }
+            return network
+        }
     }
+
+    enum FixtureUnavailable: Error { case networkInfo }
 
     private static func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
         try JSONDecoder().decode(T.self, from: Data(json.utf8))
