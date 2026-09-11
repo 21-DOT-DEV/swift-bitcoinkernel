@@ -65,13 +65,30 @@ struct SyncNodeLongRunningIntent: LongRunningIntent, CancellableIntent {
         let started = ContinuousClock.now
         Self.log.notice("run: entered (long-running stub)")
 
-        // One unit of work; the real run will report finer progress. Set before the
-        // extended run so the progress card has something to show immediately.
-        progress.totalUnitCount = 1
+        // Progress must be advanced from *inside* the run below, repeatedly — it is not
+        // decoration. It is the signal that keeps the extended time window open, and a
+        // run that stops reporting can be cut short by the system. An earlier version
+        // set the total here and the completed count after the run returned, which was
+        // wrong twice over: the display sat at 0% for the whole run because the only
+        // update arrived once it had already gone, and a real run would have risked
+        // being killed by the very mechanism meant to keep it alive. Observed on device.
+        let steps: Int64 = 30
+        progress.totalUnitCount = steps
 
-        let message = try await performBackgroundTask(options: []) {
-            // Skeleton body — no node work yet (see the type's doc comment).
+        let message = try await performBackgroundTask(options: []) { [progress] in
             Self.log.notice("run: background task begin (long-running stub)")
+
+            // TEMPORARY SCAFFOLD — remove when real node work replaces it.
+            // The stub finishes in milliseconds, so the progress display appeared and
+            // vanished before anyone could reach its stop button, leaving the stop path
+            // untestable. This paced loop exists only to hold the run open long enough
+            // to tap stop and confirm the cancel hook fires. It also demonstrates the
+            // shape the real work needs: advance progress as you go.
+            for step in 1...steps {
+                try await Task.sleep(for: .seconds(1))
+                progress.completedUnitCount = step
+            }
+
             // Names this action, not the other one. The text is handed back to the
             // Shortcuts app and spoken by Siri, so saying "Sync Bitcoin Node" here
             // would report the baseline action's name for a run of this one.
@@ -82,8 +99,6 @@ struct SyncNodeLongRunningIntent: LongRunningIntent, CancellableIntent {
             Self.log.notice(
                 "run: cancelled (\(reason.debugDescription, privacy: .public)) (long-running stub)")
         }
-
-        progress.completedUnitCount = 1
 
         let elapsedMs = Int(started.duration(to: .now) / .milliseconds(1))
         Self.log.notice("run: finished (long-running stub) in \(elapsedMs, privacy: .public) ms")

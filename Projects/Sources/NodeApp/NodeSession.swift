@@ -8,6 +8,7 @@
 //  See the accompanying file LICENSE for information
 //
 
+import Bitcoin
 import Foundation
 
 /// The node controller and the address-hiding-network (Tor) controller, owned by
@@ -28,6 +29,22 @@ final class NodeSession {
 
     let node = NodeViewModel()
     let tor = TorViewModel(subsystem: "dev.21.NodeApp")
+
+    /// A connection for asking the running node questions — which chain it is on, what
+    /// block height it has reached, how many peers it has.
+    ///
+    /// Owned here rather than created per run, because an action's defining property is
+    /// that it runs when no window exists. Without this the action can start the node
+    /// but cannot learn whether it came up or what it reached, so it has nothing to
+    /// report. The app's own screens each build their own connection; this is the one
+    /// an action uses.
+    ///
+    /// Typed as the read-only interface the app already defines (`DashboardDataSource`
+    /// in `Dashboard.swift`) rather than the concrete client, so a test can hand in a
+    /// stand-in and exercise the reporting logic without a live node.
+    let reader: any DashboardDataSource = RPCClient(
+        url: InternalRPC.url, cookieFile: InternalRPC.cookieFileURL
+    )
 
     private init() {}
 }
