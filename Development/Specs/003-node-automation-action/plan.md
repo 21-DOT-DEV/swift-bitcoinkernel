@@ -24,6 +24,10 @@ running.
 **Outstanding at this stage:** everything past the skeleton. The current build does no
 node work — it logs that it ran and returns a line of text. The real run is §7.
 
+How that work is being split into reviewable pull requests, and where the unmerged
+code for it is preserved, is in [`delivery.md`](delivery.md) — a temporary companion
+to this plan, deleted once the work has landed and this plan describes what shipped.
+
 ## 1. Goal & success criteria
 
 The skeleton (this stage):
