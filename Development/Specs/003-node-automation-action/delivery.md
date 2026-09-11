@@ -40,13 +40,25 @@ tick box inside a table cell is not clickable on GitHub; it is edited in the fil
 
 Two sources, with different standing.
 
-**The archived working code** — the roughly 1,240 changed lines this plan slices up —
-is preserved as an annotated tag, `archive/spec-003-stash-2026-09-10`. It was held in
-a local saved-changes entry (a `git stash` entry), which is recognised as the wrong
-place for anything kept overnight: it is never pushed, so it is not backed up, and it
-is consumed the moment it is applied. Promoting it to a tag makes it permanently
-readable and keeps it out of branch listings. **It has never been compiled.** Treat it
-as a detailed sketch, not as working code.
+**The reference code** — the roughly 1,240 changed lines this plan slices up — is
+published on branch
+[`spec-003-stash-2026-09-10`](https://github.com/21-DOT-DEV/swift-bitcoinkernel/tree/spec-003-stash-2026-09-10),
+where it arrives in a single commit, `14c12d1`. It was previously held in a local
+saved-changes entry (a `git stash` entry), which is the wrong place for anything kept
+overnight: such an entry is never pushed, so it is not backed up, and it is consumed
+the moment it is applied. No pull request is open against this branch, so none of the
+repository's automated checks run on it.
+
+**It has never been compiled.** Treat it as a detailed sketch, not as working code.
+
+Two practical notes. Link to the commit `14c12d1` rather than to the branch name when
+a reference needs to stay valid, because a branch tip can move. And the branch should
+be deleted once slices 1–11 have landed — at which point, if the code is still worth
+keeping readable, tag it first: a tag cannot be moved by accident and does not show up
+in branch listings or stale-branch reports.
+
+The branch also carries slice 0's two commits and this file, so a reviewer comparing
+it against `main` sees the whole feature at once rather than just the sketch.
 
 **Pull request [#41](https://github.com/21-DOT-DEV/swift-bitcoinkernel/pull/41)** is an
 earlier, different implementation of the same feature — 1,876 added lines across 27
@@ -55,7 +67,7 @@ structure differs from this plan's (it put everything in one action type rather 
 splitting the deciding from the orchestrating), so it is useful for comparison and for
 the parts this plan does not rebuild, not as a template.
 
-| Slice | In the archive tag | In pull request #41 |
+| Slice | In the reference branch | In pull request #41 |
 |---|---|---|
 | 1 | `Projects/Project.swift`, both `PrivacyInfo.xcprivacy` files | — |
 | 2 | `DaemonConfig.swift`, `NodePreflight.swift`, `NodePreflightTests.swift` | — |
@@ -78,7 +90,7 @@ Out of scope here, but already written in #41 if it is picked up later:
 
 | # | Landed | Pull request | Changed lines | Depends on |
 |---|---|---|---|---|
-| 0 | [ ] | Push the two commits already sitting on the branch: a read-only connection for asking the node questions, and progress advanced from inside the long run | 85 | — |
+| 0 | [ ] | Open a pull request for the two commits already on the branch: a read-only connection for asking the node questions, and progress advanced from inside the long run | 85 | — |
 | 1 | [ ] | Declare the system calls Apple requires a stated reason for, in both apps, and bundle the declaration | 82 | — |
 | 2 | [ ] | Refuse to run when the chain folder cannot be set up; stop swallowing folder failures without a word | 73 | — |
 | 3 | [ ] | The plain decisions a run makes: blocks gained, the one sentence a person reads, what the progress display says at the end (+19 tests) | 324 | — |
@@ -141,9 +153,9 @@ nothing; a collision breaks every reference.
 Slice 7 may therefore land in two parts: the two cleared records now, the two measured
 ones after the device session below.
 
-## Known problems in the archived reference code
+## Known problems in the reference code
 
-These describe the archive tag, not anything in this repository. When each is fixed,
+These describe the reference branch, not anything on `main`. When each is fixed,
 the lasting warning goes in a comment or a test name beside the fix; this section is
 deleted with the file at slice 11.
 
