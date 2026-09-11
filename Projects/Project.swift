@@ -45,7 +45,11 @@ let project = Project(
             resources: [
                 "Resources/NodeApp/Assets.xcassets/**",
                 "Resources/NodeApp/Preview Content/**",
-                "Resources/NodeApp/AppIcon.icon"
+                "Resources/NodeApp/AppIcon.icon",
+                // Declares the system calls this app makes that Apple requires a stated
+                // reason for. It must be bundled inside the app, not merely present in
+                // the repository, or uploads are rejected.
+                "Resources/NodeApp/PrivacyInfo.xcprivacy"
             ],
             entitlements: "Resources/NodeApp/NodeApp.entitlements",
             dependencies: [
@@ -75,7 +79,9 @@ let project = Project(
             resources: [
                 "Resources/KernelApp/Assets.xcassets/**",
                 "Resources/KernelApp/Preview Content/**",
-                "Resources/KernelApp/AppIcon.icon"
+                "Resources/KernelApp/AppIcon.icon",
+                // See the note on the sibling app: must be bundled, not just present.
+                "Resources/KernelApp/PrivacyInfo.xcprivacy"
             ],
             entitlements: "Resources/KernelApp/KernelApp.entitlements",
             dependencies: [

@@ -18,14 +18,14 @@ import Foundation
 /// every platform in CI without a device.
 ///
 /// Starting a full Bitcoin node runs for minutes and writes continuously. There are
-/// six conditions under which doing so is either impossible or actively harmful,
+/// seven conditions under which doing so is either impossible or actively harmful,
 /// and in each case a run that says so is more useful than one that starts and
 /// quietly achieves nothing. See
 /// `Development/Specs/003-node-automation-action/plan.md` §3.6.
 ///
-/// Nothing calls this yet. The code that *reads* these conditions from the device is
-/// framework-dependent and cannot be exercised in CI, so it lands with the
-/// node-start work alongside its caller; only the decision lands here.
+/// The code that *reads* these conditions from the device is framework-dependent and
+/// cannot be exercised in CI, so it lives in `NodeRun` alongside its caller; only the
+/// decision lives here.
 enum NodePreflight {
 
     /// What was observed about the device, as plain values.
@@ -39,6 +39,14 @@ enum NodePreflight {
         /// that first unlock. Verified against the app's declared permissions, which
         /// request no stricter protection.
         var filesReadable: Bool = true
+        /// Whether the folder the chain is written into exists and has been marked so
+        /// the system does not copy it into iCloud or device backups.
+        ///
+        /// Both halves matter and both can fail. Without the folder there is nowhere to
+        /// write. Without the mark, a chain measured in gigabytes is silently swept
+        /// into the person's backups — which they pay for, and which they would never
+        /// choose, because the chain can be fetched again from the network at any time.
+        var storagePrepared: Bool = true
         /// Whether the person has switched on the battery saver.
         var lowPowerModeEnabled: Bool = false
         /// Whether the current network is metered — cellular, or a link shared from
@@ -62,6 +70,9 @@ enum NodePreflight {
     enum Refusal: Equatable {
         /// The app's files are not readable yet (restart, before the first unlock).
         case filesNotReadable
+        /// The folder the chain is written into could not be created, or could not be
+        /// marked as excluded from backups.
+        case storageNotPrepared
         /// Too little room for a node that writes continuously.
         case notEnoughDisk(freeBytes: Int64)
         /// The network is metered, so a sync could cost the person real money.
@@ -79,6 +90,8 @@ enum NodePreflight {
             switch self {
             case .filesNotReadable:
                 return "The node's files are not readable until the phone is unlocked once after a restart, so the node did not start."
+            case .storageNotPrepared:
+                return "The folder the chain is stored in could not be set up, so the node did not start. Starting anyway risks writing gigabytes of chain data into your backups."
             case let .notEnoughDisk(freeBytes):
                 // Formatted by the platform rather than by hand. Hand-building this
                 // divided by 1024³ while labelling the result "GB" — which means the
@@ -116,7 +129,9 @@ enum NodePreflight {
     ///
     /// Ordered most to least fundamental, so the reported reason is the one that
     /// matters most when several apply: unreadable files make a run impossible;
-    /// too little disk risks damage; a metered network can cost real money; a
+    /// unprepared storage likewise, and it is checked before free space because free
+    /// space is measured *on that folder* and cannot be read if the folder is not
+    /// there; too little disk risks damage; a metered network can cost real money; a
     /// data-restricted network is the person's stated preference about data; heat
     /// makes things worse; battery saver is a stated preference about power and so
     /// is checked last.
@@ -129,6 +144,7 @@ enum NodePreflight {
         minimumFreeDiskBytes: Int64 = minimumFreeDiskBytes
     ) -> Refusal? {
         if !conditions.filesReadable { return .filesNotReadable }
+        if !conditions.storagePrepared { return .storageNotPrepared }
         if let free = conditions.freeDiskBytes, free < minimumFreeDiskBytes {
             return .notEnoughDisk(freeBytes: free)
         }

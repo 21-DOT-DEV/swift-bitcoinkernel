@@ -10,6 +10,9 @@
 
 import Bitcoin
 import Foundation
+import os.log
+
+private let configLogger = Logger(subsystem: "dev.21.NodeApp", category: "DaemonConfig")
 
 /// Builds Bitcoin Core daemon arguments from current user configuration.
 ///
@@ -24,7 +27,19 @@ enum DaemonConfig {
     ///   When `nil` and Tor is enabled, the proxy argument is omitted
     ///   (Tor not yet bootstrapped).
     static func buildArguments(torProxy: String? = nil) -> [String] {
-        try? prepareDataDirectory(at: dataDirectory)
+        // Not fatal here, but never silent: a failure means either there is nowhere to
+        // write, or the folder is not marked as excluded from backups and gigabytes of
+        // chain data will be swept into iCloud. Unattended runs do not reach this
+        // point — `NodeRun` prepares the folder first and refuses outright if it
+        // cannot, because there is nobody there to read a log (see
+        // `NodePreflight.Refusal.storageNotPrepared`).
+        do {
+            try prepareDataDirectory(at: dataDirectory)
+        } catch {
+            configLogger.error(
+                "Data directory could not be prepared — chain data may not be excluded from backups: \(error.localizedDescription, privacy: .public)"
+            )
+        }
         let defaults = UserDefaults.standard
         let network = BitcoinNetwork(
             rawValue: defaults.string(forKey: "bitcoin_network") ?? ""

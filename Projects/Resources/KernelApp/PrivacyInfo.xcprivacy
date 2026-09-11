@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- This app does no tracking and collects nothing, but the declaration below is
+	     still required: Apple asks every app to name certain ordinary system calls it
+	     makes and give an approved reason code for each. Missing or mismatched codes
+	     are rejected at upload (ITMS-91053 and ITMS-91055).
+
+	     Only saved settings are declared here. This app makes no free-space check, so
+	     the disk-space category the sibling app declares does not apply — each app
+	     declares what it actually calls, checked rather than copied. -->
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

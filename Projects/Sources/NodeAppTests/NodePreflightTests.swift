@@ -28,6 +28,23 @@ struct NodePreflightTests {
                 == .filesNotReadable)
     }
 
+    @Test("a chain folder that could not be set up stops the run")
+    func storageNotPrepared() {
+        #expect(
+            NodePreflight.refusal(for: .init(storagePrepared: false, freeDiskBytes: 8 * oneGB))
+                == .storageNotPrepared)
+    }
+
+    @Test("an unprepared chain folder is reported ahead of free space")
+    func storageOutranksDisk() {
+        // Free space is measured on that folder, so a reading taken before it exists
+        // means nothing — reporting "not enough space" would send the person chasing
+        // the wrong problem.
+        #expect(
+            NodePreflight.refusal(for: .init(storagePrepared: false, freeDiskBytes: 0))
+                == .storageNotPrepared)
+    }
+
     @Test("too little free space stops the run and reports how much is left")
     func notEnoughDisk() {
         let free = oneGB / 2
@@ -94,14 +111,18 @@ struct NodePreflightTests {
 
     @Test("the most fundamental reason is reported when several apply")
     func refusalPriority() {
-        // Full order: unreadable files, disk, metered, data-restricted, heat, saver.
-        // Each step removes the winning condition and expects the next one down.
+        // Full order: unreadable files, chain folder, disk, metered, data-restricted,
+        // heat, saver. Each step removes the winning condition and expects the next.
         var conditions = NodePreflight.DeviceConditions(
-            filesReadable: false, lowPowerModeEnabled: true, networkIsMetered: true,
-            networkIsDataRestricted: true, overheating: true, freeDiskBytes: 0)
+            filesReadable: false, storagePrepared: false, lowPowerModeEnabled: true,
+            networkIsMetered: true, networkIsDataRestricted: true, overheating: true,
+            freeDiskBytes: 0)
         #expect(NodePreflight.refusal(for: conditions) == .filesNotReadable)
 
         conditions.filesReadable = true
+        #expect(NodePreflight.refusal(for: conditions) == .storageNotPrepared)
+
+        conditions.storagePrepared = true
         #expect(NodePreflight.refusal(for: conditions) == .notEnoughDisk(freeBytes: 0))
 
         conditions.freeDiskBytes = 8 * oneGB
@@ -132,6 +153,7 @@ struct NodePreflightTests {
     @Test("every reason has wording")
     func messages() {
         #expect(NodePreflight.Refusal.filesNotReadable.message.isEmpty == false)
+        #expect(NodePreflight.Refusal.storageNotPrepared.message.isEmpty == false)
         #expect(NodePreflight.Refusal.meteredNetwork.message.isEmpty == false)
         #expect(NodePreflight.Refusal.dataRestrictedNetwork.message.isEmpty == false)
         #expect(NodePreflight.Refusal.overheating.message.isEmpty == false)

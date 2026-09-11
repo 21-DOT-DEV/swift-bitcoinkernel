@@ -20,9 +20,9 @@ import Foundation
 /// them here means the same objects are available whether or not a window is on
 /// screen.
 ///
-/// Nothing outside the app's own screens uses this yet — the background action is
-/// a later change — but the ownership move is the groundwork it needs. See
-/// `Development/Specs/003-node-automation-action/plan.md` §3.2 and ADR 0005.
+/// This is what the Shortcuts actions reach through when they run with no window on
+/// screen. See `Development/Specs/003-node-automation-action/plan.md` §3.2 and
+/// ADR 0005.
 @MainActor
 final class NodeSession {
     static let shared = NodeSession()

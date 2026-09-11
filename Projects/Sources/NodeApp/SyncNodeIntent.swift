@@ -19,27 +19,24 @@ import os.log
 // Development/Specs/003-node-automation-action/plan.md §2.
 #if os(iOS)
 
-/// Skeleton of the "Sync Bitcoin Node" Shortcuts action.
+/// The "Sync Bitcoin Node" Shortcuts action — the one that works on every supported
+/// system, within the short time a background action is allowed.
 ///
-/// This is the first step of the rewrite tracked in
-/// `Development/Specs/003-node-automation-action/plan.md`. It does no node work
-/// yet: it records that it ran and hands back a line of text, which is enough to
-/// prove the execution path end to end — the system launches the app in the
-/// background, calls `perform()`, and a value comes back into the Shortcuts app.
-/// The real behaviour (starting the node, the privacy-network gate, reporting)
-/// arrives in later commits per the plan's follow-ups.
+/// The work itself is the one shared routine both actions call (`NodeRun.perform`),
+/// so this action and the longer-running iOS 27 one cannot drift apart. All this type
+/// adds is the declaration of where it runs and how long it is prepared to wait. Part
+/// of the rewrite tracked in
+/// `Development/Specs/003-node-automation-action/plan.md`.
 ///
-/// Two shape choices are made here so the later work is a swap, not a rewrite:
+/// Two shape choices worth keeping in view:
 ///
 ///   * `openAppWhenRun` stays `false` so the action runs in the background. That
-///     is the path an unattended automation actually takes, and the one worth
-///     proving. The flag is read by the system before `perform()` runs and cannot
-///     be changed at runtime, so it is fixed now rather than discovered later
+///     is the path an unattended automation actually takes. The flag is read by
+///     the system before `perform()` runs and cannot be changed at runtime
 ///     (ADR 0005).
-///   * `perform()` stays a thin adapter that returns quickly. When the longer
-///     execution window (`LongRunningIntent`, iOS 27) is available and shown to
-///     work for an unattended trigger, it can be adopted by conforming this type
-///     to it without disturbing the surrounding structure (plan §7).
+///   * `perform()` stays a thin adapter that returns quickly, so the longer
+///     execution window (`LongRunningIntent`, iOS 27) stays a separate action
+///     rather than a mode of this one (plan §7).
 struct SyncNodeIntent: AppIntent {
     static let title: LocalizedStringResource = "Sync Bitcoin Node"
     static let description = IntentDescription(
@@ -69,22 +66,25 @@ struct SyncNodeIntent: AppIntent {
     /// background thread and every wait is an `await` that frees this thread. Any
     /// future heavy or synchronous step added here must be pushed off the main actor
     /// explicitly (for example a detached task), never run inline. See
-    /// Development/Specs/003-node-automation-action/plan.md §3.4. The stub does not
-    /// touch `NodeSession` yet; the annotation lands now so the decision is compiler-
-    /// enforced rather than remembered.
+    /// Development/Specs/003-node-automation-action/plan.md §3.4.
+    ///
+    /// How long this waits for the node's first answer: a background-launched action
+    /// gets roughly 30 seconds in total, so 20 leaves room to read the node and return
+    /// rather than being cut off mid-report. On a locked phone the node has been
+    /// measured taking minutes to load its block index, so running out of time here is
+    /// the ordinary case, not a failure — the run says so and leaves the node coming up.
+    /// "Keep Bitcoin Node Syncing" on iOS 27 is the action that can actually wait.
     @MainActor
-    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
+    func perform() async throws -> some IntentResult & ReturnsValue<NodeRunReport>
+        & ProvidesDialog
+    {
         let started = ContinuousClock.now
-        Self.log.notice("run: entered (stub)")
-
-        // Nothing to do yet. The line below stands in for the real run, and is
-        // deliberately honest that no node was started so a tester is not misled.
-        let message = "Sync Bitcoin Node ran (stub — no node started yet)."
-
+        let report = await NodeRun.perform(waitForFirstAnswer: .seconds(20))
         let elapsedMs = Int(started.duration(to: .now) / .milliseconds(1))
-        Self.log.notice("run: finished (stub) in \(elapsedMs, privacy: .public) ms")
-
-        return .result(value: message, dialog: IntentDialog(stringLiteral: message))
+        Self.log.notice(
+            "run: finished \(report.outcome.rawValue, privacy: .public) in \(elapsedMs, privacy: .public) ms"
+        )
+        return .result(value: report, dialog: IntentDialog(stringLiteral: report.summary))
     }
 }
 
