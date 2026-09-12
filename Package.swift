@@ -28,11 +28,15 @@ let package = Package(
         .target(
             name: "Bitcoin",
             dependencies: ["bitcoind"],
+            exclude: Target.privacyManifestExclude,
+            resources: Target.privacyManifestResources,
             swiftSettings: SwiftSetting.bitcoinSettings
         ),
         .target(
             name: "BitcoinKernel",
-            dependencies: ["libbitcoinkernel"]
+            dependencies: ["libbitcoinkernel"],
+            exclude: Target.privacyManifestExclude,
+            resources: Target.privacyManifestResources
         ),
 
         // MARK: - Bitcoin Core
@@ -121,6 +125,34 @@ extension Package.Dependency {
             .package(url: "https://github.com/21-DOT-DEV/swift-plugin-subtree.git", exact: "0.0.15"),
             .package(url: "https://github.com/apple/swift-docc-plugin", from: "1.5.0"),
         ]
+    }
+}
+
+extension Target {
+    /// Exclude and resource entries for a product target that ships a privacy
+    /// manifest.
+    ///
+    /// `PrivacyInfo.xcprivacy` rides inside the product's resource bundle — the
+    /// swift-crypto/swift-nio pattern — naming the required-reason system calls
+    /// the vendored C++ code makes, so consumers' Xcode privacy reports
+    /// attribute them to this SDK. The file is excluded off-Darwin, where an
+    /// unhandled `.xcprivacy` would only warn; as upstream notes, that is still
+    /// strictly better than adding the resource unconditionally.
+    static var privacyManifestExclude: [String] {
+        #if canImport(Darwin)
+        []
+        #else
+        ["PrivacyInfo.xcprivacy"]
+        #endif
+    }
+
+    /// See ``privacyManifestExclude``.
+    static var privacyManifestResources: [PackageDescription.Resource] {
+        #if canImport(Darwin)
+        [.copy("PrivacyInfo.xcprivacy")]
+        #else
+        []
+        #endif
     }
 }
 
