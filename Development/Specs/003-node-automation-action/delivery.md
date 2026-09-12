@@ -90,8 +90,8 @@ Out of scope here, but already written in #41 if it is picked up later:
 
 | # | Landed | Pull request | Changed lines | Depends on |
 |---|---|---|---|---|
-| 0 | [ ] | Open a pull request for the two commits already on the branch: a read-only connection for asking the node questions, and progress advanced from inside the long run | 85 | — |
-| 1 | [ ] | Declare the system calls Apple requires a stated reason for, in both apps, and bundle the declaration | 82 | — |
+| 0 | [x] | Open a pull request for the two commits already on the branch: a read-only connection for asking the node questions, and progress advanced from inside the long run | 85 | — |
+| 1 | [x] | Declare the system calls Apple requires a stated reason for, in both apps, and bundle the declaration | 82 | — |
 | 2 | [ ] | Refuse to run when the chain folder cannot be set up; stop swallowing folder failures without a word | 73 | — |
 | 3 | [ ] | The plain decisions a run makes: blocks gained, the one sentence a person reads, what the progress display says at the end (+19 tests) | 324 | — |
 | 4 | [ ] | A "stop waiting after N seconds" helper, so one slow question to the node cannot consume a whole run (+ tests) | ~70 | — |

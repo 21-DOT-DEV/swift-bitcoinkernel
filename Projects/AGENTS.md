@@ -88,6 +88,10 @@ xcodebuild test \
 
 Tor bootstrap takes 30–60s cold (5–10s with cached consensus); the test has a 3-minute timeout.
 
+### Privacy manifests (required-reason declarations)
+
+Both apps ship `Resources/<App>/PrivacyInfo.xcprivacy` (bundled via `resources:` in `Project.swift`) and both declare the same four categories — `UserDefaults`/`CA92.1` plus `FileTimestamp`/`C617.1`, `DiskSpace`/`E174.1` and `SystemBootTime`/`35F9.1`. The identical set is deliberate, not copy-paste sloppiness: the vendored kernel/daemon C++ links *statically* into each app executable, so its `stat`/`statfs`/`sysctl(KERN_BOOTTIME)` calls are the app's calls at upload validation — SDK resource-bundle manifests are not reliably consulted (see firebase-ios-sdk#12557). The package's own product-target manifests (`Sources/Bitcoin{,Kernel}/PrivacyInfo.xcprivacy`) exist for consumers' privacy reports, not as a substitute. If a subtree sync adds or drops a required-reason call site, update all four manifests together. `35F9.1` is the closest approved fit for `randomenv.cpp`'s entropy mixing of `kern.boottime` — no reason literally says "entropy."
+
 ### Entitlements
 
 Both `NodeApp.entitlements` and `KernelApp.entitlements` declare:
