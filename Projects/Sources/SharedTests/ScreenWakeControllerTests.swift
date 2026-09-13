@@ -11,12 +11,16 @@
 import Testing
 
 // `ScreenWakeController` lives in the shared source tree, which is compiled into
-// both the NodeApp and KernelApp modules. This suite runs in both test targets;
-// the conditional import binds to whichever app module is present.
-#if canImport(NodeApp)
+// both the NodeApp and KernelApp modules. This suite runs in both test targets,
+// so the module import is picked by a per-bundle -D flag, not `canImport`:
+// once NodeApp is built into a shared products dir its module is visible to
+// KernelAppTests too, and `canImport(NodeApp)` would bind the wrong module.
+#if NODEAPP_TESTS
 @testable import NodeApp
-#elseif canImport(KernelApp)
+#elseif KERNELAPP_TESTS
 @testable import KernelApp
+#else
+#error("SharedTests compile into both test bundles, which must define NODEAPP_TESTS or KERNELAPP_TESTS")
 #endif
 
 @MainActor

@@ -10,6 +10,9 @@
 
 import Bitcoin
 import Foundation
+import os.log
+
+private let configLogger = Logger(subsystem: "dev.21.NodeApp", category: "DaemonConfig")
 
 /// Builds Bitcoin Core daemon arguments from current user configuration.
 ///
@@ -24,7 +27,18 @@ enum DaemonConfig {
     ///   When `nil` and Tor is enabled, the proxy argument is omitted
     ///   (Tor not yet bootstrapped).
     static func buildArguments(torProxy: String? = nil) -> [String] {
-        try? prepareDataDirectory(at: dataDirectory)
+        // Not fatal here — a caller with a screen in front of it will see the daemon
+        // fail on its own — but never silent either. A failure means there is nowhere
+        // to write, and the error carries which of the many reasons it was. An
+        // unattended run does not rely on this: it prepares the folder itself first and
+        // declines outright if it cannot, because nobody is there to read a log.
+        do {
+            try prepareDataDirectory(at: dataDirectory)
+        } catch {
+            configLogger.error(
+                "Data directory could not be prepared: \(error.localizedDescription, privacy: .public)"
+            )
+        }
         let defaults = UserDefaults.standard
         let network = BitcoinNetwork(
             rawValue: defaults.string(forKey: "bitcoin_network") ?? ""
@@ -112,16 +126,53 @@ enum DaemonConfig {
         return base.appendingPathComponent("NodeApp", isDirectory: true)
     }
 
-    /// Creates `url` if needed and marks it excluded from device backups —
+    /// Creates `url` if needed and asks the system to keep it out of device backups —
     /// chainstate is reproducible from the network and does not belong in
     /// iCloud or local device backups.
+    ///
+    /// **Only the folder's absence throws.** The two failures are not equivalent and
+    /// are no longer treated as one. Without the folder there is nowhere to write and
+    /// nothing can proceed. Without the backup mark the folder is there and perfectly
+    /// writable — the node runs fine, and the only cost is that backups may grow. So
+    /// the mark is best-effort and logged (see `excludeFromBackups(_:)`), and a caller
+    /// deciding whether a run may start weighs only the folder.
     @discardableResult
     static func prepareDataDirectory(at url: URL) throws -> URL {
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        var mutable = url
-        var values = URLResourceValues()
-        values.isExcludedFromBackup = true
-        try mutable.setResourceValues(values)
-        return mutable
+        excludeFromBackups(url)
+        return url
+    }
+
+    /// Asks the system to leave `url` out of iCloud and device backups, reporting
+    /// nothing and throwing nothing.
+    ///
+    /// Three things about this flag shape the code. It is **advisory** — Apple
+    /// documents it as guidance about what the system *can* exclude, not a guarantee
+    /// that the data never appears in a backup — so refusing to run because it could
+    /// not be set would be refusing on the strength of a promise that does not exist.
+    /// It can be **silently reset** by later file operations, and the documented
+    /// recovery is simply to set it again, which happens because every run prepares
+    /// the folder. And it applies to a **whole directory**, whose contents inherit it,
+    /// which is why it is set here once on the folder rather than on each of the
+    /// thousands of files the node writes inside it.
+    ///
+    /// Read before writing, so the common case touches nothing: re-setting a flag that
+    /// is already set is a filesystem write on every single run for no effect.
+    static func excludeFromBackups(_ url: URL) {
+        do {
+            let current = try url.resourceValues(forKeys: [.isExcludedFromBackupKey])
+            guard current.isExcludedFromBackup != true else { return }
+            var mutable = url
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try mutable.setResourceValues(values)
+        } catch {
+            // Left running on purpose. Logged rather than swallowed because the error
+            // names the cause, and this is the only trace anyone gets — on an
+            // unattended run there is no screen to show it on.
+            configLogger.error(
+                "Chain folder could not be marked as excluded from backups, so backups may grow: \(error.localizedDescription, privacy: .public)"
+            )
+        }
     }
 }

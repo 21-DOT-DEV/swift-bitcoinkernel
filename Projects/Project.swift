@@ -109,6 +109,9 @@ let project = Project(
             settings: .settings(
                 base: [
                     "SWIFT_OBJC_INTEROP_MODE": "objcxx",
+                    // SharedTests pick their app module on this flag — see the
+                    // "SharedTests discriminator" note in AGENTS.md.
+                    "SWIFT_ACTIVE_COMPILATION_CONDITIONS": "$(inherited) NODEAPP_TESTS",
                 ],
                 configurations: [
                     .debug(name: "Debug", xcconfig: "Resources/NodeAppTests/Debug.xcconfig"),
@@ -138,6 +141,11 @@ let project = Project(
             ],
             dependencies: [.target(name: "KernelApp"), .package(product: "Clocks")],
             settings: .settings(
+                base: [
+                    // SharedTests pick their app module on this flag — see the
+                    // "SharedTests discriminator" note in AGENTS.md.
+                    "SWIFT_ACTIVE_COMPILATION_CONDITIONS": "$(inherited) KERNELAPP_TESTS",
+                ],
                 configurations: [
                     .debug(name: "Debug", xcconfig: "Resources/KernelAppTests/Debug.xcconfig"),
                     .release(name: "Release", xcconfig: "Resources/KernelAppTests/Release.xcconfig")

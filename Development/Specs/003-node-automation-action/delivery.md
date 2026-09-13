@@ -92,9 +92,9 @@ Out of scope here, but already written in #41 if it is picked up later:
 |---|---|---|---|---|
 | 0 | [x] | Open a pull request for the two commits already on the branch: a read-only connection for asking the node questions, and progress advanced from inside the long run | 85 | — |
 | 1 | [x] | Declare the system calls Apple requires a stated reason for, in both apps, and bundle the declaration | 82 | — |
-| 2 | [ ] | Refuse to run when the chain folder cannot be set up; stop swallowing folder failures without a word | 73 | — |
+| 2 | [x] | Refuse to run when the chain folder cannot be set up; stop swallowing folder failures without a word | 73 | — |
 | 3 | [ ] | The plain decisions a run makes: blocks gained, the one sentence a person reads, what the progress display says at the end (+19 tests) | 324 | — |
-| 4 | [ ] | A "stop waiting after N seconds" helper, so one slow question to the node cannot consume a whole run (+ tests) | ~70 | — |
+| 4 | [x] | A "stop waiting after N seconds" helper, so one slow question to the node cannot consume a whole run (+ tests) | ~70 | — |
 | 5 | [ ] | Watch whether the network is one a person would mind a multi-gigabyte download on | 120 | — |
 | 6 | [ ] | The structured value a run hands back, with the text behind each outcome pinned, and a test that every outcome has display wording | ~165 | 3 |
 | 7 | [ ] | Vet and land the recovered decision records — see the gate below | ≤262 | — |
