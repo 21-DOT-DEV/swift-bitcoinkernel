@@ -96,8 +96,8 @@ Out of scope here, but already written in #41 if it is picked up later:
 | 3 | [x] | The plain decisions a run makes: blocks gained, the one sentence a person reads, what the progress display says at the end (+20 tests) | 324 | — |
 | 4 | [x] | A "stop waiting after N seconds" helper, so one slow question to the node cannot consume a whole run (+ tests) | ~70 | — |
 | 5 | [x] | Watch whether the network is one a person would mind a multi-gigabyte download on | 120 | — |
-| 6 | [ ] | The structured value a run hands back, with the text behind each outcome pinned, and a test that every outcome has display wording | ~165 | 3 |
-| 7 | [ ] | Vet and land the recovered decision records — see the gate below | ≤262 | — |
+| 6 | [x] | The structured value a run hands back, with the text behind each outcome pinned, and a test that every outcome has display wording | ~165 | 3 |
+| 7 | [x] | Vet and land the recovered decision records — see the gate below | ≤262 | — |
 | 8 | [ ] | The one routine both actions call: read the device, decline with a reason, or start the node; every question to it bounded | ~380 | 2, 3, 4, 5, 6, 7 |
 | 9 | [ ] | Wire the short action, with the wait made conditional — see below | ~45 | 6, 8 |
 | 10 | [ ] | Wire the iOS 27 action: honest progress display, keep-alive nudge, and removal of the temporary 30-second pause from slice 0 | 175 | 6, 8 |
@@ -145,13 +145,17 @@ nothing; a collision breaks every reference.
 
 | Record | Lands as | Gate |
 |---|---|---|
-| `0006-unattended-runs-never-bypass-tor.md` | `Accepted` | **Cleared.** Its cited facts hold today: `Projects/AGENTS.md:89` still reads "30–60s cold (5–10s with cached consensus)", and `Projects/Sources/Shared/TorViewModel.swift` still records the drop from ~40s to ~5–10s |
-| `0007-unattended-actions-own-their-deadline.md` | `Superseded`, pointing at `0009` | **Cleared.** Its load-bearing claim holds: `Sources/Bitcoin/Daemon.swift:46` is an unbounded semaphore and `:178` waits on it with no timeout and no cancellation, so a node shutdown cannot be abandoned once begun. Kept as the road not taken, so nobody re-proposes a self-managed shutdown deadline and rediscovers this the hard way. `Superseded` rather than `Rejected` because the checker at `Development/Tools/Sources/PlanIndex/Indexer.swift:17` permits only `Proposed`, `Accepted`, `Superseded` — and it is accurate: `0009` narrows `0007` rather than refuting it |
-| `0008-unattended-timings-are-measured-on-a-locked-device.md` | `Accepted` | **Blocked.** Rests entirely on locked-versus-unlocked measurements. Re-measure on this branch first |
-| `0009-unattended-runs-leave-the-node-running.md` | `Accepted` | **Blocked.** Rests on the node surviving past the action's return — 8 and 15 minutes observed, with 347 blocks in 90 seconds and 2,145 in 11 minutes. Re-measure on this branch first |
+| `0006-unattended-runs-never-bypass-tor.md` | `Accepted` | **Landed as `Accepted`.** Its cited facts held at vetting: `Projects/AGENTS.md:93` reads "30–60s cold (5–10s with cached consensus)", and `Projects/Sources/Shared/TorViewModel.swift` records the drop from ~40s to ~5–10s |
+| `0007-unattended-actions-own-their-deadline.md` | `Superseded`, pointing at `0009` | **Landed as `Superseded`.** Its load-bearing claim held at vetting: `Sources/Bitcoin/Daemon.swift:46` is an unbounded semaphore and `:178` waits on it with no timeout and no cancellation, so a node shutdown cannot be abandoned once begun. Kept as the road not taken, so nobody re-proposes a self-managed shutdown deadline and rediscovers this the hard way. `Superseded` rather than `Rejected` because the checker at `Development/Tools/Sources/PlanIndex/Indexer.swift:17` permits only `Proposed`, `Accepted`, `Superseded` — and it is accurate: `0009` narrows `0007` rather than refuting it. Two stale claims were repaired at landing: a citation of `budget`/`shutdownReserve` constants that never shipped, and a "do not suspend me" assertion the shipped design does not raise |
+| `0008-unattended-timings-are-measured-on-a-locked-device.md` | `Accepted` | **Landed as `Proposed`, flipping to `Accepted` after re-measurement.** Rests entirely on locked-versus-unlocked figures measured on the earlier implementation; the record says so in a status note. Re-measure on this branch |
+| `0009-unattended-runs-leave-the-node-running.md` | `Accepted` | **Landed as `Proposed`, flipping to `Accepted` after re-measurement.** Rests on the node surviving past the action's return — 8 and 15 minutes observed, with 347 blocks in 90 seconds and 2,145 in 11 minutes, all on the earlier implementation; the record says so in a status note. Re-measure on this branch |
 
-Slice 7 may therefore land in two parts: the two cleared records now, the two measured
-ones after the device session below.
+Slice 7 landed in one pass rather than two: the two cleared records at their target
+status, the two measurement-dependent ones as `Proposed` — the honest status for
+claims awaiting re-measurement, so the recovered text lives in the record store
+rather than only on the closed pull request. Flipping each to `Accepted` is a
+one-line change after the device session below, which the first unticked box under
+"Two checks no slice can cover" still tracks.
 
 ## Known problems in the reference code
 
@@ -188,7 +192,8 @@ Both need a physical device with the screen locked, and both gate work above.
 
 - [ ] Measure a cold start with the screen locked on this branch. `plan.md` §6 (its
       risks list) says every timing budget rests on this, and it has not been taken
-      here. Gates slice 7's two blocked records, and confirms or corrects slice 9.
+      here. Gates the `Accepted` flip of slice 7's two records landed as `Proposed`, and
+      confirms or corrects slice 9.
 - [ ] Confirm the stop button on the iOS 27 progress display ends a run. Currently not
       reachable, because the placeholder finishes in milliseconds — which is why slice
       0 carries a temporary 30-second pause that slice 10 removes.
