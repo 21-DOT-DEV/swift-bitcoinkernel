@@ -115,8 +115,8 @@ enum NodeAutomation {
     /// the node with a blank proxy setting — that is, on a direct connection, sending
     /// the person's home network address to peers after they asked it not to. Refusing
     /// only `nil` would leave that hole open, so this is a privacy floor: anything that
-    /// is not a real address is refused. (The policy is recorded in the plan §7 and
-    /// becomes its own decision record when the background action wires this in.)
+    /// is not a real address is refused. (The policy is ADR 0006, and takes effect
+    /// when the background action wires this in.)
     ///
     /// The value forwarded to the builder is the trimmed one, so surrounding
     /// whitespace never reaches the daemon as part of a `-proxy=` argument.

@@ -3,8 +3,8 @@ feature: 003
 title: Action that runs the node unattended from a Shortcuts automation
 phase: null
 status: In Progress
-updated: 2026-09-08
-adrs: [0005]
+updated: 2026-09-13
+adrs: [0005, 0006, 0007, 0008, 0009]
 ---
 
 # Action that runs the node unattended from a Shortcuts automation
@@ -17,9 +17,14 @@ the execution path, then grows the real behaviour.
 
 The one decision the skeleton already embodies — run in-app, in the background, no
 shared container — is ADR [0005](../../ADRs/0005-shortcuts-actions-run-in-the-app.md).
-Two decisions that shape the real run are planned direction in §7, each to become its
-own ADR when its code lands: never bypass the private network, and leave the node
-running.
+Four recovered records carry the run's remaining durable rules:
+[0006](../../ADRs/0006-unattended-runs-never-bypass-tor.md) (accepted — never fall
+back to a direct connection),
+[0007](../../ADRs/0007-unattended-actions-own-their-deadline.md) (superseded by 0009 —
+the self-managed shutdown deadline, kept as the road not taken), and
+[0008](../../ADRs/0008-unattended-timings-are-measured-on-a-locked-device.md) +
+[0009](../../ADRs/0009-unattended-runs-leave-the-node-running.md) (both proposed
+until their figures are re-measured with the screen locked on this branch).
 
 **Outstanding at this stage:** everything past the skeleton. The current build does no
 node work — it logs that it ran and returns a line of text. The real run is §7.
@@ -88,8 +93,9 @@ declared two ways for full coverage — `supportedModes` on iOS 26+, the older
 
 The real run — start the node, gate on the private network, report through a silent
 notification, leave the node running — is deliberately not in the skeleton. Those
-decisions are planned direction in §7, each to become its own ADR when its code lands
-and its behaviour is measured on this branch rather than inherited.
+decisions are planned direction in §7, recorded under `../../ADRs/`: 0006 is accepted
+(its refusal already ships as `NodeAutomation.startArguments`); 0008 and 0009 are
+proposed until their behaviour is measured on this branch rather than inherited.
 
 ### 3.4 Reaching the process-owned state across the thread boundary
 
@@ -277,13 +283,15 @@ Ordered roughly by when each is needed.
 
 - **Start the node and report the result.** Reach the process-owned node with no screen
   present, start it, wait only until it first answers, and return. The first real-work
-  commit. It carries two agreed but unbuilt decisions, each to be ratified as its own
-  ADR in the commit that implements it:
-    - **Never bypass the private network.** With the privacy setting on and the private
-      connection not established, the node does not start — never a fallback to a direct
-      connection, which would expose the person's home network address after they asked
-      it not to.
-    - **Leave the node running by default.** The run returns as soon as the node answers
+  commit. It carries two agreed decisions, each now a record under `../../ADRs/`:
+    - **Never bypass the private network**
+      ([0006](../../ADRs/0006-unattended-runs-never-bypass-tor.md), accepted). With the
+      privacy setting on and the private connection not established, the node does not
+      start — never a fallback to a direct connection, which would expose the person's
+      home network address after they asked it not to.
+    - **Leave the node running by default**
+      ([0009](../../ADRs/0009-unattended-runs-leave-the-node-running.md), proposed
+      pending locked-device re-measurement). The run returns as soon as the node answers
       and does not stop it; stopping is an explicit, off-by-default switch. This is why
       the prior implementation's self-managed shutdown deadline and "don't-suspend-me"
       assertion are not being rebuilt.
