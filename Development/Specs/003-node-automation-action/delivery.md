@@ -98,7 +98,7 @@ Out of scope here, but already written in #41 if it is picked up later:
 | 5 | [x] | Watch whether the network is one a person would mind a multi-gigabyte download on | 120 | — |
 | 6 | [x] | The structured value a run hands back, with the text behind each outcome pinned, and a test that every outcome has display wording | ~165 | 3 |
 | 7 | [x] | Vet and land the recovered decision records — see the gate below | ≤262 | — |
-| 8 | [ ] | The one routine both actions call: read the device, decline with a reason, or start the node; every question to it bounded | ~380 | 2, 3, 4, 5, 6, 7 |
+| 8 | [x] | The one routine both actions call: read the device, decline with a reason, or start the node; every question to it bounded | ~380 | 2, 3, 4, 5, 6, 7 |
 | 9 | [ ] | Wire the short action, with the wait made conditional — see below | ~45 | 6, 8 |
 | 10 | [ ] | Wire the iOS 27 action: honest progress display, keep-alive nudge, and removal of the temporary 30-second pause from slice 0 | 175 | 6, 8 |
 | 11 | [ ] | Correct `plan.md` to describe what shipped, and delete this file | ~60 | 10 |
@@ -127,6 +127,16 @@ Slice 9 therefore makes the wait conditional on what the run found:
   done rather than waiting to be suspended, and since the node has been observed to
   keep running after the action returns, holding the window open buys nothing but
   battery.
+
+One decision lands here that `NodeRun` deliberately leaves to its callers: a run
+that is *cancelled* returns `.noAnswer` — a completed result whose sentence is "The
+node did not answer" — rather than throwing. AppIntents idiom for a run the person
+stopped themselves is to throw, so the system renders the run as cancelled;
+returning a value lets Shortcuts chain the report into the next automation step as
+if it were a measurement outcome, and `.noAnswer`-from-cancel is indistinguishable
+downstream from `.noAnswer`-from-a-dead-node. Slice 9 decides it explicitly —
+either a `Task.isCancelled` re-check in the action that throws, or a deliberate
+acceptance of the value — and slice 10 applies the same choice.
 
 Slice 9 also corrects the action's own description, which currently promises to let
 the node "sync for the short time a background action is allowed and report what

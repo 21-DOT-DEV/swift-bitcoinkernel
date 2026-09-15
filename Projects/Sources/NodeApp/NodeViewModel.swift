@@ -21,6 +21,11 @@ enum NodeState: String, Sendable {
     case starting = "Starting"
     case running = "Running"
     case stopping = "Stopping"
+
+    /// On its way down or already there. Shutdown is one-way, so a `.stopping`
+    /// node is no longer the running node an answer described — anything asking
+    /// "is the node still up?" should treat it as stopped.
+    var isStoppedOrStopping: Bool { self == .stopped || self == .stopping }
 }
 
 @MainActor @Observable

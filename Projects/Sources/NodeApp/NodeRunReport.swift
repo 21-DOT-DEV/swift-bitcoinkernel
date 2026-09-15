@@ -30,6 +30,9 @@ enum NodeRunOutcome: String, AppEnum {
     case declined = "declined"
     /// Started, but did not answer within the time this run had.
     case didNotComeUp = "didNotComeUp"
+    /// The node was asked but gave no usable answer — it never answered, or its
+    /// answer arrived after the node was stopped or the run ended.
+    case noAnswer = "noAnswer"
 
     static var typeDisplayRepresentation: TypeDisplayRepresentation { "Node Run Outcome" }
 
@@ -39,6 +42,9 @@ enum NodeRunOutcome: String, AppEnum {
             .alreadyRunning: "Already running",
             .declined: "Declined",
             .didNotComeUp: "Did not come up in time",
+            // Not "in time": the case also covers a real answer discarded because
+            // the node was stopped or the run ended while the question was out.
+            .noAnswer: "Did not answer",
         ]
     }
 
@@ -54,6 +60,7 @@ enum NodeRunOutcome: String, AppEnum {
         case .alreadyRunning: self = .alreadyRunning
         case .declined: self = .declined
         case .didNotComeUp: self = .didNotComeUp
+        case .noAnswer: self = .noAnswer
         }
     }
 
@@ -67,6 +74,7 @@ enum NodeRunOutcome: String, AppEnum {
         case .alreadyRunning: .alreadyRunning
         case .declined: .declined
         case .didNotComeUp: .didNotComeUp
+        case .noAnswer: .noAnswer
         }
     }
 }
@@ -84,9 +92,13 @@ struct NodeRunReport: TransientAppEntity {
     static var typeDisplayRepresentation: TypeDisplayRepresentation { "Node Run Report" }
 
     @Property(title: "Outcome") var outcome: NodeRunOutcome
-    /// Which chain the height belongs to. A height means nothing without it.
-    @Property(title: "Chain") var chain: String
-    @Property(title: "Block height") var blockHeight: Int
+    /// Which chain the height belongs to. A height means nothing without it — and
+    /// both are absent when nothing was measured.
+    @Property(title: "Chain") var chain: String?
+    /// The height the node reported. Absent when nothing was measured — a run that
+    /// declined or got no usable answer must not hand back the last recorded height
+    /// looking like a fresh reading.
+    @Property(title: "Block height") var blockHeight: Int?
     /// Headers the node knows about but has not yet downloaded as full blocks. Without
     /// this a height reads as "caught up" when the node may be far behind.
     @Property(title: "Blocks behind") var blocksBehind: Int?
@@ -107,8 +119,8 @@ struct NodeRunReport: TransientAppEntity {
 
     init(
         outcome: NodeRunOutcome,
-        chain: String,
-        blockHeight: Int,
+        chain: String?,
+        blockHeight: Int?,
         blocksBehind: Int? = nil,
         blocksSinceLastCheck: Int? = nil,
         connections: Int? = nil,

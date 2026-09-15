@@ -67,9 +67,9 @@ struct HardTimeoutError: Error, Equatable {
 /// holding an `any Clock<Duration>` still compile (Swift opens the existential);
 /// callers that pass no clock get `ContinuousClock()`.
 ///
-/// Nothing calls this yet — the unattended run that asks the bounded questions
-/// is a later change (plan §3.4, delivery slice 8). It lands here, in the
-/// shared sources, because `KernelApp`'s questions to its kernel are the same
+/// Its caller is the unattended run (`NodeRun`), which bounds every question it
+/// asks the node with this (delivery slice 8). It lives here, in the shared
+/// sources, because `KernelApp`'s questions to its kernel are the same
 /// uncancellable in-process shape and can use it when that need arises.
 func withHardTimeout<T: Sendable, C: Clock<Duration>>(
     _ timeout: Duration,

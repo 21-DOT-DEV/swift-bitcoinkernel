@@ -25,9 +25,9 @@ import Foundation
 /// six — the seventh is the chain folder below, and the plan is reconciled when the
 /// feature lands.
 ///
-/// Nothing calls this yet. The code that *reads* these conditions from the device is
-/// framework-dependent and cannot be exercised in CI, so it lands with the
-/// node-start work alongside its caller; only the decision lands here.
+/// The code that *reads* these conditions from the device is framework-dependent
+/// and cannot be exercised in CI, so it lives beside its caller in `NodeRun`; only
+/// the decision lives here.
 enum NodePreflight {
 
     /// What was observed about the device, as plain values.
