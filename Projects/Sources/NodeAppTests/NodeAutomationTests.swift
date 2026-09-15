@@ -16,36 +16,79 @@ struct NodeAutomationTests {
 
     // MARK: - step(...)
 
-    @Test("a node that is not stopped is reported, never restarted")
+    @Test("a node that is running is reported, never restarted")
     func reportsExistingNode() {
         #expect(
-            NodeAutomation.step(nodeIsStopped: false, privacyEnabled: false, privacyReady: false)
+            NodeAutomation.step(nodeState: .running, privacyEnabled: false, privacyReady: false)
                 == .reportExistingNode)
         // Even with the privacy network on and ready, a running node is left alone.
         #expect(
-            NodeAutomation.step(nodeIsStopped: false, privacyEnabled: true, privacyReady: true)
+            NodeAutomation.step(nodeState: .running, privacyEnabled: true, privacyReady: true)
                 == .reportExistingNode)
+    }
+
+    @Test("a node still shutting down is reported like a running one")
+    func reportsStoppingNode() {
+        // It cannot be started (`start()` refuses anything but `.stopped`), and the
+        // read path's answer checks land it on `noAnswer` if it finishes stopping
+        // mid-question — so it is read and left alone like a running one.
+        #expect(
+            NodeAutomation.step(nodeState: .stopping, privacyEnabled: false, privacyReady: false)
+                == .reportExistingNode)
+        // The privacy gate does not reroute it either — a node on its way down is
+        // read like a running one whatever the network preference says.
+        #expect(
+            NodeAutomation.step(nodeState: .stopping, privacyEnabled: true, privacyReady: false)
+                == .reportExistingNode)
+    }
+
+    @Test("a node still coming up is waited on, not read once and not restarted")
+    func waitsForStartingNode() {
+        // Mid-startup cannot answer until its block index loads — minutes on a
+        // locked phone — so a single read would almost certainly end in
+        // `noAnswer`; and it cannot be started again either.
+        #expect(
+            NodeAutomation.step(nodeState: .starting, privacyEnabled: false, privacyReady: false)
+                == .waitForStartingNode)
+        // The privacy gate does not apply: whoever started the node already chose
+        // its connection, and the run cannot undo that by declining to wait.
+        #expect(
+            NodeAutomation.step(nodeState: .starting, privacyEnabled: true, privacyReady: false)
+                == .waitForStartingNode)
     }
 
     @Test("with the privacy network off, a stopped node starts")
     func startsWithoutPrivacy() {
         #expect(
-            NodeAutomation.step(nodeIsStopped: true, privacyEnabled: false, privacyReady: false)
+            NodeAutomation.step(nodeState: .stopped, privacyEnabled: false, privacyReady: false)
                 == .startNode)
     }
 
     @Test("with the privacy network on and ready, a stopped node starts")
     func startsWhenPrivacyReady() {
         #expect(
-            NodeAutomation.step(nodeIsStopped: true, privacyEnabled: true, privacyReady: true)
+            NodeAutomation.step(nodeState: .stopped, privacyEnabled: true, privacyReady: true)
                 == .startNode)
     }
 
     @Test("with the privacy network on but not ready, the run waits instead of starting")
     func waitsForPrivacy() {
         #expect(
-            NodeAutomation.step(nodeIsStopped: true, privacyEnabled: true, privacyReady: false)
+            NodeAutomation.step(nodeState: .stopped, privacyEnabled: true, privacyReady: false)
                 == .waitForPrivateNetwork)
+    }
+
+    // MARK: - consultsDeviceConditions(...)
+
+    @Test("only steps that start something are weighed against device conditions")
+    func conditionsGateStartingNotReporting() {
+        #expect(NodeAutomation.consultsDeviceConditions(for: .startNode))
+        #expect(NodeAutomation.consultsDeviceConditions(for: .waitForPrivateNetwork))
+        // Reading a running node or waiting on a starting one spends nothing the
+        // conditions protect — gating them would report "not started" about a
+        // node that is.
+        #expect(NodeAutomation.consultsDeviceConditions(for: .reportExistingNode) == false)
+        #expect(NodeAutomation.consultsDeviceConditions(for: .waitForStartingNode) == false)
     }
 
     // MARK: - startArguments(...)
@@ -128,6 +171,17 @@ struct NodeAutomationTests {
         #expect(args == ["-proxy=127.0.0.1:9050"])
     }
 
+    @Test("the private-network refusal carries the sentence both declining paths share")
+    func startRefusalMessage() {
+        // Two paths decline for this reason — the deliberate wait-for-it step and
+        // the start that finds it gone at the last moment — so the sentence lives
+        // on the refusal itself. Pinned here because wording that drifted between
+        // them would tell the person two different stories about the same thing.
+        let message = NodeAutomation.StartRefusal.privateNetworkNotReady.message
+        #expect(message.contains("private network was not ready"))
+        #expect(message.contains("being established"))
+    }
+
     // MARK: - Turning readings into a report
 
     private func reading(_ chain: String, _ height: Int, behind: Int = 0)
@@ -178,6 +232,21 @@ struct NodeAutomationTests {
             blocksSinceLastCheck: nil, declinedReason: nil)
         #expect(text.contains("had not come up"))
         #expect(text.contains("nothing was measured"))
+    }
+
+    @Test("a run that got no usable answer says nothing was measured")
+    func summaryNoAnswer() {
+        // Covers both ways a run ends here — a node that never answered, and an
+        // answer discarded because the node was stopped or the run ended while the
+        // question was in flight. Either way, nothing usable was measured.
+        let text = NodeAutomation.summary(
+            outcome: .noAnswer, chain: "main", height: 5, blocksBehind: nil,
+            blocksSinceLastCheck: nil, declinedReason: nil)
+        #expect(text.contains("did not answer"))
+        #expect(text.contains("nothing was measured"))
+        // It must not imply the node was started — on this path it may already have
+        // been running.
+        #expect(text.contains("started") == false)
     }
 
     @Test("a started run names the chain, the height, and what arrived since")
@@ -278,6 +347,9 @@ struct NodeAutomationTests {
         #expect(
             NodeAutomation.ending(outcome: .didNotComeUp, summary: "x").fillsProgressBar
                 == false)
+        #expect(
+            NodeAutomation.ending(outcome: .noAnswer, summary: "x").fillsProgressBar
+                == false)
     }
 
     @Test("the card's detail line is the run's own summary sentence")
@@ -288,13 +360,14 @@ struct NodeAutomationTests {
         #expect(NodeAutomation.ending(outcome: .declined, summary: sentence).detail == sentence)
     }
 
-    @Test("every ending has a headline, and they tell the four apart")
+    @Test("every ending has a headline, and they tell the five apart")
     func endingTitles() {
         let titles = [
             NodeAutomation.ending(outcome: .started, summary: "x").title,
             NodeAutomation.ending(outcome: .alreadyRunning, summary: "x").title,
             NodeAutomation.ending(outcome: .declined, summary: "x").title,
             NodeAutomation.ending(outcome: .didNotComeUp, summary: "x").title,
+            NodeAutomation.ending(outcome: .noAnswer, summary: "x").title,
         ]
         #expect(titles.allSatisfy { $0.isEmpty == false })
         #expect(Set(titles).count == titles.count)
@@ -304,8 +377,10 @@ struct NodeAutomationTests {
     func endingDeclinedDoesNotClaimRunning() {
         let declined = NodeAutomation.ending(outcome: .declined, summary: "x").title
         let didNotComeUp = NodeAutomation.ending(outcome: .didNotComeUp, summary: "x").title
+        let noAnswer = NodeAutomation.ending(outcome: .noAnswer, summary: "x").title
         #expect(declined.contains("running") == false)
         #expect(didNotComeUp.contains("running") == false)
+        #expect(noAnswer.contains("running") == false)
     }
 
     @Test("the in-progress headline is set")

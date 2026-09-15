@@ -20,9 +20,9 @@ import Foundation
 /// them here means the same objects are available whether or not a window is on
 /// screen.
 ///
-/// Nothing outside the app's own screens uses this yet — the background action is
-/// a later change — but the ownership move is the groundwork it needs. See
-/// `Development/Specs/003-node-automation-action/plan.md` §3.2 and ADR 0005.
+/// This is what the Shortcuts actions reach through when they run with no window on
+/// screen. See `Development/Specs/003-node-automation-action/plan.md` §3.2 and
+/// ADR 0005.
 @MainActor
 final class NodeSession {
     static let shared = NodeSession()
@@ -40,8 +40,8 @@ final class NodeSession {
     /// an action uses.
     ///
     /// Typed as the read-only interface the app already defines (`DashboardDataSource`
-    /// in `Dashboard.swift`) rather than the concrete client, so a test can hand in a
-    /// stand-in and exercise the reporting logic without a live node.
+    /// in `Dashboard.swift`) rather than the concrete client: asking questions is
+    /// all a run does with it, so the narrow surface is the honest type.
     let reader: any DashboardDataSource = RPCClient(
         url: InternalRPC.url, cookieFile: InternalRPC.cookieFileURL
     )

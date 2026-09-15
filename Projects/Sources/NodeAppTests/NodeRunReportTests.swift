@@ -41,6 +41,7 @@ struct NodeRunReportTests {
         #expect(NodeRunOutcome.alreadyRunning.rawValue == "alreadyRunning")
         #expect(NodeRunOutcome.declined.rawValue == "declined")
         #expect(NodeRunOutcome.didNotComeUp.rawValue == "didNotComeUp")
+        #expect(NodeRunOutcome.noAnswer.rawValue == "noAnswer")
     }
 
     @Test("every plain outcome survives the round trip through the Shortcuts-facing type")
@@ -50,7 +51,7 @@ struct NodeRunReportTests {
         // failure this guards is a crossed mapping — a conversion that swapped two
         // cases would compile and then report the wrong ending.
         let outcomes: [NodeAutomation.Outcome] = [
-            .started, .alreadyRunning, .declined, .didNotComeUp,
+            .started, .alreadyRunning, .declined, .didNotComeUp, .noAnswer,
         ]
         for outcome in outcomes {
             #expect(NodeRunOutcome(outcome).plain == outcome)

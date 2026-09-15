@@ -14,18 +14,23 @@ import Foundation
 /// The decisions an unattended run makes, expressed as plain values.
 ///
 /// Deliberately free of any Shortcuts or SwiftUI type, so they can be unit-tested
-/// without a node, a screen, or the address-hiding network. The run that will call
-/// them is a later change; it orchestrates and does no deciding — every judgment
+/// without a node, a screen, or the address-hiding network. The run that calls
+/// them (`NodeRun`) orchestrates and does no deciding — every judgment
 /// it appears to make is one of these. See
 /// `Development/Specs/003-node-automation-action/plan.md` §3 and §7.
 enum NodeAutomation {
 
     /// What an unattended run should do next.
     enum Step: Equatable {
-        /// A node is already running, so report on it and change nothing. An
-        /// automation must never interrupt a node someone started themselves
-        /// (ADR 0005).
+        /// A node is already running (or still shutting down), so report on it
+        /// and change nothing. An automation must never interrupt a node someone
+        /// started themselves (ADR 0005).
         case reportExistingNode
+        /// A node is already on its way up — started by an earlier run that ran
+        /// out of time, or by the app itself. It cannot be started again and it
+        /// cannot answer questions yet, so the run waits on it like one it
+        /// started itself, then reports it as found rather than started.
+        case waitForStartingNode
         /// The privacy setting is on but the network is not established yet; spend
         /// the window establishing it rather than starting the node.
         case waitForPrivateNetwork
@@ -34,10 +39,47 @@ enum NodeAutomation {
     }
 
     /// Decides the next step from three plain facts.
-    static func step(nodeIsStopped: Bool, privacyEnabled: Bool, privacyReady: Bool) -> Step {
-        guard nodeIsStopped else { return .reportExistingNode }
-        if privacyEnabled && !privacyReady { return .waitForPrivateNetwork }
-        return .startNode
+    static func step(nodeState: NodeState, privacyEnabled: Bool, privacyReady: Bool) -> Step {
+        switch nodeState {
+        case .running, .stopping:
+            // A node still shutting down is read like a running one on purpose:
+            // it cannot be started (`start()` refuses anything but `.stopped`),
+            // and the read path's answer checks land it on `noAnswer` if it
+            // finishes stopping mid-question.
+            return .reportExistingNode
+        case .starting:
+            // Mid-startup is neither running nor startable: the node cannot
+            // answer until its block index loads — measured at up to two minutes
+            // on a locked phone — so reading it once would almost certainly end
+            // in `noAnswer`, while `start()` would refuse it. The run waits.
+            return .waitForStartingNode
+        case .stopped:
+            if privacyEnabled && !privacyReady { return .waitForPrivateNetwork }
+            return .startNode
+        }
+    }
+
+    /// Whether a step is weighed against the device conditions `NodePreflight`
+    /// reads.
+    ///
+    /// Conditions gate starting, not reporting or waiting: each one protects
+    /// something a start spends — gigabytes of sync on a metered link, battery,
+    /// heat — and a run that only reads an already-running node, or waits on an
+    /// already-starting one, spends none of it. Gating this way also means
+    /// "not started" is never claimed about a node that is.
+    ///
+    /// `waitForPrivateNetwork` counts as a start. Establishing the network costs
+    /// a consensus download over whatever link is current, so the network
+    /// conditions still apply — and the run's whole purpose is the node start a
+    /// later run will attempt, so a device that could never start one (no chain
+    /// folder, no disk) has no use for the network either.
+    static func consultsDeviceConditions(for step: Step) -> Bool {
+        switch step {
+        case .startNode, .waitForPrivateNetwork:
+            return true
+        case .reportExistingNode, .waitForStartingNode:
+            return false
+        }
     }
 
     /// Whether an answer that has just arrived from the node may still be reported.
@@ -47,7 +89,9 @@ enum NodeAutomation {
     /// hands back an answer regardless of what happened while it was away. Two things
     /// can happen in that window. The run can be called off — the person taps stop on
     /// the progress card, or the system runs out of patience. Or the node can be shut
-    /// down from inside the app by someone who opened it mid-wait.
+    /// down from inside the app by someone who opened it mid-wait — including one
+    /// still shutting down, since a node on its way down is no longer the node the
+    /// answer described.
     ///
     /// In both cases the answer is real but nobody is waiting for it, and reporting it
     /// would claim a success that contradicts what the person just did. Both facts must
@@ -92,6 +136,7 @@ enum NodeAutomation {
         case .started: title = "Node running"
         case .alreadyRunning: title = "Node already running"
         case .didNotComeUp: title = "Node still starting"
+        case .noAnswer: title = "Node did not answer"
         case .declined: title = "Node not started"
         }
         return Ending(
@@ -104,6 +149,17 @@ enum NodeAutomation {
     /// proxy address exists.
     enum StartRefusal: Error, Equatable {
         case privateNetworkNotReady
+
+        /// The single sentence a person sees, kept beside the case so the
+        /// wording cannot drift between the paths that decline for this reason —
+        /// the one that waits for the network on purpose and the one that finds
+        /// it gone at the last moment.
+        var message: String {
+            switch self {
+            case .privateNetworkNotReady:
+                return "The private network was not ready, so the node did not start. It is being established now; try again shortly."
+            }
+        }
     }
 
     /// Builds the daemon's launch arguments, refusing outright when the privacy
@@ -175,6 +231,11 @@ enum NodeAutomation {
         case alreadyRunning
         case declined
         case didNotComeUp
+        /// The node was asked and nothing usable came back — it never answered,
+        /// or its answer arrived after the node was stopped or the run ended.
+        /// Real answers that land too late are discarded rather than reported,
+        /// so this outcome claims no measurement was made, which is true.
+        case noAnswer
     }
 
     /// The single sentence a person reads or hears, derived from the same values the
@@ -198,6 +259,8 @@ enum NodeAutomation {
             return declinedReason ?? "The node did not start."
         case .didNotComeUp:
             return "The node was started but had not come up yet, so nothing was measured."
+        case .noAnswer:
+            return "The node did not answer, so nothing was measured."
         case .alreadyRunning, .started:
             let verb = outcome == .started ? "Node running" : "A node was already running"
             var sentence = "\(verb) on \(chain) at block \(height.formatted())"
