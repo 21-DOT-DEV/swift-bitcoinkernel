@@ -67,7 +67,7 @@ enum NodeRun {
     static func perform(
         session: NodeSession,
         waitForFirstAnswer: Duration,
-        onProgress: (Double) -> Void = { _ in }
+        onProgress: @MainActor (Double) -> Void = { _ in }
     ) async -> NodeRunReport {
         let privacyEnabled = UserDefaults.standard.bool(forKey: "tor_enabled")
         log.notice("run: entered, privacy network enabled = \(privacyEnabled, privacy: .public)")
@@ -133,7 +133,7 @@ enum NodeRun {
         session: NodeSession,
         privacyEnabled: Bool,
         waitForFirstAnswer: Duration,
-        onProgress: (Double) -> Void
+        onProgress: @MainActor (Double) -> Void
     ) async -> NodeRunReport {
         let argumentsOrRefusal = Result {
             try NodeAutomation.startArguments(
@@ -144,10 +144,11 @@ enum NodeRun {
         guard case let .success(arguments) = argumentsOrRefusal else {
             // The guard exists because the shared argument builder simply omits the
             // proxy when no address is present, which unattended would start the node
-            // on a direct connection. Reaching it means the private network was ready
-            // when the step was decided and has gone since — nudge it back up (a
-            // no-op while a retry is already pending) and decline with the same
-            // sentence the deliberate wait-for-it path uses.
+            // on a direct connection. Nothing between the step decision and here
+            // suspends, so it is unreachable today — kept as the privacy floor in
+            // case that stretch ever grows one. If reached, nudge the network back
+            // up (a no-op while a retry is already pending) and decline with the
+            // same sentence the deliberate wait-for-it path uses.
             log.error("run: refused to start without the private network")
             session.tor.start()
             return declined(
@@ -169,7 +170,7 @@ enum NodeRun {
             arguments: arguments,
             torSession: privacyEnabled ? session.tor.sessionID : nil,
             torSocksPort: privacyEnabled
-                ? session.tor.socksEndpoint.map { UInt16(clamping: $0.port) } : nil
+                ? session.tor.socksEndpoint.flatMap { UInt16(exactly: $0.port) } : nil
         )
         log.notice("run: node start requested")
 
@@ -208,7 +209,7 @@ enum NodeRun {
     private static func waitForStarting(
         session: NodeSession,
         within budget: Duration,
-        onProgress: (Double) -> Void
+        onProgress: @MainActor (Double) -> Void
     ) async -> NodeRunReport {
         // Captured before the wait for the same reason `start` captures it: once
         // the node reaches `.running` its own sync poll overwrites it.
@@ -257,7 +258,7 @@ enum NodeRun {
     private static func awaitFirstAnswer(
         session: NodeSession,
         within budget: Duration,
-        onProgress: (Double) -> Void
+        onProgress: @MainActor (Double) -> Void
     ) async -> NodeAutomation.LiveReading? {
         let reader = session.reader
         let started = ContinuousClock.now
@@ -309,7 +310,7 @@ enum NodeRun {
     /// invention.
     private static func report(
         session: NodeSession,
-        onProgress: (Double) -> Void
+        onProgress: @MainActor (Double) -> Void
     ) async -> NodeRunReport {
         let reader = session.reader
         onProgress(0.1)
@@ -350,7 +351,7 @@ enum NodeRun {
         previous: NodeAutomation.LiveReading?,
         reading: NodeAutomation.LiveReading,
         session: NodeSession,
-        onProgress: (Double) -> Void
+        onProgress: @MainActor (Double) -> Void
     ) async -> NodeRunReport {
         NodeViewModel.persistLastKnown(height: reading.height, chain: reading.chain)
         let gained = NodeAutomation.blocksGained(from: previous, to: reading)

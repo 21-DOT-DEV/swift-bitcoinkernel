@@ -28,7 +28,8 @@ enum NodeRunOutcome: String, AppEnum {
     case alreadyRunning = "alreadyRunning"
     /// Declined before starting — device conditions, or the private network not ready.
     case declined = "declined"
-    /// Started, but did not answer within the time this run had.
+    /// Started — or found still starting — but did not answer within the time
+    /// this run had.
     case didNotComeUp = "didNotComeUp"
     /// The node was asked but gave no usable answer — it never answered, or its
     /// answer arrived after the node was stopped or the run ended.

@@ -35,6 +35,11 @@ struct NodeAutomationTests {
         #expect(
             NodeAutomation.step(nodeState: .stopping, privacyEnabled: false, privacyReady: false)
                 == .reportExistingNode)
+        // The privacy gate does not reroute it either — a node on its way down is
+        // read like a running one whatever the network preference says.
+        #expect(
+            NodeAutomation.step(nodeState: .stopping, privacyEnabled: true, privacyReady: false)
+                == .reportExistingNode)
     }
 
     @Test("a node still coming up is waited on, not read once and not restarted")

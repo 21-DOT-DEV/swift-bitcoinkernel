@@ -67,6 +67,12 @@ enum NodeAutomation {
     /// heat — and a run that only reads an already-running node, or waits on an
     /// already-starting one, spends none of it. Gating this way also means
     /// "not started" is never claimed about a node that is.
+    ///
+    /// `waitForPrivateNetwork` counts as a start. Establishing the network costs
+    /// a consensus download over whatever link is current, so the network
+    /// conditions still apply — and the run's whole purpose is the node start a
+    /// later run will attempt, so a device that could never start one (no chain
+    /// folder, no disk) has no use for the network either.
     static func consultsDeviceConditions(for step: Step) -> Bool {
         switch step {
         case .startNode, .waitForPrivateNetwork:
