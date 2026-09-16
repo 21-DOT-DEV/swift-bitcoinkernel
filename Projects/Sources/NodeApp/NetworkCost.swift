@@ -118,6 +118,31 @@ final class NetworkCostMonitor: Sendable {
         latest.withLock { $0 } ?? .unknown
     }
 
+    /// Suspends until the first report arrives and returns it.
+    ///
+    /// `current` never waits, which suits a long-lived process where "not yet
+    /// reported" is a brief startup blip. A run launched straight into the
+    /// background reaches its read within milliseconds of `start()`, when "not
+    /// yet reported" is the normal state rather than the blip — and reading it
+    /// as "not costly" would skip the one refusal that protects the person's
+    /// data allowance. This is the read for that path; how long it may wait is
+    /// the caller's call, bounded there rather than here.
+    ///
+    /// The wait is a poll, not a suspended continuation: the answer it looks
+    /// for can only turn from "nothing yet" into "the first report" — a
+    /// one-way change a periodic check observes just as surely, and there is
+    /// no parked wait for cancellation to have to find and release. A
+    /// cancelled task simply stops waiting and gets the answer `current`
+    /// gives — `.unknown` until a report exists. Fifty milliseconds is far
+    /// finer than the seconds-scale bound callers put on this read.
+    func first() async -> NetworkCost {
+        while !Task.isCancelled {
+            if let cost = latest.withLock({ $0 }) { return cost }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return current
+    }
+
     /// The production source: Apple's `NWPathMonitor`, which announces network
     /// changes rather than answering questions. Starting it delivers one report
     /// immediately.
