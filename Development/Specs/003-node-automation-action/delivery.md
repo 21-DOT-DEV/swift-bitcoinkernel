@@ -99,11 +99,11 @@ Out of scope here, but already written in #41 if it is picked up later:
 | 6 | [x] | The structured value a run hands back, with the text behind each outcome pinned, and a test that every outcome has display wording | ~165 | 3 |
 | 7 | [x] | Vet and land the recovered decision records — see the gate below | ≤262 | — |
 | 8 | [x] | The one routine both actions call: read the device, decline with a reason, or start the node; every question to it bounded | ~380 | 2, 3, 4, 5, 6, 7 |
-| 9 | [ ] | Wire the short action, with the wait made conditional — see below | ~45 | 6, 8 |
+| 9 | [x] | Wire the short action, with the wait made conditional — see below | ~240 | 6, 8 |
 | 10 | [ ] | Wire the iOS 27 action: honest progress display, keep-alive nudge, and removal of the temporary 30-second pause from slice 0 | 175 | 6, 8 |
 | 11 | [ ] | Correct `plan.md` to describe what shipped, and delete this file | ~60 | 10 |
 
-Roughly 1,545 changed lines across slices 1–11, averaging 140, largest 380.
+Roughly 1,735 changed lines across slices 1–11, averaging ~160, largest 380.
 
 ### What slice 9 changes about the short action
 
@@ -137,6 +137,21 @@ if it were a measurement outcome, and `.noAnswer`-from-cancel is indistinguishab
 downstream from `.noAnswer`-from-a-dead-node. Slice 9 decides it explicitly —
 either a `Task.isCancelled` re-check in the action that throws, or a deliberate
 acceptance of the value — and slice 10 applies the same choice.
+
+Wiring the action also surfaced a gap in the guard it relies on. The metered-network
+check asks a watcher whose first report arrives a moment after the app starts —
+fine when a person taps a button, but a background launch reads it within
+milliseconds, when "not yet reported" is the normal state and reads as "not
+costly". The device-condition read now waits for the watcher's first report —
+a new `first()` read next to the never-waiting `current` — bounded at two
+seconds by slice 4's helper, falling back to the not-known answer after that.
+The wait is a 50-millisecond poll over the stored answer rather than a parked
+continuation: the change it waits for is one-way, and a poll leaves nothing
+suspended for a cancellation to have to find and release. Because that read
+can now suspend where nothing above the branches did, a second cancellation
+check stands between it and the branch that starts the private network, and
+the wait loop's half-second nap is capped by the time remaining so the
+deadline it promises is a hard one.
 
 Slice 9 also corrects the action's own description, which currently promises to let
 the node "sync for the short time a background action is allowed and report what

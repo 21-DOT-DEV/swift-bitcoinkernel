@@ -72,11 +72,13 @@ enum NodeRun {
         let privacyEnabled = UserDefaults.standard.bool(forKey: "tor_enabled")
         log.notice("run: entered, privacy network enabled = \(privacyEnabled, privacy: .public)")
 
-        // A cancelled task still runs until it checks, and nothing above the switch
-        // suspends — a run called off before it began would otherwise launch the
-        // node (or the private network) on its way out, the very act the cancel
-        // was meant to prevent. Check before the side effects, not just before the
-        // reports.
+        // A cancelled task still runs until it checks — a run called off before
+        // it began would otherwise launch the node (or the private network) on
+        // its way out, the very act the cancel was meant to prevent. Check
+        // before the side effects, not just before the reports: here on entry,
+        // and again right before the switch, because the device-condition read
+        // in between is the one stretch that suspends (its bounded wait on the
+        // first network report).
         guard !Task.isCancelled else { return noAnswerReport() }
 
         // Idempotent, and belt-and-braces: the watcher is started at process launch, but
@@ -90,11 +92,19 @@ enum NodeRun {
         )
 
         if NodeAutomation.consultsDeviceConditions(for: step),
-            let refusal = NodePreflight.refusal(for: readConditions())
+            let refusal = NodePreflight.refusal(for: await readConditions())
         {
             log.notice("run: declined — \(String(describing: refusal), privacy: .public)")
             return declined(reason: refusal.message)
         }
+
+        // The second checkpoint promised above: the device-condition read can
+        // spend up to two seconds suspended — plenty of window for a stop to
+        // arrive. Without this, a called-off run could still reach the branch
+        // that starts the private network, and a consensus download over
+        // whatever link is current is precisely the act these checks exist to
+        // prevent.
+        guard !Task.isCancelled else { return noAnswerReport() }
 
         switch step {
         case .reportExistingNode:
@@ -144,11 +154,13 @@ enum NodeRun {
         guard case let .success(arguments) = argumentsOrRefusal else {
             // The guard exists because the shared argument builder simply omits the
             // proxy when no address is present, which unattended would start the node
-            // on a direct connection. Nothing between the step decision and here
-            // suspends, so it is unreachable today — kept as the privacy floor in
-            // case that stretch ever grows one. If reached, nudge the network back
-            // up (a no-op while a retry is already pending) and decline with the
-            // same sentence the deliberate wait-for-it path uses.
+            // on a direct connection. It is live rather than vestigial: the
+            // device-condition read suspends on the first network report, and the
+            // private network can drop in that window — after the step decision has
+            // already committed to starting. (While that read could not suspend,
+            // the guard genuinely was unreachable.) If reached, nudge the network
+            // back up (a no-op while a retry is already pending) and decline with
+            // the same sentence the deliberate wait-for-it path uses.
             log.error("run: refused to start without the private network")
             session.tor.start()
             return declined(
@@ -290,7 +302,16 @@ enum NodeRun {
             }
             let elapsed = Double(started.duration(to: .now) / .milliseconds(1)) / 1000
             onProgress(budgetSeconds > 0 ? min(0.9, elapsed / budgetSeconds) : 0)
-            do { try await Task.sleep(for: .milliseconds(500)) } catch { return nil }
+            // The nap is capped by the time left rather than fixed at half a
+            // second: an uncapped sleep can outlive the deadline by most of its
+            // length — a two-second wait was observed ending at ~2.2s — which
+            // would make the deadline a soft one in the one place this loop
+            // promises it is hard.
+            let nap = min(
+                .milliseconds(500), ContinuousClock.now.duration(to: deadline))
+            if nap > .zero {
+                do { try await Task.sleep(for: nap) } catch { return nil }
+            }
         }
         return nil
     }
@@ -461,12 +482,20 @@ enum NodeRun {
     /// reports for *important* work rather than raw free bytes, and is treated as a
     /// courtesy check — it counts space the system may not reclaim in time, so a write
     /// failure must still be handled.
-    private static func readConditions() -> NodePreflight.DeviceConditions {
-        // Every reading here is immediate. The network answer comes from a watcher that
-        // has been running since app launch, so nothing waits: an earlier version
-        // suspended here waiting for a network report and could hang before the run
-        // ever reached the node.
-        let network = NetworkCostMonitor.shared.current
+    private static func readConditions() async -> NodePreflight.DeviceConditions {
+        // Every reading here is immediate except the network one, which this
+        // path waits on — briefly. The watcher started at launch normally has
+        // an answer ready, but on a background launch the run reaches this line
+        // within milliseconds of that start, before the first report has had
+        // time to land on the watcher's queue — and reading `current` then
+        // would take "not yet reported" as "not costly", silently skipping the
+        // refusals that protect the person's data allowance. The wait is
+        // bounded: an earlier version suspended on the report unboundedly and
+        // could hang before the run ever reached the node, and a report that
+        // never comes falls back to the same not-known answer `current` gives.
+        let network = (try? await withHardTimeout(.seconds(2)) {
+            await NetworkCostMonitor.shared.first()
+        }) ?? .unknown
         let thermal = ProcessInfo.processInfo.thermalState
         let filesReadable = UIApplication.shared.isProtectedDataAvailable
         // The folder prepare is a write, attempted only when files can be read at
