@@ -121,7 +121,11 @@ enum NodeAutomation {
     }
 
     /// The headline shown while a run is still going.
-    static let inProgressTitle = "Starting Bitcoin node"
+    ///
+    /// Worded to stay honest on every path: a run that finds a node already up only
+    /// *reads* it, so a headline like "Starting Bitcoin node" would claim work that
+    /// path never does. "Checking" covers starting, waiting, and reading alike.
+    static let inProgressTitle = "Checking the Bitcoin node"
 
     /// Turns a finished run into what the card shows.
     ///

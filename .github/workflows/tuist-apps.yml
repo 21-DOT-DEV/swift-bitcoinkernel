@@ -10,16 +10,29 @@ permissions: {}
 
 jobs:
   apps:
-    name: ${{ matrix.app }} (${{ matrix.platform }})
-    runs-on: macos-26
+    name: ${{ matrix.app }} (${{ matrix.platform }})${{ matrix.suffix }}
+    # The xcode-27 image (public preview) is the only runner carrying the iOS 27
+    # SDK — the toolchain the `#if compiler(>=6.4)`-fenced long-running action
+    # needs to compile at all. Under GitHub's one-Xcode-major-per-image model it
+    # replaces macos-26 for the main lanes rather than riding as a side lane:
+    # the team's toolchain is Xcode 27. One build-only row stays on macos-26 to
+    # keep the fence's other side honest — the file compiles OUT there, and a
+    # change that broke the older-toolchain build would otherwise merge
+    # silently. If the preview image proves unstable the escape is pointing
+    # `runner:` back at macos-26 — the file just compiles out there again.
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { app: NodeApp,   platform: macos, action: test }
-          - { app: KernelApp, platform: macos, action: test }
-          - { app: NodeApp,   platform: ios,   action: test }
-          - { app: KernelApp, platform: ios,   action: test }
+          - { app: NodeApp,   platform: macos, action: test,  runner: xcode-27 }
+          - { app: KernelApp, platform: macos, action: test,  runner: xcode-27 }
+          - { app: NodeApp,   platform: ios,   action: test,  runner: xcode-27 }
+          - { app: KernelApp, platform: ios,   action: test,  runner: xcode-27 }
+          # Build-only on the previous toolchain: the one place the fenced file
+          # compiles out. `action: build` keeps it a compile check — no test
+          # bundle, no simulator, no flake surface.
+          - { app: NodeApp,   platform: ios,   action: build, runner: macos-26, suffix: " — Xcode 26" }
           # Roadmap — uncomment as each platform is brought up. `action` is a
           # per-row knob: drop a flaky iOS-simulator `test` to `build` here
           # without restructuring the matrix. New platforms also need a
@@ -33,7 +46,11 @@ jobs:
     permissions:
       contents: read
     env:
-      DEVELOPER_DIR: "/Applications/Xcode_26.4.app/Contents/Developer"
+      # Each image's Xcode.app symlink always resolves to the one Xcode family
+      # that image ships — bump-proof where a version-pinned path would break on
+      # an image release (27.0 beta → RC → release on xcode-27; 26.x bumps on
+      # macos-26).
+      DEVELOPER_DIR: "/Applications/Xcode.app/Contents/Developer"
       WORKSPACE: Projects/Bitcoin.xcworkspace
       DERIVED_DATA: .derivedData
     steps:

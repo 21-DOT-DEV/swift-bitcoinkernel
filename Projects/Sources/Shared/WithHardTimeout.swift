@@ -53,8 +53,13 @@ struct HardTimeoutError: Error, Equatable {
 /// - **Late answers are timeouts.** A call finishing at or after the deadline
 ///   reports `HardTimeoutError` even when its result reaches the lock first.
 /// - **Work can outlive its caller.** An abandoned call keeps running until it
-///   finishes on its own. Bounded in practice — a run asks a fixed handful of
-///   questions, so the most that can be left in flight is the question count.
+///   finishes on its own. The bound is the caller's question rate, not a fixed
+///   count: the waiting loop issues at most one question per question budget,
+///   so the longest wait — the iOS 27 action's four minutes against a
+///   ten-second budget — can abandon about two dozen over a run, while the
+///   channel's own thirty-second give-up keeps only a few in flight at once.
+///   Whatever remains is frozen when the system suspends the app after the run
+///   returns.
 /// - **Cancelling the caller still works.** Cancellation reaches the work task
 ///   and releases the wait, rather than leaking the suspended continuation.
 ///
