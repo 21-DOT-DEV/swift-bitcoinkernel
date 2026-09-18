@@ -37,12 +37,12 @@ jobs:
           # per-row knob: drop a flaky iOS-simulator `test` to `build` here
           # without restructuring the matrix. New platforms also need a
           # `-destination` in the "Resolve destination" step below.
-          # - { app: NodeApp,   platform: visionos, action: test }
-          # - { app: KernelApp, platform: visionos, action: test }
+          # - { app: NodeApp,   platform: visionos, action: test,  runner: xcode-27 }
+          # - { app: KernelApp, platform: visionos, action: test,  runner: xcode-27 }
           # tvOS carries KernelApp only: the Bitcoin product's execvp() is
           # __TVOS_PROHIBITED, so NodeApp cannot build on tvOS (mirrors the
           # per-scheme split in apple-builds.yml's tvOS job).
-          # - { app: KernelApp, platform: tvos, action: build }
+          # - { app: KernelApp, platform: tvos, action: build, runner: xcode-27 }
     permissions:
       contents: read
     env:
@@ -55,6 +55,15 @@ jobs:
       DERIVED_DATA: .derivedData
     steps:
       - uses: actions/checkout@v6
+
+      # Record the toolchain that actually ran. Both runner images are moving
+      # targets (the xcode-27 preview bumps its Xcode, macos-26 its point
+      # releases); when a run goes newly red or green, this is the line that
+      # says whether the image or the change did it.
+      - name: Record toolchain
+        run: |
+          xcodebuild -version
+          swift --version
 
       # Generate the Xcode workspace from the Tuist manifest. Kept separate so a
       # generation failure (e.g. an SPM version conflict in Projects/Project.swift)

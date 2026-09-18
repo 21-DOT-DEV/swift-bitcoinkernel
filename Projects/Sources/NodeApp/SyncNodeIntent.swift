@@ -23,8 +23,7 @@ import os.log
 /// supported system, inside the short window a background action is allowed.
 ///
 /// The work itself is the one routine the actions share (`NodeRun.perform`),
-/// so this action and the iOS 27 one cannot drift apart — this one calls it
-/// today, and the longer-running one's wiring lands in the next delivery slice.
+/// so this action and the iOS 27 one cannot drift apart — both call it today.
 /// All this type adds is the declaration of where it runs and how long it is
 /// prepared to wait. Part of the rewrite tracked in
 /// `Development/Specs/003-node-automation-action/plan.md`.
@@ -96,8 +95,9 @@ struct SyncNodeIntent: AppIntent {
     /// it were a measurement, and "the node did not answer" is the wrong thing
     /// for a chain to learn from a run the person stopped. The AppIntents signal
     /// for a cancelled run is a thrown error, so cancellation is converted back
-    /// into one here. The iOS 27 action applies the same rule when its wiring
-    /// lands.
+    /// into one here. The iOS 27 action applies the same rule — through the flag
+    /// its `onCancel` sets, since there the run's own task is not guaranteed to
+    /// be the thing the system cancels.
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<NodeRunReport>
         & ProvidesDialog

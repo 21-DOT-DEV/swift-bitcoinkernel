@@ -11,6 +11,7 @@
 import AppIntents
 import Foundation
 import os
+import Synchronization
 
 // Phone and tablet only, same reason as the baseline action (ADR 0005).
 #if os(iOS)
@@ -112,10 +113,12 @@ struct SyncNodeLongRunningIntent: LongRunningIntent, CancellableIntent {
         let meter = ProgressMeter(progress: progress, scale: Self.scale)
         progress.localizedDescription = NodeAutomation.inProgressTitle
 
-        let stopped = OSAllocatedUnfairLock(initialState: false)
+        let stopped = Mutex(false)
         let report = try await performBackgroundTask(options: []) {
             Self.log.notice("run: background task begin")
-            let report = await Self.runWithHeartbeat(meter: meter)
+            let report = await Self.runWithHeartbeat(meter: meter) {
+                stopped.withLock { $0 }
+            }
             // The end card is written here, while the operation is still running:
             // a progress write after it returns can land once the display has
             // already gone — the failure recorded in the note above. The bar is
@@ -169,13 +172,24 @@ struct SyncNodeLongRunningIntent: LongRunningIntent, CancellableIntent {
     ///
     /// Structured as a task group rather than a loose background task so that when
     /// the work ends — for any reason, including being stopped — the nudge ends with
-    /// it and cannot go on claiming a dead run is alive.
+    /// it and cannot go on claiming a dead run is alive. The direction also
+    /// reverses: a stop does not reliably reach the work's own cancellation
+    /// checkpoints (the API promises `onCancel` runs, not that this task is the
+    /// one cancelled), so the nudge watches the flag too, and its ending the
+    /// group is what cancels the work child — a stop tap during preflight then
+    /// unwinds the run at `NodeRun`'s next checkpoint instead of running four
+    /// more minutes unseen, and a node start already in flight completes or
+    /// unwinds exactly as it does under a system-sent cancellation.
     @MainActor
-    private static func runWithHeartbeat(meter: ProgressMeter) async -> NodeRunReport {
+    private static func runWithHeartbeat(
+        meter: ProgressMeter,
+        isStopped: @escaping @Sendable () -> Bool
+    ) async -> NodeRunReport {
         await withTaskGroup(of: NodeRunReport?.self) { group in
             group.addTask { @MainActor in
                 while true {
                     do { try await Task.sleep(for: heartbeat) } catch { return nil }
+                    if isStopped() { return nil }
                     meter.tick()
                 }
             }
@@ -186,17 +200,14 @@ struct SyncNodeLongRunningIntent: LongRunningIntent, CancellableIntent {
                     meter.advance(to: fraction)
                 }
             }
-            // The heartbeat only ever finishes by being cancelled, and yields nothing
-            // when it does, so the first real value is the run's own report.
-            var report: NodeRunReport?
-            while let finished = await group.next() {
-                if let finished {
-                    report = finished
-                    break
-                }
-            }
+            // Whichever yields first ends the group: the work's report on a
+            // completed run, or the heartbeat's nil when the run was stopped or
+            // this task cancelled. Leaving the scope cancels the child still
+            // running, so a stop propagates into the work itself.
+            let report = await group.next().flatMap { $0 }
             group.cancelAll()
-            // Reachable only if the work was cut short before producing anything.
+            // Nil is reachable only if the run was cut short before producing
+            // anything.
             return report ?? NodeRun.noAnswerReport()
         }
     }
@@ -204,12 +215,14 @@ struct SyncNodeLongRunningIntent: LongRunningIntent, CancellableIntent {
 
 /// Drives the system's progress card, keeping the bar honest.
 ///
-/// Two rules, both of which exist because the card is the only thing the person can
-/// see while the run is unattended. The bar never moves backwards, so a heartbeat
-/// that has ticked past where the real work has reached does not cause a visible
-/// retreat. And nothing but the end of the run can fill it: a full bar is a claim
-/// that the work finished, and only `finish(_:)` is in a position to know whether
-/// that is true.
+/// Three rules, all of which exist because the card is the only thing the person
+/// can see while the run is unattended. The bar never moves backwards, so a
+/// heartbeat that has ticked past where the real work has reached does not cause
+/// a visible retreat. The heartbeat alone can carry it only halfway: a bar
+/// creeping toward full during a long silent wait would claim the run is nearly
+/// done when it may barely have started. And nothing but the end of the run can
+/// fill it: a full bar is a claim that the work finished, and only `finish(_:)`
+/// is in a position to know whether that is true.
 @available(iOS 27.0, *)
 @MainActor
 final class ProgressMeter {
@@ -229,9 +242,13 @@ final class ProgressMeter {
         report(Int64((fraction * Double(scale)).rounded()))
     }
 
-    /// The heartbeat. One step, meaning no more than "still working".
+    /// The heartbeat. One step, meaning no more than "still working" — and it can
+    /// never carry the bar past halfway on its own. The write still has to land
+    /// on `completedUnitCount`: it is the only signal the system is documented
+    /// to watch, so the tick spends a bounded slice of the bar to keep the run
+    /// alive rather than risking silence on a write that may not count.
     func tick() {
-        report(reported + 1)
+        report(min(reported + 1, scale / 2))
     }
 
     /// The run is over: say what became of it, and fill the bar only if it earned that.

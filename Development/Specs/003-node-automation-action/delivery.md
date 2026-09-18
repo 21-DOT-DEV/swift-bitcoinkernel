@@ -100,7 +100,7 @@ Out of scope here, but already written in #41 if it is picked up later:
 | 7 | [x] | Vet and land the recovered decision records — see the gate below | ≤262 | — |
 | 8 | [x] | The one routine both actions call: read the device, decline with a reason, or start the node; every question to it bounded | ~380 | 2, 3, 4, 5, 6, 7 |
 | 9 | [x] | Wire the short action, with the wait made conditional — see below | ~240 | 6, 8 |
-| 10 | [x] | Wire the iOS 27 action: honest progress display, keep-alive nudge, and removal of the temporary 30-second pause from slice 0 | 270 | 6, 8 |
+| 10 | [x] | Wire the iOS 27 action: honest progress display, keep-alive nudge, and removal of the temporary 30-second pause from slice 0 | 409 | 6, 8 |
 | 11 | [ ] | Correct `plan.md` to describe what shipped, and delete this file | ~60 | 10 |
 
 Roughly 1,735 changed lines across slices 1–11, averaging ~160, largest 380.
