@@ -7,7 +7,7 @@ This directory contains GitHub configuration and CI workflows.
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | `apple-builds.yml` | push/PR to `main` | macOS build+test (incl. wallet trait), iOS + visionOS cross-compile of the umbrella scheme, tvOS cross-compile of the BitcoinKernel scheme only, DocC validation for Bitcoin + BitcoinKernel |
-| `tuist-apps.yml` | push/PR to `main` | Build + test the Tuist demo apps (`NodeApp`, `KernelApp`) on macOS and the iOS Simulator via `xcodebuild build-for-testing`/`test-without-building` on the Tuist-generated workspace (matrix: app × platform) |
+| `tuist-apps.yml` | push/PR to `main` | Build + test the Tuist demo apps (`NodeApp`, `KernelApp`) on macOS and the iOS Simulator via `xcodebuild build-for-testing`/`test-without-building` on the Tuist-generated workspace (matrix: app × platform; `xcode-27` image only — Xcode 27 is the demo apps' minimum toolchain, no compile fence) |
 | `docker-builds.yml` | push/PR to `main` | Linux build+test via `docker build .` |
 | `docc-release.yml` | release published or manual | Matrix build of DocC archives (Bitcoin + BitcoinKernel), upload to release assets |
 | `flake-hunt.yml` | manual only | Repeat one demo app's test bundle N times on CI hardware to hunt (or disprove) an intermittent failure. Never runs on push or PR. |
@@ -15,7 +15,7 @@ This directory contains GitHub configuration and CI workflows.
 
 **Platform coverage (package)**: macOS (build+test), iOS (build only), visionOS (build only), tvOS (BitcoinKernel only — `Bitcoin` depends on `bitcoind`'s `execvp()` call which is `__TVOS_PROHIBITED`). Linux via Docker. watchOS is blocked by additional POSIX prohibitions (`fork`, `execvp`, etc.) and not in the matrix.
 
-**Platform coverage (demo apps)**: `tuist-apps.yml` builds and tests `NodeApp` and `KernelApp` on macOS and the iOS Simulator. visionOS (both apps) and tvOS (`KernelApp` only, by the same `execvp()` constraint) are staged as commented matrix rows.
+**Platform coverage (demo apps)**: `tuist-apps.yml` builds and tests `NodeApp` and `KernelApp` on macOS and the iOS Simulator. visionOS (both apps) and tvOS (`KernelApp` only, by the same `execvp()` constraint) are staged as commented matrix rows. The demo apps require Xcode 27 to build (iOS-27-only Shortcuts action, no compile fence); the package workflows' `macos-26` usage is unaffected — SPM consumers never see `Projects/` sources.
 
 ## Boundaries (strict)
 

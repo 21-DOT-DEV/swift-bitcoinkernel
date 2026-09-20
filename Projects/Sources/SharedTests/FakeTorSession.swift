@@ -69,7 +69,7 @@ actor FakeTorSession: TorSession {
     func waitUntilBootstrapped(timeout: Duration) async throws {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
-                Task { await self.storeGate(cont) }
+                Task { self.storeGate(cont) }
             }
         } onCancel: {
             Task { await self.cancelBootstrap() }

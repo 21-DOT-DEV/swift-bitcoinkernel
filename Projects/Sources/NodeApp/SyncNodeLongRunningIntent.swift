@@ -16,15 +16,15 @@ import Synchronization
 // Phone and tablet only, same reason as the baseline action (ADR 0005).
 #if os(iOS)
 
-// Compiled only by the iOS 27 SDK toolchain. `LongRunningIntent` does not exist in
-// the iOS 26 SDK, and a runtime `@available` check cannot rescue a symbol the SDK
-// lacks — so an Xcode 26 build (Swift 6.3.3) must skip this file entirely, while an
-// Xcode 27 build (Swift 6.4) compiles it. The compiler-version check is a proxy for
-// "the iOS 27 SDK is present," which holds because each Xcode ships a fixed
-// compiler+SDK pair. CI builds both sides of this fence: the apps' jobs run on the
-// xcode-27 image, and one build-only macos-26 row covers the compiled-out side.
+// Building this file requires the iOS 27 SDK toolchain (Xcode 27+):
+// `LongRunningIntent` does not exist in the iOS 26 SDK, and a runtime
+// `@available` check cannot rescue a symbol the compiled-against SDK lacks.
+// The demo apps declare Xcode 27 their minimum toolchain, so an older Xcode
+// fails here loudly rather than silently producing an app that lacks this
+// action. The iOS 18–26 *runtime* gate is the `if #available` in
+// NodeAppShortcuts.swift, not a compile fence — on those systems the app runs
+// with only the baseline action published.
 // See Development/Specs/003-node-automation-action/plan.md §3.5.
-#if compiler(>=6.4)
 
 /// "Keep Bitcoin Node Syncing" — a separate action, iOS 27+, that runs past the time
 /// limit the short-run action lives within.
@@ -65,21 +65,26 @@ struct SyncNodeLongRunningIntent: LongRunningIntent, CancellableIntent {
 
     /// Progress is reported in hundredths so the bar moves smoothly across a wait that
     /// may last minutes, rather than jumping from nothing to done.
-    private static let scale: Int64 = 100
+    ///
+    /// Internal rather than private for the test that guards the coupling below:
+    /// the meter's half-bar heartbeat budget (derived from this scale), multiplied
+    /// by `heartbeat`, must outlast `waitForFirstAnswer` — a change to any of the
+    /// three silently shortens the liveness floor otherwise.
+    static let scale: Int64 = 100
 
     /// How often the run reports "still working" when it has nothing truer to say.
     ///
     /// The system ends an extended run that goes quiet, and about thirty seconds of
     /// silence is enough to trigger it. Five seconds leaves a wide margin without
-    /// producing distracting motion.
-    private static let heartbeat: Duration = .seconds(5)
+    /// producing distracting motion. See `scale` for the coupling this forms.
+    static let heartbeat: Duration = .seconds(5)
 
     /// How long to wait for the node's first answer.
     ///
     /// Four minutes: this action exists precisely to outlast the roughly 30 seconds
     /// the short-run action lives within, and a locked phone has been measured taking
-    /// minutes to load its block index.
-    private static let waitForFirstAnswer: Duration = .seconds(240)
+    /// minutes to load its block index. See `scale` for the coupling this forms.
+    static let waitForFirstAnswer: Duration = .seconds(240)
 
     // Main-actor isolated for the same reason as the baseline action: it reaches
     // main-actor-owned state (`NodeSession`), and the heavy work runs off this
@@ -113,11 +118,15 @@ struct SyncNodeLongRunningIntent: LongRunningIntent, CancellableIntent {
         let meter = ProgressMeter(progress: progress, scale: Self.scale)
         progress.localizedDescription = NodeAutomation.inProgressTitle
 
-        let stopped = Mutex(false)
+        // The reason the run was stopped, not just that it was: the two callers
+        // below need different endings — a card the person dismissed needs no
+        // epitaph, but a run the system ended for silence leaves a card nobody
+        // dismissed, and that card owes an honest ending.
+        let stopped = Mutex<IntentCancellationReason?>(nil)
         let report = try await performBackgroundTask(options: []) {
             Self.log.notice("run: background task begin")
             let report = await Self.runWithHeartbeat(meter: meter) {
-                stopped.withLock { $0 }
+                stopped.withLock { $0 != nil }
             }
             // The end card is written here, while the operation is still running:
             // a progress write after it returns can land once the display has
@@ -127,23 +136,39 @@ struct SyncNodeLongRunningIntent: LongRunningIntent, CancellableIntent {
             // bar describes, and filling it would report the opposite of what
             // happened. The words come from the report's own summary sentence, the
             // one piece of text here written to be read by a person. Which is
-            // which is decided in `NodeAutomation`, tested. Skipped on a stopped
-            // run: a card the person dismissed needs no epitaph, and the report is
-            // about to be thrown away below anyway. The same two signals the
-            // cancelled-run throw reads below — the flag `onCancel` sets and this
-            // task's own cancellation — because `onCancel` is the one the API
-            // actually guarantees.
-            if !stopped.withLock({ $0 }) && !Task.isCancelled {
-                await meter.finish(
+            // which is decided in `NodeAutomation`, tested. A timeout gets its own
+            // ending — the system ended the run, so nobody dismissed the card —
+            // while a stop the person tapped gets none, since a card the person
+            // dismissed needs no epitaph; either way the report is about to be
+            // thrown away below. The same two signals the cancelled-run throw
+            // reads below — the reason `onCancel` sets and this task's own
+            // cancellation — because `onCancel` is the one the API actually
+            // guarantees. The write may not land if the process suspends first —
+            // worth attempting anyway.
+            switch stopped.withLock({ $0 }) {
+            case .none where !Task.isCancelled:
+                meter.finish(
                     NodeAutomation.ending(
                         outcome: report.outcome.plain, summary: report.summary))
+            case .userCancelled:
+                // The person dismissed the card — it needs no epitaph.
+                break
+            case .timeout:
+                meter.finish(NodeAutomation.timedOutEnding)
+            default:
+                // A cancellation with no recorded reason (this task cancelled
+                // without `onCancel` running), or a reason added after this was
+                // written. Unknown is not the person's dismissal, so the card
+                // gets the honest cut-short ending rather than freezing.
+                Self.log.notice("run: ended without a recognised reason — writing the cut-short ending")
+                meter.finish(NodeAutomation.timedOutEnding)
             }
             return report
         } onCancel: { reason in
             // Stopped by the person tapping the card's stop button, or by the
             // system running out of patience. The node itself is deliberately
             // left running.
-            stopped.withLock { $0 = true }
+            stopped.withLock { $0 = reason }
             Self.log.notice(
                 "run: cancelled (\(reason.debugDescription, privacy: .public))")
         }
@@ -152,7 +177,7 @@ struct SyncNodeLongRunningIntent: LongRunningIntent, CancellableIntent {
         Self.log.notice(
             "run: finished \(report.outcome.rawValue, privacy: .public) in \(elapsedMs, privacy: .public) ms"
         )
-        if stopped.withLock({ $0 }) || Task.isCancelled {
+        if stopped.withLock({ $0 != nil }) || Task.isCancelled {
             Self.log.notice("run: cancelled — reporting the run as cancelled, not as a result")
             throw CancellationError()
         }
@@ -180,25 +205,37 @@ struct SyncNodeLongRunningIntent: LongRunningIntent, CancellableIntent {
     /// unwinds the run at `NodeRun`'s next checkpoint instead of running four
     /// more minutes unseen, and a node start already in flight completes or
     /// unwinds exactly as it does under a system-sent cancellation.
+    ///
+    /// Internal rather than private so tests can drive the group with a stand-in
+    /// `work` — first-yield-wins, the heartbeat's nil cancelling the work child,
+    /// and the stop flag reaching a `@MainActor` child are the riskiest
+    /// mechanics in the action and should not be hardware-only. The defaults
+    /// keep the production call site a one-liner.
     @MainActor
-    private static func runWithHeartbeat(
+    static func runWithHeartbeat(
         meter: ProgressMeter,
-        isStopped: @escaping @Sendable () -> Bool
+        isStopped: @escaping @Sendable () -> Bool,
+        heartbeatInterval: Duration = Self.heartbeat,
+        work: @escaping @MainActor (@MainActor (Double) -> Void) async -> NodeRunReport = {
+            await NodeRun.perform(
+                session: .shared, waitForFirstAnswer: waitForFirstAnswer,
+                onProgress: $0)
+        }
     ) async -> NodeRunReport {
         await withTaskGroup(of: NodeRunReport?.self) { group in
             group.addTask { @MainActor in
                 while true {
-                    do { try await Task.sleep(for: heartbeat) } catch { return nil }
+                    // Checked before the sleep too: a stop that lands while the
+                    // group is still setting up should not wait out a full
+                    // heartbeat interval to begin unwinding the work child.
+                    if isStopped() { return nil }
+                    do { try await Task.sleep(for: heartbeatInterval) } catch { return nil }
                     if isStopped() { return nil }
                     meter.tick()
                 }
             }
             group.addTask { @MainActor in
-                await NodeRun.perform(
-                    session: .shared, waitForFirstAnswer: waitForFirstAnswer
-                ) { fraction in
-                    meter.advance(to: fraction)
-                }
+                await work { fraction in meter.advance(to: fraction) }
             }
             // Whichever yields first ends the group: the work's report on a
             // completed run, or the heartbeat's nil when the run was stopped or
@@ -213,59 +250,4 @@ struct SyncNodeLongRunningIntent: LongRunningIntent, CancellableIntent {
     }
 }
 
-/// Drives the system's progress card, keeping the bar honest.
-///
-/// Three rules, all of which exist because the card is the only thing the person
-/// can see while the run is unattended. The bar never moves backwards, so a
-/// heartbeat that has ticked past where the real work has reached does not cause
-/// a visible retreat. The heartbeat alone can carry it only halfway: a bar
-/// creeping toward full during a long silent wait would claim the run is nearly
-/// done when it may barely have started. And nothing but the end of the run can
-/// fill it: a full bar is a claim that the work finished, and only `finish(_:)`
-/// is in a position to know whether that is true.
-@available(iOS 27.0, *)
-@MainActor
-final class ProgressMeter {
-    private let progress: Progress
-    private let scale: Int64
-    private var reported: Int64 = 0
-
-    init(progress: Progress, scale: Int64) {
-        self.progress = progress
-        self.scale = scale
-        progress.totalUnitCount = scale
-        progress.completedUnitCount = 0
-    }
-
-    /// Real progress: how far through the run this is, from 0 to 1.
-    func advance(to fraction: Double) {
-        report(Int64((fraction * Double(scale)).rounded()))
-    }
-
-    /// The heartbeat. One step, meaning no more than "still working" — and it can
-    /// never carry the bar past halfway on its own. The write still has to land
-    /// on `completedUnitCount`: it is the only signal the system is documented
-    /// to watch, so the tick spends a bounded slice of the bar to keep the run
-    /// alive rather than risking silence on a write that may not count.
-    func tick() {
-        report(min(reported + 1, scale / 2))
-    }
-
-    /// The run is over: say what became of it, and fill the bar only if it earned that.
-    func finish(_ ending: NodeAutomation.Ending) {
-        progress.localizedDescription = ending.title
-        progress.localizedAdditionalDescription = ending.detail
-        guard ending.fillsProgressBar else { return }
-        reported = scale
-        progress.completedUnitCount = scale
-    }
-
-    private func report(_ value: Int64) {
-        let next = min(max(value, reported), scale - 1)
-        reported = next
-        progress.completedUnitCount = next
-    }
-}
-
-#endif
 #endif
