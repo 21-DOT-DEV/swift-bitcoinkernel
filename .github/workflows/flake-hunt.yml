@@ -38,12 +38,16 @@ permissions: {}
 jobs:
   hunt:
     name: ${{ inputs.app }} (${{ inputs.platform }}) x${{ inputs.iterations }}
-    runs-on: macos-26
+    # xcode-27 like tuist-apps.yml — the demo apps' minimum toolchain. A
+    # NodeApp hunt cannot even compile on Xcode 26 (no compile fence), and a
+    # hunt that can't build measures nothing.
+    runs-on: xcode-27
     timeout-minutes: 120
     permissions:
       contents: read
     env:
-      DEVELOPER_DIR: "/Applications/Xcode_26.4.app/Contents/Developer"
+      # Same version-pinned path as tuist-apps.yml — see the comment there.
+      DEVELOPER_DIR: "/Applications/Xcode_27.0.app/Contents/Developer"
       WORKSPACE: Projects/Bitcoin.xcworkspace
       DERIVED_DATA: .derivedData
     steps:
@@ -52,20 +56,46 @@ jobs:
       - name: Generate workspace
         run: swift package --disable-sandbox tuist generate -p Projects/ --no-open
 
-      # Mirrors tuist-apps.yml's destination resolution: resolve an iPhone by
-      # UDID at runtime so simulator-name churn across Xcode versions can't
-      # break the job.
+      # Mirrors tuist-apps.yml's destination resolution: a device under the
+      # NEWEST installed iOS runtime, picked by parsing simctl's JSON rather
+      # than head -1 on the text list — that text groups oldest-first, so a
+      # NodeApp hunt would otherwise report the iOS-27-only suites as skipped
+      # while printing zero failures. The floor is app-gated the same way:
+      # only NodeApp carries the gated suites.
       - name: Resolve destination
         env:
           PLATFORM: ${{ inputs.platform }}
+          APP: ${{ inputs.app }}
         run: |
           case "$PLATFORM" in
             macos)
               echo "DESTINATION=platform=macOS" >> "$GITHUB_ENV" ;;
             ios)
-              UDID=$(xcrun simctl list devices available | grep -E 'iPhone 1[6-9]' | grep -oE '[0-9A-Fa-f-]{36}' | head -1)
-              [ -z "$UDID" ] && UDID=$(xcrun simctl list devices available | grep 'iPhone' | grep -oE '[0-9A-Fa-f-]{36}' | head -1)
-              if [ -z "$UDID" ]; then echo "::error::no available iPhone simulator on the runner"; exit 1; fi
+              PICKED=$(xcrun simctl list devices available -j | jq -r '
+                  .devices | to_entries
+                  | map(select(.key | test("SimRuntime\\.iOS-[0-9]+-[0-9]+")))
+                  | sort_by(.key
+                      | capture("iOS-(?<maj>[0-9]+)-(?<min>[0-9]+)(-(?<patch>[0-9]+))?")
+                      | [(.maj | tonumber), (.min | tonumber), ((.patch // "0") | tonumber)])
+                  | reverse
+                  | map({
+                      runtime: .key,
+                      udid: (([.value[] | select(.name | test("^iPhone 1[6-9]")) | .udid][0])
+                             // ([.value[] | select(.name | test("^iPhone")) | .udid][0])
+                             // "")
+                    })
+                  | (map(select(.udid != "")) | first) // { runtime: "", udid: "" }
+                  | "\(.udid) \(.runtime)"')
+              UDID=${PICKED%% *}
+              RUNTIME=${PICKED#* }
+              if [ -z "$UDID" ] || [ "$UDID" = "$RUNTIME" ]; then
+                  echo "::error::no available iPhone simulator on the runner"; exit 1
+              fi
+              echo "resolved destination: $RUNTIME / $UDID"
+              MAJOR=$(echo "$RUNTIME" | sed -E 's/.*iOS-([0-9]+)-.*/\1/')
+              if [ "$APP" = "NodeApp" ] && [ "$MAJOR" -lt 27 ]; then
+                  echo "::error::newest iOS runtime is $RUNTIME — below iOS 27, so NodeApp's iOS-27-only suites cannot run; add the runtime or drop this floor"; exit 1
+              fi
               echo "DESTINATION=platform=iOS Simulator,id=$UDID" >> "$GITHUB_ENV" ;;
             *)
               echo "::error::unhandled platform '$PLATFORM' — add a -destination case"; exit 1 ;;

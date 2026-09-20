@@ -121,7 +121,11 @@ enum NodeAutomation {
     }
 
     /// The headline shown while a run is still going.
-    static let inProgressTitle = "Starting Bitcoin node"
+    ///
+    /// Worded to stay honest on every path: a run that finds a node already up only
+    /// *reads* it, so a headline like "Starting Bitcoin node" would claim work that
+    /// path never does. "Checking" covers starting, waiting, and reading alike.
+    static let inProgressTitle = "Checking the Bitcoin node"
 
     /// Turns a finished run into what the card shows.
     ///
@@ -144,6 +148,17 @@ enum NodeAutomation {
             title: title,
             detail: summary)
     }
+
+    /// What the card shows when the system — not the person — ends the run.
+    ///
+    /// A timeout means the run went quiet long enough for the system to withdraw
+    /// the extended window; nobody dismissed the card, so it is owed an honest
+    /// ending. The bar is deliberately not filled — the run never finished the
+    /// work it describes — and the node itself is left running either way.
+    static let timedOutEnding = Ending(
+        fillsProgressBar: false,
+        title: "Run cut short",
+        detail: "The system ended the run early. The node itself was not stopped.")
 
     /// Raised when a run is asked to start while the privacy network is on but no
     /// proxy address exists.
@@ -258,7 +273,11 @@ enum NodeAutomation {
             // person what to change.
             return declinedReason ?? "The node did not start."
         case .didNotComeUp:
-            return "The node was started but had not come up yet, so nothing was measured."
+            // Deliberately silent on who started it: `waitForStarting` reaches
+            // this for a node already coming up — including one that appeared
+            // during the condition read — so "was started" would claim agency
+            // this run may not have.
+            return "The node had not come up yet, so nothing was measured."
         case .noAnswer:
             return "The node did not answer, so nothing was measured."
         case .alreadyRunning, .started:

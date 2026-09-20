@@ -63,7 +63,10 @@ enum NodeRun {
     ///     bounded by `questionBudget`.
     ///   - onProgress: called as the wait proceeds, with a fraction from 0 to 1.
     ///     The iOS 27 action forwards this to its progress display; advancing it
-    ///     is also what keeps that longer time window open.
+    ///     is also what keeps that longer time window open. Never call it from
+    ///     inside a `withHardTimeout` operation: an abandoned question outlives
+    ///     the run, so a report written there can land after `perform` has
+    ///     returned and the progress display it feeds is already gone.
     static func perform(
         session: NodeSession,
         waitForFirstAnswer: Duration,
@@ -178,12 +181,23 @@ enum NodeRun {
         // still launch the node it was called off to prevent.
         guard !Task.isCancelled else { return noAnswerReport() }
 
-        session.node.start(
+        // `start()` refuses anything but `.stopped`. Something else can have
+        // moved the node off it while the device-condition read suspended —
+        // another run, the app's own Start button, or a config change's
+        // restart — and reporting `.started` then claims work this run did
+        // not do, the exact distinction `waitForStarting` exists to keep.
+        // Take that path instead: it waits on whoever's node is coming up and
+        // reports what it finds honestly.
+        guard session.node.start(
             arguments: arguments,
             torSession: privacyEnabled ? session.tor.sessionID : nil,
             torSocksPort: privacyEnabled
                 ? session.tor.socksEndpoint.flatMap { UInt16(exactly: $0.port) } : nil
-        )
+        ) else {
+            log.notice("run: node moved off stopped during the condition read — waiting on whoever started it")
+            return await waitForStarting(
+                session: session, within: waitForFirstAnswer, onProgress: onProgress)
+        }
         log.notice("run: node start requested")
 
         guard

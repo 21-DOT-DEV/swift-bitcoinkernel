@@ -66,8 +66,14 @@ final class NodeViewModel {
 
     var isRunning: Bool { nodeState == .running }
 
-    func start(arguments: [String], torSession: UUID? = nil, torSocksPort: UInt16? = nil) {
-        guard nodeState == .stopped else { return }
+    /// Returns whether the start went ahead. `false` means the node was not
+    /// `.stopped` — something else already moved it (another run, a tap on the
+    /// app's Start button, a config change's restart) — and the call was a
+    /// no-op. Callers that report what *they* did, as the unattended run does,
+    /// need the refusal; the rest can ignore it.
+    @discardableResult
+    func start(arguments: [String], torSession: UUID? = nil, torSocksPort: UInt16? = nil) -> Bool {
+        guard nodeState == .stopped else { return false }
         lastStartError = nil
         startRunCounter += 1
         let run = startRunCounter
@@ -106,6 +112,7 @@ final class NodeViewModel {
                 )
             }
         }
+        return true
     }
 
     func stop() {

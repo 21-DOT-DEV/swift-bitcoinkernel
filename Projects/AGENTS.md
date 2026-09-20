@@ -118,6 +118,7 @@ When adding a new target, follow this pattern rather than putting all settings i
 
 ## Platforms
 
+- **Toolchain: Xcode 27+** — the demo apps require the iOS 27 SDK to build: the iOS-27-only `SyncNodeLongRunningIntent` has no compile fence, so an older Xcode fails loudly on its symbols rather than silently producing an app without the action. The runtime floor is unchanged — iOS 18+ devices run an Xcode-27 build with only the baseline action published. This floor is demo-app-only; the SPM package's own toolchain requirement is unchanged.
 - **macOS 15+** — primary; every target builds and runs in CI.
 - **iOS 18+** — both `NodeApp` and `KernelApp` declare `destinations: [.iPhone, .iPad, .mac]` in `Project.swift` and have iOS-specific UI paths (`#if !os(macOS)` blocks in `ConfigurationView.swift`, `CommandDetailView.swift`, etc.). Both apps build and run their test bundles on the iOS Simulator on every push/PR via [`tuist-apps.yml`](../.github/workflows/tuist-apps.yml). If iOS regressions surface (e.g. from the next Bitcoin Core subtree sync touching `<sys/random.h>`, `<net/route.h>`, or `<sys/sysctl.h>`), check `patches/bitcoin/ios-netif-guard.md` for the existing carve-out pattern.
 - **visionOS 2+ / tvOS 18+** — staged as commented matrix rows in `tuist-apps.yml`. tvOS carries `KernelApp` only (the `Bitcoin` product's `execvp()` is `__TVOS_PROHIBITED`), mirroring the per-scheme split in `apple-builds.yml`.

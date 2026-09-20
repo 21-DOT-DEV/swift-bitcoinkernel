@@ -146,7 +146,7 @@ final class NetworkCostMonitor: Sendable {
     /// The production source: Apple's `NWPathMonitor`, which announces network
     /// changes rather than answering questions. Starting it delivers one report
     /// immediately.
-    private static func pathMonitor(
+    @Sendable private static func pathMonitor(
         report: @escaping @Sendable (NetworkCost) -> Void
     ) -> AnyObject {
         let monitor = NWPathMonitor()

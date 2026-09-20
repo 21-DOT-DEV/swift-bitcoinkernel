@@ -10,34 +10,55 @@ permissions: {}
 
 jobs:
   apps:
-    name: ${{ matrix.app }} (${{ matrix.platform }})
-    runs-on: macos-26
+    name: ${{ matrix.app }} (${{ matrix.platform }})${{ matrix.suffix }}
+    # The xcode-27 image (public preview) is the only runner carrying the iOS 27
+    # SDK — the toolchain the long-running action needs to compile at all.
+    # Xcode 27 is the demo apps' declared minimum toolchain: there is no
+    # compile fence, so an Xcode 26 build fails loudly on the iOS-27-only
+    # symbols rather than silently shipping an app without the action. If the
+    # preview image proves unstable the escape is reintroducing the fence,
+    # not repointing `runner:` at macos-26 — that toolchain can no longer
+    # build these sources.
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { app: NodeApp,   platform: macos, action: test }
-          - { app: KernelApp, platform: macos, action: test }
-          - { app: NodeApp,   platform: ios,   action: test }
-          - { app: KernelApp, platform: ios,   action: test }
+          - { app: NodeApp,   platform: macos, action: test,  runner: xcode-27 }
+          - { app: KernelApp, platform: macos, action: test,  runner: xcode-27 }
+          - { app: NodeApp,   platform: ios,   action: test,  runner: xcode-27 }
+          - { app: KernelApp, platform: ios,   action: test,  runner: xcode-27 }
           # Roadmap — uncomment as each platform is brought up. `action` is a
           # per-row knob: drop a flaky iOS-simulator `test` to `build` here
           # without restructuring the matrix. New platforms also need a
           # `-destination` in the "Resolve destination" step below.
-          # - { app: NodeApp,   platform: visionos, action: test }
-          # - { app: KernelApp, platform: visionos, action: test }
+          # - { app: NodeApp,   platform: visionos, action: test,  runner: xcode-27 }
+          # - { app: KernelApp, platform: visionos, action: test,  runner: xcode-27 }
           # tvOS carries KernelApp only: the Bitcoin product's execvp() is
           # __TVOS_PROHIBITED, so NodeApp cannot build on tvOS (mirrors the
           # per-scheme split in apple-builds.yml's tvOS job).
-          # - { app: KernelApp, platform: tvos, action: build }
+          # - { app: KernelApp, platform: tvos, action: build, runner: xcode-27 }
     permissions:
       contents: read
     env:
-      DEVELOPER_DIR: "/Applications/Xcode_26.4.app/Contents/Developer"
+      # Version-pinned Xcode path rather than the Xcode.app default symlink:
+      # if an image release ever changes what the default resolves to, the job
+      # fails loudly at the first xcodebuild instead of silently building the
+      # iOS-27-gated code under a different toolchain. Xcode_27.0.app is a
+      # documented symlink on the xcode-27 image (runner-images readme).
+      DEVELOPER_DIR: "/Applications/Xcode_27.0.app/Contents/Developer"
       WORKSPACE: Projects/Bitcoin.xcworkspace
       DERIVED_DATA: .derivedData
     steps:
       - uses: actions/checkout@v6
+
+      # Record the toolchain that actually ran. The xcode-27 preview image is a
+      # moving target — when a run goes newly red or green, this is the line
+      # that says whether the image or the change did it.
+      - name: Record toolchain
+        run: |
+          xcodebuild -version
+          swift --version
 
       # Generate the Xcode workspace from the Tuist manifest. Kept separate so a
       # generation failure (e.g. an SPM version conflict in Projects/Project.swift)
@@ -58,17 +79,61 @@ jobs:
       - name: Resolve destination
         env:
           PLATFORM: ${{ matrix.platform }}
+          APP: ${{ matrix.app }}
         run: |
           case "$PLATFORM" in
             macos)
               echo "DESTINATION=platform=macOS" >> "$GITHUB_ENV" ;;
             ios)
-              UDID=$(xcrun simctl list devices available | grep -E 'iPhone 1[6-9]' | grep -oE '[0-9A-Fa-f-]{36}' | head -1)
-              [ -z "$UDID" ] && UDID=$(xcrun simctl list devices available | grep 'iPhone' | grep -oE '[0-9A-Fa-f-]{36}' | head -1)
-              if [ -z "$UDID" ]; then echo "::error::no available iPhone simulator on the runner"; exit 1; fi
+              # Pick a device under the NEWEST installed iOS runtime, not the
+              # first in the list: simctl's text output groups devices under
+              # runtime headers oldest-first, so a bare `head -1` silently
+              # resolves the oldest runtime on multi-runtime images — and
+              # NodeApp's iOS-27-only suites would report skips instead of
+              # results. The runtime is the variable that actually decides
+              # whether those tests run, so it is echoed here beside the
+              # toolchain record above; the iOS-27 floor applies only to
+              # NodeApp, the row carrying the gated suites — KernelApp has
+              # none and can run on whatever the newest runtime is.
+              PICKED=$(xcrun simctl list devices available -j | jq -r '
+                  .devices | to_entries
+                  | map(select(.key | test("SimRuntime\\.iOS-[0-9]+-[0-9]+")))
+                  | sort_by(.key
+                      | capture("iOS-(?<maj>[0-9]+)-(?<min>[0-9]+)(-(?<patch>[0-9]+))?")
+                      | [(.maj | tonumber), (.min | tonumber), ((.patch // "0") | tonumber)])
+                  | reverse
+                  | map({
+                      runtime: .key,
+                      udid: (([.value[] | select(.name | test("^iPhone 1[6-9]")) | .udid][0])
+                             // ([.value[] | select(.name | test("^iPhone")) | .udid][0])
+                             // "")
+                    })
+                  | (map(select(.udid != "")) | first) // { runtime: "", udid: "" }
+                  | "\(.udid) \(.runtime)"')
+              UDID=${PICKED%% *}
+              RUNTIME=${PICKED#* }
+              if [ -z "$UDID" ] || [ "$UDID" = "$RUNTIME" ]; then
+                  echo "::error::no available iPhone simulator on the runner"; exit 1
+              fi
+              echo "resolved destination: $RUNTIME / $UDID"
+              MAJOR=$(echo "$RUNTIME" | sed -E 's/.*iOS-([0-9]+)-.*/\1/')
+              if [ "$APP" = "NodeApp" ] && [ "$MAJOR" -lt 27 ]; then
+                  echo "::error::newest iOS runtime is $RUNTIME — below iOS 27, so NodeApp's iOS-27-only suites cannot run; add the runtime or drop this floor"; exit 1
+              fi
               echo "DESTINATION=platform=iOS Simulator,id=$UDID" >> "$GITHUB_ENV" ;;
             visionos)
-              UDID=$(xcrun simctl list devices available | grep 'Apple Vision' | grep -oE '[0-9A-Fa-f-]{36}' | head -1)
+              # Same newest-runtime selection as iOS above: text output's first
+              # match is whichever runtime simctl lists first, which silently
+              # picks the oldest when several are installed.
+              UDID=$(xcrun simctl list devices available -j | jq -r '
+                  .devices | to_entries
+                  | map(select(.key | test("SimRuntime\\.visionOS-[0-9]+-[0-9]+")))
+                  | sort_by(.key
+                      | capture("visionOS-(?<maj>[0-9]+)-(?<min>[0-9]+)(-(?<patch>[0-9]+))?")
+                      | [(.maj | tonumber), (.min | tonumber), ((.patch // "0") | tonumber)])
+                  | reverse
+                  | map([.value[] | select(.name | test("^Apple Vision")) | .udid][0] // "")
+                  | map(select(. != "")) | .[0] // ""')
               if [ -z "$UDID" ]; then echo "::error::no available visionOS simulator on the runner"; exit 1; fi
               echo "DESTINATION=platform=visionOS Simulator,id=$UDID" >> "$GITHUB_ENV" ;;
             tvos)

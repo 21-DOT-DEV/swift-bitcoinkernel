@@ -48,9 +48,11 @@ struct NodeAppShortcuts: AppShortcutsProvider {
     /// added alongside it. On iOS 18–26 only the baseline exists; on iOS 27 a person
     /// sees both and picks the extended one to get the longer run. See plan §3.5.
     ///
-    /// The compile fence is load-bearing, not defensive: without it Xcode 26.4 fails
-    /// with "cannot find 'SyncNodeLongRunningIntent' in scope", because that type's own
-    /// file is fenced out on toolchains without the iOS 27 SDK.
+    /// The `if #available` is a *runtime* gate, not a compile fence: building this
+    /// file at all requires the iOS 27 SDK toolchain (Xcode 27+), which the demo
+    /// apps declare their minimum. An older Xcode fails on the reference below —
+    /// loudly, rather than silently shipping an app that lacks the action — while
+    /// an Xcode-27 build on an iOS 18–26 device still publishes only the baseline.
     static var appShortcuts: [AppShortcut] {
         // Several natural phrasings, as Apple recommends, so more than one way of
         // asking lands on the same action. English only for now; localization is a
@@ -65,7 +67,6 @@ struct NodeAppShortcuts: AppShortcutsProvider {
             shortTitle: "Sync Bitcoin Node",
             systemImageName: "bitcoinsign.circle"
         )
-        #if compiler(>=6.4)
         // A separate action rather than a variant of the one above: different verb,
         // different spoken phrases, different icon. On iOS 27 a person sees both
         // listed, so two entries that read or sounded alike would leave them — and
@@ -81,7 +82,6 @@ struct NodeAppShortcuts: AppShortcutsProvider {
                 systemImageName: "arrow.trianglehead.2.clockwise"
             )
         }
-        #endif
     }
 }
 

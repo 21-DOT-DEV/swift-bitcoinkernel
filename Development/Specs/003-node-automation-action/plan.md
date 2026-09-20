@@ -3,7 +3,7 @@ feature: 003
 title: Action that runs the node unattended from a Shortcuts automation
 phase: null
 status: In Progress
-updated: 2026-09-13
+updated: 2026-09-19
 adrs: [0005, 0006, 0007, 0008, 0009]
 ---
 
@@ -12,11 +12,12 @@ adrs: [0005, 0006, 0007, 0008, 0009]
 A Shortcuts action, added to an automation in the Shortcuts app (the Automations tab,
 triggered by time or event — not the Home app's HomeKit automations), starts the
 Bitcoin node while the phone is locked and the app is not running. Demo-app work, no
-roadmap phase. A from-scratch rewrite: it lands first as a skeleton that only proves
-the execution path, then grows the real behaviour.
+roadmap phase. A from-scratch rewrite: both actions call one shared run routine
+(`NodeRun.perform`) that does the real node work — start behind the private-network
+gate, wait for the first answer, report honestly — so the two cannot drift apart.
 
-The one decision the skeleton already embodies — run in-app, in the background, no
-shared container — is ADR [0005](../../ADRs/0005-shortcuts-actions-run-in-the-app.md).
+The decisions the shipped run embodies — run in-app, in the background, no shared
+container — is ADR [0005](../../ADRs/0005-shortcuts-actions-run-in-the-app.md).
 Four recovered records carry the run's remaining durable rules:
 [0006](../../ADRs/0006-unattended-runs-never-bypass-tor.md) (accepted — never fall
 back to a direct connection),
@@ -26,31 +27,20 @@ the self-managed shutdown deadline, kept as the road not taken), and
 [0009](../../ADRs/0009-unattended-runs-leave-the-node-running.md) (both proposed
 until their figures are re-measured with the screen locked on this branch).
 
-**Outstanding at this stage:** everything past the skeleton. The current build does no
-node work — it logs that it ran and returns a line of text. The real run is §7.
-
-How that work is being split into reviewable pull requests, and where the unmerged
-code for it is preserved, is in [`delivery.md`](delivery.md) — a temporary companion
-to this plan, deleted once the work has landed and this plan describes what shipped.
+**Outstanding at this stage:** the locked-device verification in §5 — the real run
+has landed but its timings and the iOS 27 stop button have not been confirmed on a
+physical device with the screen locked, which is what ADRs 0008 and 0009 wait on.
 
 ## 1. Goal & success criteria
-
-The skeleton (this stage):
-
-- The action appears in the Shortcuts app once the app is installed.
-- Running it by hand returns a line of text into the Shortcuts app, and writes a start
-  and finish line to the system log (`os.log`, subsystem `dev.21.NodeApp`, category
-  `Shortcut`).
-- Triggered with no screen present, the app launches in the background and the action
-  runs without opening the app.
-
-The feature it grows into (§7):
 
 - An automation triggers the action with the phone locked and the app not running, and
   the node starts.
 - The node keeps running afterwards and is not stopped unless asked.
 - It never interrupts a node someone started themselves (ADR 0005).
 - It never connects without the private network when that is asked for.
+- The outcome is honest and typed: an automation can branch on what actually happened
+  (started, already running, declined, still coming up, no answer).
+- On iOS 27, the longer-running action shows a progress card the person can stop.
 
 ## 2. Scope
 
@@ -60,26 +50,27 @@ Mac, so the action is gated by a compile-time condition (`#if os(iOS)`), not an
 availability annotation — an annotation still compiles the code into the Mac build and
 refuses it only at runtime.
 
-**In scope (this stage):** one action in the NodeApp target (`SyncNodeIntent`) that
-logs and returns text; its registration so it appears in Shortcuts
-(`NodeAppShortcuts`); the iOS 27 variant as a skeleton (§3.5); the device-condition
-decision (§3.6). The action stays a thin adapter that returns quickly, so the real
-work is a swap rather than a rewrite.
+**In scope:** two actions in the NodeApp target — the baseline `SyncNodeIntent` and
+the iOS 27 `SyncNodeLongRunningIntent` — sharing one run routine (`NodeRun`); their
+registration (`NodeAppShortcuts`); the process-owned `NodeSession`; the decisions a
+run makes as testable free functions (`NodeAutomation`, `NodePreflight`); the typed
+report (`NodeRunReport`); and the progress card's honesty policy (`ProgressMeter`).
 
-**Out of scope:** starting the node and every behaviour that depends on it · the
-sister KernelApp's action · a shared data container · the longer execution window in
-earnest. All in §7.
+**Out of scope:** the sister KernelApp's action · a shared data container · a silent
+notification for the outcome · localization · anything else in §7.
 
 ## 3. Design
 
 ### 3.1 A thin action
 
-`SyncNodeIntent` is an `AppIntent` in the NodeApp target. Its `perform()` runs in the
-background, records a start and finish line, and returns a fixed line of text as a
-simple value plus a matching dialog. A simple value rather than a structured entity is
-the lighter idiomatic choice, revisited only if a later Shortcut step needs to branch
-on individual fields (§7). Keeping `perform()` thin is what lets the longer execution
-window be adopted later without reshaping the action.
+`SyncNodeIntent` is an `AppIntent` in the NodeApp target. Its `perform()` calls the
+shared run routine and returns a `NodeRunReport` — a structured entity with named
+fields (outcome, chain, heights, connections) a later Shortcut step can branch on —
+plus a dialog built from the report's summary sentence. A structured entity rather
+than a simple value: unattended outcomes are exactly where a following step wants
+fields, and "started" versus "already running" cannot be told apart in one line of
+text. Keeping `perform()` thin — it orchestrates, never decides — is also what let
+the longer execution window be adopted without reshaping the action.
 
 ### 3.2 Why in-app and in the background
 
@@ -89,13 +80,16 @@ launches the app in the background for exactly this. Running in the background i
 declared two ways for full coverage — `supportedModes` on iOS 26+, the older
 `openAppWhenRun` on iOS 18–25 (§7 retires the latter). Full reasoning in ADR 0005.
 
-### 3.3 What it will grow into
+### 3.3 What it grew into
 
-The real run — start the node, gate on the private network, report through a silent
-notification, leave the node running — is deliberately not in the skeleton. Those
-decisions are planned direction in §7, recorded under `../../ADRs/`: 0006 is accepted
-(its refusal already ships as `NodeAutomation.startArguments`); 0008 and 0009 are
-proposed until their behaviour is measured on this branch rather than inherited.
+The real run — start the node, gate on the private network, return an honest typed
+report, leave the node running — is `NodeRun.perform`, the one routine both actions
+call. The decisions it embodies are recorded under `../../ADRs/`: 0006 is accepted
+(its refusal ships as `NodeAutomation.startArguments` — a run that cannot honour the
+private-network setting declines rather than falling back); 0008 and 0009 are
+proposed until their behaviour is measured on this branch rather than inherited. A
+silent notification for the outcome was considered and deferred (§7) — the typed
+report and its dialog are the evidence a run happened.
 
 ### 3.4 Reaching the process-owned state across the thread boundary
 
@@ -112,7 +106,7 @@ that frees the main actor. Rejected: per-access hops, which suit a mostly-backgr
 method; and un-isolating the holder, which would let two threads race on the same
 view-models. **The rule this carries:** any future heavy or synchronous step inside
 `perform()` must be pushed off the main actor explicitly (noted beside the code).
-Applied to the skeleton now so it is compiler-enforced. A standard idiom, so recorded
+Applied throughout the run so it is compiler-enforced. A standard idiom, so recorded
 here rather than as an ADR; it binds the later KernelApp action the same way.
 
 ### 3.5 The longer-running variant (iOS 27)
@@ -123,13 +117,16 @@ APIs. A type's capabilities are fixed when built, so one type cannot be the
 long-running kind only on newer systems: the longer-running form is a **separate**
 type, `SyncNodeLongRunningIntent`, beside the baseline `SyncNodeIntent`.
 
-Three things let it coexist with an app supporting iOS 18 and built day-to-day with an
-older Xcode:
+Three things let it coexist with an app supporting iOS 18:
 
-- **Compile fence** — `#if compiler(>=6.4)`, so the everyday toolchain skips the file.
-  Necessary because a runtime `@available` check cannot rescue a symbol the
-  compiled-against SDK lacks; the compiler version stands in for "iOS 27 SDK present",
-  reliable because each Xcode ships a fixed compiler+SDK pair.
+- **Toolchain requirement, not a compile fence** — the demo apps require the iOS 27
+  SDK toolchain (Xcode 27+) to build. A runtime `@available` check cannot rescue a
+  symbol the compiled-against SDK lacks, so the choice is binary: fence the file out
+  on older toolchains, or require the newer one. An earlier `#if compiler(>=6.4)`
+  fence covered the Xcode 26→27 transition; it was removed once Xcode 27 became the
+  declared minimum, because a silently feature-less build is worse than a loud
+  compile failure. The iOS 18–26 *runtime* gate remains — it is the
+  `if #available` in `NodeAppShortcuts`, not a compile fence.
 - **Two actions, not one that switches type.** The extended runtime goes only to the
   type the system launches, so the long-running type must itself be registered —
   delegation from the baseline would not get the window. Registering *one* action whose
@@ -169,11 +166,19 @@ release; displayed names stay adjustable, and spoken phrases should not be rewri
 casually even though nothing breaks. If a type name ever must change, keep the old type
 as a deprecated stand-in that forwards to the new one rather than deleting it — which is
 also the mechanism for retiring the short-run action (§7).
-- **Clean-stop hook** — also conforms to `CancellableIntent`, so a stop (by the person,
-  or by the system on timeout) can run a graceful shutdown. Logs only in the skeleton.
+- **Stop hook** — also conforms to `CancellableIntent`, so a stop (by the person, or
+  by the system on timeout) reaches `onCancel` with its reason. No shutdown runs
+  there — the node is deliberately left running (ADR 0009), and a node still inside
+  its own start-up could not service a stop anyway. What the hook does is record the
+  reason, which is how the run tells the person's dismissal from the system's
+  patience ending: the first leaves the card alone, the second writes an honest
+  "run cut short" ending — while the node keeps running either way.
 
-Like the baseline this is a **skeleton**: it logs, ticks one unit of progress (the
-mandatory heartbeat that keeps the extended run alive), and returns.
+Unlike the baseline, this action wraps the shared run in `performBackgroundTask` and
+drives the system progress card throughout — the heartbeat the extended window
+demands. The card's honesty policy lives in `ProgressMeter`: the bar never retreats,
+the heartbeat's total contribution is capped at half the bar and is spent only
+during real silence, and nothing but an earned finish fills it.
 
 ### 3.6 Declining a run the device cannot serve
 
@@ -203,31 +208,35 @@ chain fine; only the pre-first-unlock window is closed, which the first check co
 This also rules file protection out as a cause of the slow locked-screen start-ups
 in §6.
 
-Only the decision lands here; the code that *reads* these conditions is
-framework-dependent, cannot be exercised in CI, and lands with its caller (§7).
+The decision lives in `NodePreflight`; the code that *reads* the conditions is
+framework-dependent, cannot be exercised in CI, and ships with its caller
+(`NodeRun.readConditions`).
 
 ## 4. Implementation steps
 
-1. The action and its registration, background-only, logging and returning text.
+1. The actions and their registration, background-only (`SyncNodeIntent`,
+   `NodeAppShortcuts`).
 2. A process-owned owner (`NodeSession`) for the node and address-hiding-network
    controllers, reachable with no screen present; the main screen reads it instead of
    creating its own.
 3. The decisions a run makes as free functions with no framework types
    (`NodeAutomation`: which step to take, and the refuse-to-start-without-a-proxy
    guard), unit-tested.
-4. The iOS 27 longer-running variant (`SyncNodeLongRunningIntent`) as a skeleton behind
-   a compile fence, one visible action per system version, clean-stop hook wired but
-   empty (§3.5).
-5. Whether device conditions allow a run at all (`NodePreflight`), unit-tested (§3.6).
-6. Start the node behind the private-network gate; report through a silent
-   notification.
+4. The iOS 27 longer-running variant (`SyncNodeLongRunningIntent`) — iOS-27-only at
+   runtime, Xcode-27-only at build time — sharing the same run routine, its stop
+   hook recording the cancellation reason (§3.5).
+5. Whether device conditions allow a run at all (`NodePreflight`), unit-tested (§3.6),
+   read live by the run (`NodeRun.readConditions`).
+6. The shared run (`NodeRun.perform`): start the node behind the private-network
+   gate, every question bounded by `withHardTimeout`, an honest typed report
+   (`NodeRunReport`), and the progress card's honesty policy (`ProgressMeter`).
 7. Device verification with the screen locked (§5).
 
 ## 5. Verification
 
 - [x] The action appears in the Shortcuts app after install.
-- [ ] Run by hand, it returns text into the Shortcuts app and logs a start and finish
-      line.
+- [ ] Run by hand, it returns a report into the Shortcuts app and logs a start and
+      finish line.
 - [ ] Triggered with no screen present, the app launches in the background and the
       action runs without opening the app.
 - [x] On iOS 18–26, only the short-run action appears and the app does not crash at
@@ -236,13 +245,10 @@ framework-dependent, cannot be exercised in CI, and lands with its caller (§7).
 - [x] On iOS 27, "Keep Bitcoin Node Syncing" shows a progress display, confirming the
       extended time window engages.
 - [ ] On iOS 27, that display's stop button ends the run and logs
-      `run: cancelled (userCancelled)`. Not yet exercisable: the first attempt showed
-      the display appear at 0% and vanish before it could be tapped, because the
-      skeleton finishes in milliseconds. A temporary paced loop now holds a run open for
-      about 30 seconds so the button can be reached; it is removed when real node work
-      replaces it.
-- [ ] (Later) Triggered with the phone locked and the app not running, the node starts.
-- [ ] (Later) With the private network on and unreachable, the action refuses and the
+      `run: cancelled (userCancelled)`. Now exercisable — real node work holds the
+      run open long enough to reach the button — but not yet confirmed on device.
+- [ ] Triggered with the phone locked and the app not running, the node starts.
+- [ ] With the private network on and unreachable, the action refuses and the
       node never starts — confirmed by no direct connections being made, not by reading
       the message.
 
@@ -258,9 +264,10 @@ framework-dependent, cannot be exercised in CI, and lands with its caller (§7).
   "app will terminate" callback fires only while an app is still running, and a
   memory-reclaiming kill gives no notice, so no code can run then to shut the node down
   cleanly. → Nothing is designed around a final-warning callback. The only genuine
-  "about to be stopped" signal is the iOS 27 stop hook (§3.5), which is where a graceful
-  shutdown belongs; otherwise state is written as the run goes and the node replays its
-  own on-disk state next start.
+  "about to be stopped" signal is the iOS 27 stop hook (§3.5), which records the
+  cancellation reason so the run can tell a dismissal from a timeout — the node
+  itself is deliberately left running (ADR 0009). State is written as the run goes
+  and the node replays its own on-disk state next start.
 - **A run that stops reporting progress can be cut short by the system.** On the iOS 27
   action, advancing progress is what keeps the extended time window open — not
   decoration. A first version set the total before the run and the completed count
@@ -281,34 +288,13 @@ framework-dependent, cannot be exercised in CI, and lands with its caller (§7).
 
 Ordered roughly by when each is needed.
 
-- **Start the node and report the result.** Reach the process-owned node with no screen
-  present, start it, wait only until it first answers, and return. The first real-work
-  commit. It carries two agreed decisions, each now a record under `../../ADRs/`:
-    - **Never bypass the private network**
-      ([0006](../../ADRs/0006-unattended-runs-never-bypass-tor.md), accepted). With the
-      privacy setting on and the private connection not established, the node does not
-      start — never a fallback to a direct connection, which would expose the person's
-      home network address after they asked it not to.
-    - **Leave the node running by default**
-      ([0009](../../ADRs/0009-unattended-runs-leave-the-node-running.md), proposed
-      pending locked-device re-measurement). The run returns as soon as the node answers
-      and does not stop it; stopping is an explicit, off-by-default switch. This is why
-      the prior implementation's self-managed shutdown deadline and "don't-suspend-me"
-      assertion are not being rebuilt.
-- **Read the device conditions, and mark clean shutdowns.** Both pair with node-start:
-    - **Reading the six conditions** §3.6 consumes. Deferred because the code is
-      framework-dependent and cannot be exercised in automated checks. Notes for
-      whoever writes it: read free space as the figure the system reports for
-      *important* usage, not raw free bytes, and treat it as a courtesy check — it counts
-      space the system may not reclaim in time, so a write failure must still be handled.
-      Also consider reading whether the device is plugged in; a multi-minute run is far
-      more appropriate while charging, which may justify relaxing the heat and
-      battery-saver checks.
-    - **A clean-shutdown marker.** Write a file when the node stops cleanly and remove
-      it, so its presence at next launch means the previous run was ended without
-      warning — the standard way to detect an unannounced end, and it would turn "the
-      node recovered every time" (§6) into something the logs show. Needs a real node
-      stop to mark.
+- **Mark clean shutdowns.** Write a file when the node stops cleanly and remove it, so
+  its presence at next launch means the previous run was ended without warning — the
+  standard way to detect an unannounced end, and it would turn "the node recovered
+  every time" (§6) into something the logs show. Needs a real node stop to mark.
+  Related: consider reading whether the device is plugged in alongside the §3.6
+  conditions; a multi-minute run is far more appropriate while charging, which may
+  justify relaxing the heat and battery-saver checks.
 - **A silent notification for the outcome.** An unattended run has no screen, so the
   returned value is never displayed; a quiet local notification (provisional
   authorisation, so no permission prompt) is the only evidence the run happened.
@@ -322,10 +308,11 @@ Ordered roughly by when each is needed.
 - **Keeping the node running after the action returns — the open problem.** No
   third-party app gets a guaranteed always-on background process, so the node runs only
   until the system pauses the app. Options, none reliable today:
-    - **The longer execution window (`LongRunningIntent`, iOS 27)** — most promising;
-      skeleton exists (§3.5). Remaining: real start/report inside
-      `performBackgroundTask`, real shutdown inside `onCancel`, and whether an
-      unattended trigger even qualifies — needs a physical iOS 27 device.
+    - **The longer execution window (`LongRunningIntent`, iOS 27)** — shipped (§3.5):
+      the action wraps the shared run in `performBackgroundTask` and drives the
+      progress card. No shutdown runs inside `onCancel` by design (ADR 0009).
+      Remaining: whether an unattended trigger qualifies for the extended window at
+      all, and the ADR 0009 re-measurement — both need a physical iOS 27 device.
     - **A background maintenance job (`BGProcessingTask`)** — runs minutes, but only
       while the device is idle, and ends when the person touches it. Might
       *opportunistically* extend runtime; **worth measuring** once node-start exists.
@@ -347,8 +334,6 @@ Ordered roughly by when each is needed.
   deprecated with `replacedBy` pointing at `SyncNodeLongRunningIntent`, so people are
   guided to the survivor and existing automations keep working. Blocked until the app's
   oldest-supported OS reaches iOS 27.
-- **A structured return entity.** Upgrade from the simple text value only if a later
-  Shortcut step needs to branch on individual figures (height, chain, blocks behind).
 - **Localized phrases and description.** The `title` is already localizable; the spoken
   phrases and description are English only. Localizing needs an `AppShortcuts` string
   catalog, which must also be added to NodeApp's `resources:` in
@@ -364,5 +349,5 @@ Ordered roughly by when each is needed.
 Decision logic lives in free functions with no framework types, so it is testable on
 every platform in CI; the action orchestrates and does no deciding. Anything touching
 Shortcuts, notifications, background launch or the system's suspension rules can only
-be verified by hand on a device, which is why §5 exists and why the skeleton ships
-first — to prove that path before real work depends on it.
+be verified by hand on a device, which is why §5 exists — the execution path has been
+proven, and what remains is locked-device verification of the real run.

@@ -225,13 +225,16 @@ struct NodeAutomationTests {
         #expect(text == "Low Power Mode is on.")
     }
 
-    @Test("a run whose node never answered says nothing was measured")
+    @Test("a run that found the node still coming up says nothing was measured")
     func summaryDidNotComeUp() {
         let text = NodeAutomation.summary(
             outcome: .didNotComeUp, chain: "main", height: 5, blocksBehind: nil,
             blocksSinceLastCheck: nil, declinedReason: nil)
         #expect(text.contains("had not come up"))
         #expect(text.contains("nothing was measured"))
+        // It must not say who started the node — on this path it may already have
+        // been coming up before the run began.
+        #expect(text.contains("started") == false)
     }
 
     @Test("a run that got no usable answer says nothing was measured")

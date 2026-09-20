@@ -55,6 +55,8 @@ xcodebuild test \
 
 ## Platforms
 
+Requires **Xcode 27+** (iOS 27 SDK) to build — the iOS-27-only Shortcuts action has no compile fence, so an older Xcode fails loudly on its symbols rather than silently shipping an app without it. The SPM package itself has no such floor.
+
 Both apps declare `destinations: [.iPhone, .iPad, .mac]` in `Project.swift` and have iOS-specific UI paths in their sources.
 
 - **macOS 15+** — primary; everything builds and runs.

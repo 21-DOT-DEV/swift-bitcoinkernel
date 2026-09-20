@@ -104,7 +104,7 @@ struct DashboardViewModelTests {
 
     // MARK: - Fixtures (lifted from the package's model-decode tests)
 
-    static let prunedJSON = """
+    nonisolated static let prunedJSON = """
     {
       "chain": "main", "blocks": 876000, "headers": 876000,
       "bestblockhash": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
@@ -116,7 +116,7 @@ struct DashboardViewModelTests {
     }
     """
 
-    static let ibdJSON = """
+    nonisolated static let ibdJSON = """
     {
       "chain": "signet", "blocks": 100, "headers": 200,
       "bestblockhash": "0000000000000000000000000000000000000000000000000000000000000abc",
@@ -127,7 +127,7 @@ struct DashboardViewModelTests {
     }
     """
 
-    static let mempoolJSON = """
+    nonisolated static let mempoolJSON = """
     {
       "loaded": true, "size": 3, "bytes": 1234, "usage": 5678,
       "maxmempool": 300000000, "mempoolminfee": 0.00001000,
@@ -135,7 +135,7 @@ struct DashboardViewModelTests {
     }
     """
 
-    static let peersJSON = """
+    nonisolated static let peersJSON = """
     [
       {"id":0,"addr":"10.0.0.1:8333","services":"0000000000000409","relaytxes":true,
        "lastsend":1713300000,"lastrecv":1713300000,"bytessent":1000,"bytesrecv":2000,
