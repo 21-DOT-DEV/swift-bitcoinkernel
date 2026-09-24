@@ -13,12 +13,25 @@ public let beginMarker = "<!-- BEGIN GENERATED INDEX -->"
 public let endMarker = "<!-- END GENERATED INDEX -->"
 public let softLineLimit = 250
 
+/// Sibling files a feature folder may carry beside plan.md. spec.md defines
+/// requirement and outcome IDs; tasks.md and plan.md are the citation targets.
+public let specSiblings = ["spec.md", "tasks.md", "research.md"]
+
 public let specStatuses = ["Planned", "In Progress", "Implemented"]
 public let adrStatuses = ["Proposed", "Accepted", "Superseded"]
 
 public struct Report: Sendable {
     public var errors: [String] = []
+    /// Warnings are problems a human should see but a check cannot prove —
+    /// they print under their own prefix and never decide `isFailure`. Keeping
+    /// them out of `notes` matters: that stream also carries the routine
+    /// length advisories, and a real gap printed there is scrolled past.
+    public var warnings: [String] = []
     public var notes: [String] = []
+    /// The requirement→work map, printed between the notes and the outcome line.
+    /// Computed at check time rather than stored in any file: a persisted matrix
+    /// is a snapshot that decays; this one is current on every run.
+    public var coverage: [String] = []
     public var rewritten: [String] = []
     public var specCount = 0
     public var adrCount = 0
@@ -160,6 +173,17 @@ public struct Indexer {
             report.errors.append("\(rel(specs)): \((error as NSError).localizedDescription)")
             return nil
         }
+        let adrsDir = development.appendingPathComponent("ADRs")
+        let adrFiles: [String]?
+        // A folder that fails to list is reported, not swallowed: `try?` would
+        // turn it into an empty list and every plan's adrs: field would then
+        // error "no such record exists" — burying the real fault under spurious
+        // ones, exactly the cascade the unreadable-sibling rule exists to stop.
+        do { adrFiles = try fm.contentsOfDirectory(atPath: adrsDir.path) }
+        catch {
+            report.errors.append("\(rel(adrsDir)): \((error as NSError).localizedDescription)")
+            adrFiles = nil
+        }
         var rows: [SpecRow] = []
         for name in dirs where !name.hasPrefix("_") && !name.hasPrefix(".") {
             let dir = specs.appendingPathComponent(name)
@@ -181,6 +205,11 @@ public struct Indexer {
             do { front = try Frontmatter.decode(PlanFrontmatter.self, from: text) }
             catch { report.errors.append("\(rel(plan)): \((error as? Frontmatter.ParseError)?.reason ?? "\(error)")"); continue }
 
+            // The likeliest copy-paste mistake: the file was created from the
+            // template and its instruction comment survived the commit.
+            if text.contains("Delete this comment") {
+                report.errors.append("\(rel(plan)): the template's \"Delete this comment\" marker was not removed")
+            }
             let padded = String(repeating: "0", count: max(0, 3 - front.feature.count)) + front.feature
             // The whole leading run of digits, not merely a prefix: "0220-foo" starts
             // with "022", so a prefix test paired feature 022 with folder 0220 and
@@ -191,12 +220,313 @@ public struct Indexer {
             if !specStatuses.contains(front.status) {
                 report.errors.append("\(rel(plan)): status '\(front.status)' is not one of \(specStatuses)")
             }
+            if let adrFiles {
+                for adr in front.adrs ?? [] {
+                    let paddedADR = String(repeating: "0", count: max(0, 4 - String(adr).count)) + String(adr)
+                    if !adrFiles.contains(where: { $0.hasPrefix("\(paddedADR)-") && $0.hasSuffix(".md") }) {
+                        report.errors.append("\(rel(plan)): adrs lists \(paddedADR) but no such record exists")
+                    }
+                }
+            }
             noteIfLong(plan, text, into: &report)
+            checkSiblings(in: dir, planText: text, adrs: front.adrs, into: &report)
             rows.append(SpecRow(number: padded, title: front.title,
                                 phase: front.phase ?? "—", status: front.status,
                                 link: "\(name)/plan.md"))
         }
+        // The template folder is exempt from indexing but not from the rules it
+        // teaches: a verbatim copy must satisfy the sibling contract.
+        let template = specs.appendingPathComponent("_template")
+        if let planText = try? read(template.appendingPathComponent("plan.md")) {
+            checkSiblings(in: template, planText: planText,
+                          adrs: (try? Frontmatter.decode(PlanFrontmatter.self, from: planText))?.adrs,
+                          isTemplate: true, into: &report)
+        }
         return rows
+    }
+
+    /// The siblings share a contract the index table cannot express: they carry
+    /// no frontmatter (status lives in plan.md alone), and every ID spec.md
+    /// defines is cited where the work or verification lives. A rule that
+    /// exists only on review fails silently the first time it matters.
+    func checkSiblings(in dir: URL, planText: String, adrs: [Int]? = nil,
+                       isTemplate: Bool = false, into report: inout Report) {
+        var texts: [String: String] = [:]
+        var unreadable = Set<String>()
+        for name in specSiblings {
+            let url = dir.appendingPathComponent(name)
+            guard fm.fileExists(atPath: url.path) else { continue }
+            do {
+                let text = try read(url)
+                // A stray blank line before the block does not make it prose.
+                if text.drop(while: \.isWhitespace).hasPrefix("---") {
+                    report.errors.append("\(rel(url)): sibling files carry no frontmatter — status lives in plan.md")
+                }
+                if !isTemplate && text.contains("Delete this comment") {
+                    report.errors.append("\(rel(url)): the template's \"Delete this comment\" marker was not removed")
+                }
+                noteIfLong(url, text, into: &report)
+                texts[name] = text
+            } catch {
+                unreadable.insert(name)
+                report.errors.append("\(rel(url)): \((error as NSError).localizedDescription)")
+            }
+        }
+        let (definedFRs, definedSCs) = specIDs(in: texts["spec.md"] ?? "", definitionsOnly: true)
+        // Coverage lives where the ordered work does: tasks.md when present and
+        // readable, plan.md when a feature has no ordered-work file. A sibling
+        // that failed to read does not demote the home — the read error is the
+        // report; cascading "never cited" errors would bury it.
+        if let tasks = texts["tasks.md"], !unreadable.contains("tasks.md") {
+            for id in definedFRs.subtracting(specIDs(in: tasks).frs).sorted() {
+                report.errors.append("\(rel(dir))/tasks.md: \(id) is defined in spec.md but never cited")
+            }
+        } else if !unreadable.contains("tasks.md"), texts["tasks.md"] == nil {
+            for id in definedFRs.subtracting(specIDs(in: planText).frs).sorted() {
+                report.errors.append("\(rel(dir))/plan.md: \(id) is defined in spec.md but never cited")
+            }
+        }
+        // Dangling cites are wrong in every sibling, research.md included. A
+        // cite qualified with another feature's number — `003/FR-004` or
+        // `003's FR-004` — points outside this spec and is never dangling here.
+        for (file, text) in [("plan.md", planText), ("tasks.md", texts["tasks.md"] ?? ""),
+                             ("research.md", texts["research.md"] ?? "")] {
+            let own = text.replacingOccurrences(
+                of: #"\d{3}(?:'s|/)\s*(?:FR|SC)-\d{3}"#, with: "",
+                options: .regularExpression)
+            for id in specIDs(in: own).frs.subtracting(definedFRs).sorted() {
+                report.errors.append("\(rel(dir))/\(file): \(id) is cited but spec.md defines no such requirement")
+            }
+            for id in specIDs(in: own).scs.subtracting(definedSCs).sorted() {
+                report.errors.append("\(rel(dir))/\(file): \(id) is cited but spec.md defines no such outcome")
+            }
+        }
+        // Coverage for outcomes lives in plan.md's Verification.
+        for id in definedSCs.subtracting(specIDs(in: planText).scs).sorted() {
+            report.errors.append("\(rel(dir))/plan.md: \(id) is defined in spec.md but never cited")
+        }
+        // The adrs: check above runs listed→exists; this is the other direction —
+        // a record the feature's own text relies on without listing it. A mention
+        // is not proof of membership (the field is for records the feature
+        // produced, revised, or depends on), so this warns rather than errors.
+        // A missing field is an empty list, not a pass: "the feature names the
+        // record but declares no relationship" is the same omission.
+        let listed = Set(adrs ?? [])
+        var mentioners: [Int: Set<String>] = [:]
+        for (file, text) in [("plan.md", planText), ("spec.md", texts["spec.md"] ?? ""),
+                             ("tasks.md", texts["tasks.md"] ?? ""),
+                             ("research.md", texts["research.md"] ?? "")] {
+            for n in adrMentions(in: text) where !listed.contains(n) {
+                mentioners[n, default: []].insert(file)
+            }
+        }
+        for n in mentioners.keys.sorted() {
+            let padded = String(repeating: "0", count: max(0, 4 - String(n).count)) + String(n)
+            report.warnings.append("\(rel(dir)): ADR \(padded) is cited in "
+                + "\(mentioners[n]!.sorted().joined(separator: ", ")) but absent from plan.md's adrs:")
+        }
+        // The template folder must satisfy the sibling contract it teaches, but a
+        // coverage line for a folder that is not a feature is permanent noise.
+        if !isTemplate {
+            emitCoverage(for: dir, spec: texts["spec.md"], planText: planText,
+                         tasks: unreadable.contains("tasks.md") ? nil : texts["tasks.md"],
+                         into: &report)
+        }
+    }
+
+    /// `ADR 0006`-style mentions — four digits or fewer with the prefix, so
+    /// bare numbers in prose never count. A plural carries a list — "ADRs
+    /// 0008 and 0009" cites both — so the prefix is followed by a run of
+    /// numbers joined by commas, slashes, or a conjunction; each number in
+    /// the run is a mention.
+    func adrMentions(in text: String) -> [Int] {
+        let pattern = try! NSRegularExpression(
+            pattern: #"\bADRs?\s+((?:0*\d{1,4}\b[\s,/]*(?:and\s+|or\s+|&\s*)?)+)"#)
+        let numbers = try! NSRegularExpression(pattern: #"0*(\d{1,4})"#)
+        return pattern.matches(in: text, range: NSRange(text.startIndex..., in: text))
+            .flatMap { match -> [Int] in
+                guard let tail = Range(match.range(at: 1), in: text) else { return [] }
+                return numbers.matches(in: text, range: NSRange(tail, in: text))
+                    .compactMap { Range($0.range(at: 1), in: text).flatMap { Int(text[$0]) } }
+            }
+    }
+
+    /// The citation checks prove every requirement is named somewhere; they
+    /// cannot see whether that somewhere tests it, which is how a requirement
+    /// ended up cited only by a task that might never be written. This map —
+    /// printed, never stored — is what makes that gap visible. "Test-verified"
+    /// is claimed only where a task declares it with `verifies FR-NNN`: a cite
+    /// says a task serves the requirement, a verifies cite says its tests
+    /// exercise it, and conflating the two is how the old map credited an
+    /// untested task. A cited requirement with no verifies cite and no
+    /// acceptance scenario has no verification path at all — an error; one
+    /// covered by a scenario but no test warns, since scenario-only is an
+    /// honest state (device-verified) but worth seeing.
+    func emitCoverage(for dir: URL, spec: String?, planText: String, tasks: String?,
+                      into report: inout Report) {
+        guard let spec else { return }
+        let (definedFRs, definedSCs) = specIDs(in: spec, definitionsOnly: true)
+        guard !definedFRs.isEmpty || !definedSCs.isEmpty else { return }
+        let blocks = taskBlocks(in: tasks ?? "")
+        let scenarios = scenarioMap(in: spec)
+        var cited = 0, tested = 0
+        var lines: [String] = []
+        for id in definedFRs.sorted() {
+            let citing = tasks != nil
+                ? blocks.filter { specIDs(in: $0.text).frs.contains(id) }.map(\.id)
+                : (specIDs(in: planText).frs.contains(id) ? ["plan.md"] : [])
+            let tests = blocks.filter { $0.verifies.frs.contains(id) }.map(\.id)
+            if !citing.isEmpty { cited += 1 }
+            if !tests.isEmpty { tested += 1 } else if !citing.isEmpty {
+                if (scenarios[id] ?? []).isEmpty {
+                    report.errors.append("\(rel(dir)): \(id) is cited but has no verification path "
+                        + "— no `verifies` cite, no acceptance scenario")
+                } else {
+                    report.warnings.append("\(rel(dir)): \(id) has no `verifies` cite — "
+                        + "verified by scenario \(joinOr((scenarios[id] ?? []).map(String.init))) alone")
+                }
+            }
+            lines.append("  \(id) → \(joinOr(citing)) · tests: \(joinOr(tests)) · scenario: \(joinOr((scenarios[id] ?? []).map(String.init)))")
+        }
+        var verified = 0
+        for id in definedSCs.sorted() {
+            let ok = specIDs(in: planText).scs.contains(id)
+            if ok { verified += 1 }
+            let tests = blocks.filter { $0.verifies.scs.contains(id) }.map(\.id)
+            lines.append("  \(id) → \(ok ? "plan.md ✓" : "—")"
+                + (tests.isEmpty ? "" : " · tests: \(joinOr(tests))"))
+        }
+        report.coverage.append("coverage: \(rel(dir)) — \(cited)/\(definedFRs.count) requirements cited, "
+            + "\(tested)/\(definedFRs.count) test-verified, \(verified)/\(definedSCs.count) outcomes verified")
+        report.coverage.append(contentsOf: lines)
+    }
+
+    func joinOr(_ ids: [String]) -> String { ids.isEmpty ? "—" : ids.joined(separator: ", ") }
+
+    /// One task's text is its `- [ ] TNNN` line plus the wrapped continuation
+    /// lines that follow, so a cite on either line counts as that task's. Any
+    /// checkbox state counts — a ticked (`- [x]`) task still serves its
+    /// requirements; dropping it would misread landed work as a gap the moment
+    /// the first slice merges. A task's `verifies FR-NNN` cites declare which
+    /// requirements its tests exercise — the map counts only those toward test
+    /// verification, so a test task sitting beside an implementation cite is
+    /// not mistaken for covering it.
+    func taskBlocks(in text: String) -> [(id: String, text: String,
+                                          verifies: (frs: Set<String>, scs: Set<String>))] {
+        var blocks: [(id: String, text: String,
+                      verifies: (frs: Set<String>, scs: Set<String>))] = []
+        var id: String? = nil, body = ""
+        func flush() {
+            if let id {
+                blocks.append((id, body, verifiesIDs(in: body)))
+            }
+            body = ""
+        }
+        for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            if line.range(of: #"^- \[[ xX]\] T\d{3}\b"#, options: .regularExpression) != nil {
+                flush(); id = String(line.dropFirst(6).prefix(4))
+                body = line + "\n"
+            } else if (line.hasPrefix(" ") || line.hasPrefix("\t")), id != nil {
+                body += line + "\n"
+            } else {
+                flush(); id = nil
+            }
+        }
+        flush()
+        return blocks
+    }
+
+    /// The IDs a task declares its tests exercise: every `FR-NNN`/`SC-NNN` in
+    /// the run following the word `verifies` — `(verifies FR-001, FR-002)` or
+    /// `(FR-003; verifies FR-004)`. Any other ID is a cite, not a claim of
+    /// verification.
+    func verifiesIDs(in text: String) -> (frs: Set<String>, scs: Set<String>) {
+        let pattern = try! NSRegularExpression(
+            pattern: #"(?i)\bverifies\b((?:[\s,;]*(?:and[\s,;]+)?(?:FR|SC)-\d{3})+)"#)
+        var frs = Set<String>(), scs = Set<String>()
+        for match in pattern.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+            guard let range = Range(match.range(at: 1), in: text) else { continue }
+            let ids = specIDs(in: String(text[range]))
+            frs.formUnion(ids.frs)
+            scs.formUnion(ids.scs)
+        }
+        return (frs, scs)
+    }
+
+    /// Numbered items inside the acceptance-scenario section → the requirement
+    /// IDs each one exercises (specs tag them "— covers FR-NNN"). A scenario's
+    /// text wraps across lines, so IDs accumulate to the current item until the
+    /// next number or the section's end.
+    func scenarioMap(in spec: String) -> [String: [Int]] {
+        var map: [String: [Int]] = [:]
+        var inSection = false, current: Int? = nil
+        for line in spec.split(separator: "\n", omittingEmptySubsequences: false) {
+            if line.hasPrefix("#") {
+                inSection = line.localizedCaseInsensitiveContains("acceptance scenario")
+                current = nil
+                continue
+            }
+            guard inSection else { continue }
+            let digits = line.prefix(while: \.isNumber)
+            if !digits.isEmpty, line.dropFirst(digits.count).hasPrefix(".") {
+                current = Int(digits)
+            } else if line.first?.isWhitespace != true && !line.isEmpty {
+                // A scenario's wrapped lines are indented; a flush-left line
+                // that is not a number is usually new prose — unless it still
+                // carries the item's covers-tag, in which case dropping it
+                // would silently unmap the scenario.
+                if line.range(of: #"covers\s+(?:FR|SC)-\d{3}"#,
+                              options: .regularExpression) == nil {
+                    current = nil
+                }
+            }
+            guard let n = current else { continue }
+            for id in specIDs(in: String(line)).frs where !(map[id] ?? []).contains(n) {
+                map[id, default: []].append(n)
+            }
+        }
+        return map
+    }
+
+    /// `FR-042`- and `SC-042`-style IDs, split by kind. Three digits keeps the
+    /// match off prose like "FR-1" while leaving room to grow. With
+    /// `definitionsOnly`, only the bold definition form (`**FR-042**`) counts,
+    /// and only inside the Functional-requirements and Measurable-outcomes
+    /// sections — a bolded tag in a scenario or edge case is emphasis, not a
+    /// definition, and counting it would mint an ID whose errors then point at
+    /// the wrong section. A spec with neither heading is scanned whole, so a
+    /// minimal spec still parses.
+    func specIDs(in text: String, definitionsOnly: Bool = false) -> (frs: Set<String>, scs: Set<String>) {
+        // NSRegularExpression rather than `matches(of:)`: this tool builds
+        // against macOS 12 and the Regex API requires 13.
+        let source = definitionsOnly ? #"\*\*((?:FR|SC)-\d{3})\*\*"# : #"\b((?:FR|SC)-\d{3})\b"#
+        let scoped = definitionsOnly ? (definitionSections(in: text) ?? text) : text
+        let pattern = try! NSRegularExpression(pattern: source)
+        var frs = Set<String>(), scs = Set<String>()
+        for match in pattern.matches(in: scoped, range: NSRange(scoped.startIndex..., in: scoped)) {
+            guard let range = Range(match.range(at: 1), in: scoped) else { continue }
+            let id = String(scoped[range])
+            if id.hasPrefix("FR") { frs.insert(id) } else { scs.insert(id) }
+        }
+        return (frs, scs)
+    }
+
+    /// The spec text that can hold definitions: everything under the
+    /// Functional-requirements and Measurable-outcomes headings. Returns nil
+    /// when the spec uses neither heading — the caller then scans the whole
+    /// document rather than silently defining nothing.
+    func definitionSections(in text: String) -> String? {
+        var out = "", inSection = false, found = false
+        for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            if line.hasPrefix("#") {
+                inSection = line.localizedCaseInsensitiveContains("functional requirement")
+                    || line.localizedCaseInsensitiveContains("measurable outcome")
+                found = found || inSection
+                continue
+            }
+            if inSection { out += line + "\n" }
+        }
+        return found ? out : nil
     }
 
     /// Returns nil when the folder itself could not be listed. See `collectSpecs`.
@@ -308,6 +638,8 @@ public struct Indexer {
         // One file can be reached by two passes; a reader does not need telling twice.
         var seen = Set<String>()
         report.errors = report.errors.filter { seen.insert($0).inserted }
+        var seenWarnings = Set<String>()
+        report.warnings = report.warnings.filter { seenWarnings.insert($0).inserted }
         return report
     }
 }

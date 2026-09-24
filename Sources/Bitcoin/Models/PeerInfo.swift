@@ -77,9 +77,12 @@ public struct PeerInfo: Codable, Sendable, Equatable {
     public let presyncedHeaders: Int?
     /// The best height this peer has announced that we already hold — upstream's
     /// `nSyncHeight` (`pindexBestKnownBlock`, which only ever points into our own
-    /// block index), so it never exceeds our `headers`; `-1` until the peer has
-    /// announced anything we hold. (The RPC help text's "last header we have in
-    /// common" describes `syncedBlocks`, not this field.)
+    /// block index), so it does not normally exceed our `headers` — it can when
+    /// the peer announced a higher-height, lower-work branch whose headers we
+    /// hold, since `headers` reports the most-work header rather than the
+    /// highest. `-1` until the peer has announced anything we hold. (Upstream's
+    /// help text "the last header we have in common" is imprecise: the index
+    /// entry can be a held header whose block has not yet arrived.)
     public let syncedHeaders: Int
     /// The last block we have in common with this peer.
     public let syncedBlocks: Int

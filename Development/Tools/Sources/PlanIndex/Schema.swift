@@ -36,9 +36,10 @@ func rejectUnknownFields(_ decoder: Decoder, known: [String]) throws {
 
 /// The block at the top of a `Specs/NNN-slug/plan.md`.
 ///
-/// Every field is text. That is checked, not assumed: `feature: 002` decodes with
-/// its leading zeros intact, and `updated: 2026-08-31` stays text rather than
-/// becoming a date, so neither needs quoting in the files.
+/// Every field is text except `adrs`, a list of record numbers. That is checked,
+/// not assumed: `feature: 002` decodes with its leading zeros intact, and
+/// `updated: 2026-08-31` stays text rather than becoming a date, so neither needs
+/// quoting in the files.
 public struct PlanFrontmatter: Decodable, Sendable {
     public let feature: String
     public let title: String

@@ -39,6 +39,19 @@ read by the system before the action runs and cannot be decided at run time, and
 because foregrounding exercises the wrong path for an unattended automation, which
 by definition has no screen.
 
+## Correction, 2026-09-23
+
+As first written the record could only intend the pin: no mechanism existed to
+enforce it. iOS 27's `allowedExecutionTargets` (`ExecutionTargets.main`) lets an
+intent declare it must run in the app process, so an extension target appearing
+later cannot silently route a run — and a second daemon against the folder's
+exclusive lock — into a sandbox that cannot hold it. The declaration is not
+wired yet; spec 004's T020 lands it on both intents. Two other details had also
+drifted: background execution is now `supportedModes = .background` on iOS 26+,
+with the deprecated `openAppWhenRun` carried only for the iOS 18–25 runtimes (it
+goes when the floor reaches iOS 26), and the iOS 27 long-running action holds
+the same floor. The decision itself is unchanged.
+
 ## Consequences
 
 No shared container and no data migration are needed while the action runs in the
@@ -46,16 +59,7 @@ app's process. The action must be written to run with no interface present. A sh
 container returns as a requirement only if the action later moves into a separate
 process — an App Intents extension or a widget — or must share chain data with the
 sister KernelApp; both are follow-ups in
-`../Specs/003-node-automation-action/plan.md` §7. Since this record was written the
-mechanism arrived to enforce it rather than merely intend it: iOS 27's
-`allowedExecutionTargets` (`ExecutionTargets.main`) pins the intents to the app
-process, so an extension target appearing later cannot silently route a run — and a
-second daemon against the folder's exclusive lock — into a sandbox that cannot hold
-it. Two other details have drifted and are corrected here rather than left stale:
-background execution is now `supportedModes = .background` on iOS 26+, with the
-deprecated `openAppWhenRun` carried only for the iOS 18–25 runtimes (it goes when the
-floor reaches iOS 26), and the iOS 27 long-running action holds the same floor. This
-is the one decision the current skeleton embodies; the behaviour it will grow into
-(the private-network gate, leaving the node running) is planned direction in that
-same plan, to be recorded as its own ADR when its code lands. This binds KernelApp's
-later action as well.
+`../Specs/003-node-automation-action/plan.md` §7. This is the one decision the
+current skeleton embodies; the behaviour it will grow into (the private-network gate,
+leaving the node running) is planned direction in that same plan, to be recorded as
+its own ADR when its code lands. This binds KernelApp's later action as well.

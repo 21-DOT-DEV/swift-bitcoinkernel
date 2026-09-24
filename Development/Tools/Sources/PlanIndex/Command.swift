@@ -36,6 +36,8 @@ public struct Plans: ParsableCommand {
     public func run() throws {
         let report = Indexer(development: URL(fileURLWithPath: "Development")).run(check: check)
         for note in report.notes { print("note: \(note)") }
+        for warning in report.warnings { print("warning: \(warning)") }
+        for line in report.coverage { print(line) }
         for error in report.errors {
             FileHandle.standardError.write(Data("error: \(error)\n".utf8))
         }

@@ -3,149 +3,177 @@ feature: 004
 title: The long-running action watches the node sync toward the tip
 phase: null
 status: Planned
-updated: 2026-09-20
-adrs: []
+updated: 2026-09-24
+adrs: [0005, 0006, 0008, 0009]
 ---
 
 # The long-running action watches the node sync toward the tip
 
-The iOS 27 "Keep Bitcoin Node Syncing" action currently spends its extended window
-waiting for the node to answer its first question, then returns — its progress bar
-describes only start-up. This feature gives the run a third stage: once the node has
-answered and is behind the known tip, the run stays alive inside its budget and
-watches blocks arrive, driving the card with real sync progress ("block 843,210 of
-915,000") until it is caught up, out of time, stalled, or stopped. Demo-app work, no
-roadmap phase. Builds on the shared run built in
-[003](../003-node-automation-action/plan.md); every rule it set — one routine both
-actions call, decisions as testable free functions, honest endings, the node left
-running — still holds.
+## Summary
 
-Two findings shape everything below. There is **no published ceiling** on the
-extended window: the system ends runs that stop reporting progress or that hit
-resource pressure, so a run must bound itself. And a block is not a unit of time:
-`assumevalid` makes most of the chain nearly free while the recent tail carries
-~90% of validation cost on constrained hardware, so the number of blocks that fit a
-safe window cannot be fixed — it must be measured.
+The iOS 27 "Keep Bitcoin Node Syncing" action spends its extended window
+waiting for the node to answer its first question, then returns — its progress
+bar describes only start-up. This feature adds a third stage to the shared run
+routine: once the node has answered and is behind the known tip, the run stays
+alive inside its budget and watches blocks arrive, driving the card with real
+sync progress ("block 843,210 of 915,000") until it is caught up, out of time,
+unable to advance, or stopped. Demo-app work, no roadmap phase.
 
-## 1. Goal & success criteria
+Requirements and user-facing behavior: [spec.md](./spec.md). Ordered
+implementation work: [tasks.md](./tasks.md). Evidence for the decisions —
+upstream source verification, platform behavior, rejected alternatives:
+[research.md](./research.md). Builds on the shared run from
+[003](../003-node-automation-action/plan.md); every rule it set — one routine
+both actions call, decisions as testable free functions, honest endings, the
+node left running — still holds.
 
-- The card's bar advances with real blocks and its detail line carries the absolute
-  position; nothing on the card claims progress the node did not make.
-- Every run ends on its own terms — caught up, budget spent, conditions
-  changed, stalled, or stopped — and the ending it reports is the one that
-  happened, with `blocksGained` saying what the run itself earned.
-- A following automation step can branch on how syncing ended
-  (`caughtUp`/`stillSyncing`/`stalled`/`nodeStopped`/`conditionsChanged`)
-  without any existing field changing meaning.
-- A run that drifts onto a metered or data-restricted network — or into the heat
-  or battery-saver states a start would have been refused for — ends early
-  rather than spending what the person did not agree to; no run ever stops the
-  node.
-- The short action's behaviour is unchanged in every case.
+## Technical Context
 
-## 2. Scope
+**Language/Version**: Swift 6.3, strict concurrency · **Platform**: iOS 27 API
+surface (`LongRunningIntent`, `ExecutionTargets`), runtime floor iOS 18 ·
+**Testing**: Swift Testing on both demo-app platforms, `TestClock`-driven (swift-clocks
+already a workspace dependency) · **Key APIs**: `Foundation.Progress`,
+`AppEnum`/`@Property`, `getblockchaininfo` over the existing
+`DashboardDataSource` seam · **Process**: `allowedExecutionTargets { .main }`
+pins the long-running action to the app process — the daemon holds an
+exclusive lock on the chain folder, and ADR 0005's "runs in the app"
+requirement was until now enforced only by the absence of an extension target · **Constraints**:
+self-bounded ≈21-minute worst case; a fresh progress write every ~5 s (the
+system cancels silent runs at ~30 s — documented via
+`IntentCancellationReason.timeout`); no protocol widening beyond the existing
+seam.
 
-**In scope:** the sync-watch stage inside `NodeRun` (orchestration only); the
-bounded private-network wait on the same routine (§3.8); the
-decisions it consults in `NodeAutomation` (the live-tip fraction, stall, ending
-wording); the
-new `syncResult` field and its `NodeSyncResult` enum on `NodeRunReport`; the card
-wording for the new endings; the constants on `SyncNodeLongRunningIntent` (budget,
-grace, both stall thresholds, the watch question budget, the meter scale); tests
-for all of it.
+## Constitution Check
 
-**Out of scope:** any change to `SyncNodeIntent` (it passes no budget and sees none
-of this) · stopping the node on any condition (§7) · AssumeUTXO or any faster
-bootstrap (§7) · the sister KernelApp's action · a background-processing task for
-idle-time sync (§7).
+- **Principle I** (Core alignment): `caughtUp` *is* Bitcoin Core's own verdict
+  — the `initialblockdownload` flag it latches and clears itself
+  (`UpdateIBDStatus`, `validation.cpp`), plus a closed header gap — not a
+  copied test that could certify past a flag the node still reports. The
+  peer-confirmation leg reads the *result* of a request Core itself sends
+  every block-serving peer on a tip under a day old — no P2P logic
+  reimplemented ([research §3](./research.md)).
+- **Principle II** (interop & resource safety): no new Swift↔C++ boundary —
+  all work is app-side Swift. The new loops hold the strict-concurrency
+  practice the feature leans on: poll loops generic over `Clock`, cancellation
+  checked separately from the node-stop flag each pass; the `@MainActor` wait
+  hazard is exactly why the grace polls in `NodeRun`'s own loop rather than
+  wrapping `waitUntilReady` ([research §4](./research.md)). One deviation is
+  recorded rather than silently inherited: both intents' `perform()` is
+  `@MainActor`, where Apple's execution-model guidance is non-isolated
+  `perform()` with explicit `MainActor.run` hops — the watch's ~180 poll
+  iterations run on the main actor, and the `waitUntilReady` hazard is
+  downstream of that choice. De-isolating touches every `NodeSession` caller —
+  deferred, not hidden.
+- **Principle III** (lifecycle): no run ever stops the node; every ending
+  leaves it running. Read-only RPCs during `Syncing` only.
+- **Principle IV** (API surface): no public package API changes — all work is
+  inside the demo app; the proof reads `initialblockdownload`, `blocks`, and
+  `headers` off the same `getblockchaininfo` the watch already makes.
+- **Principle V** (spec-first): `plan.md` remains the constitution-required
+  artifact; `spec.md` carries the user scenarios and acceptance criteria in
+  user-facing terms; decisions-as-pure-functions keeps the TDD seam.
+- **Principle VI** (CI): unit tests on every decision function — and the
+  meter's honesty invariants — run on both platforms: `Progress` is
+  Foundation, so T019 drops `ProgressMeter`'s iOS-27 fence rather than
+  leaving the bar-honesty tests compiled out on macOS; the device-only
+  verification lives in one gated session.
+- **Principle VII** (open source): not a package-API feature — the public
+  artifacts are this Specs set and the ADR updates at T025, which land with
+  the code.
 
-## 3. Design
+No violations; nothing to justify in complexity tracking.
+
+## Design
 
 ### 3.1 A third stage in the one routine
 
 `NodeRun.perform` gains two optional durations — `syncBudget` and
 `privateNetworkGrace`, both default `nil`. Every existing path is unchanged but
-one (§3.8): the watch begins only after a path lands on a live
-reading — a just-started node that answered, a still-starting node that answered, or
-an already-running node that was read — and only when a budget was passed *and* the
-node says it is still syncing: its own `initialblockdownload` flag set, or a header
-gap open — *and* the chain has a network to compare against: `chain ==
-"regtest"` never enters, since a self-defined chain is definitionally at its
-own tip and a peerless regtest node would otherwise burn the `flatWindow`
-leash to `stalled` on every run. The flag is the gate rather than the gap alone because a node that has
-not yet fetched fresh headers reports a gap of zero — on a first-ever start or a
-resume against a stale chain, `blocks == headers` is true precisely when the node
-has not yet learned how far behind it is, and the flag is the only honest
-"not synced" signal. `LiveReading` gains the flag — `SyncSummary` already computes
-it and the reading simply keeps it — along with everything the watch needs. A run
-that declined, got no answer, or found the node finished (flag clear, no gap)
-returns exactly as today. `SyncNodeIntent` passes nothing,
-so its behaviour is byte-identical; the routine stays one.
+one (§3.8): the watch begins only after a path lands on a live reading — a
+just-started node that answered, a still-starting node that answered, or an
+already-running node that was read — and only when a budget was passed *and*
+the node says it is still syncing: its `initialblockdownload` flag set, a
+header gap open, *or* a tip timestamp more than ~60 minutes old — *and* the
+chain has a network to compare against: `chain == "regtest"` never enters,
+since a self-defined chain is definitionally at its own tip and a peerless
+regtest node would otherwise burn the `flatWindow` leash to `noProgress` on
+every run. No one signal can carry the gate: a node that has not yet fetched
+fresh headers reports a gap of zero, and the flag clears at chain-tip load for
+any tip under a day old — while networking starts and RPC warmup ends within
+lines of each other at init, so the first answer lands before the first header
+fetch can finish. Flag-clear *and* gap-zero is exactly what a warm restart
+reports while hours of blocks wait — the periodic automation's common case —
+and the tip's own `time` field is the signal that covers it ([research
+§2](./research.md)). `LiveReading` gains the flag — `SyncSummary` already
+computes it — along with `headers` and `tipTime`; the age is judged against a
+wall-clock `now` the run supplies, injectable beside the duration clock. A run
+that declined, got no answer, or found the node finished — flag clear, no gap,
+tip fresh — returns exactly as today.
+`SyncNodeIntent` passes nothing, so its behaviour is byte-identical; the
+routine stays one.
 
 ### 3.2 The bound is time; the target is blocks
 
-The run's watch ends on the first of:
+The watch ends on the first of:
 
-- **Caught up** — two independent proofs, either suffices. The flag proof: the
-  node's `initialblockdownload` flag clears *and* the gap is closed
-  (`blocks == headers`, re-read each poll) — the flag is required here because
-  height-equality alone is also true before fresh headers arrive, and a resumed
-  node would otherwise declare itself caught up against a stale tip. The peer
-  proof: a flat `blocks == headers` window where every established peer has
-  no work outstanding for us (no `inflight`, no `presync`) *and* our tip is
-  still recent — §3.5's rule — needed because the flag answers "should
-  you trust this chain yet," not "is there work outstanding": it latches
-  per-process on a 24-hour tip-age rule, so a synced node restarted while its
-  tip is more than a day old reports IBD `true` with nothing left to fetch —
-  an edge case (a *normal* restart latches the flag clear at init), but a
-  real one on signet's longer miner stalls, which are the chain §5 verifies
-  against. The evidence is deliberately not "what did peers announce" —
-  a peer with nothing newer announces nothing (`pindexBestKnownBlock` only
-  populates from real announcements, so `syncedHeaders` reads `-1` on exactly
-  the healthy connections this proof exists for); it is Core's own leave-IBD
-  test evaluated live — a recent tip plus connected peers with nothing in
-  flight for us — rather than latched once at init.
+- **Caught up** — one proof, and it is the node's own: `initialblockdownload`
+  cleared *and* the gap closed (`blocks == headers`, re-read each poll) *and*
+  either headers advanced during the run, the tip is inside the ~60-minute
+  freshness threshold, or — on a flat pass whose flag is clear, gap closed,
+  and headers never advanced — at least two outbound block-serving peers
+  report `synced_headers == headers`, the completed exchange Core itself
+  asked them for (§3.5) — the flag is required because height-equality alone is
+  also true before fresh headers arrive, and on a warm restart it is already
+  clear at the first answer (§3.1), so the third leg separates "watched a
+  catch-up" from "arrived after one". There is no second proof — there almost
+  was: a live
+  copy of Core's leave-IBD test (`chainwork` ≥ the network minimum, tip inside
+  `max_tip_age`) was this bullet's other half until the call sites were
+  counted — Core runs that check at `LoadChainTip`, after each block-file
+  import, and on every `ConnectTip`/`DisconnectTip`, so a flag still set with a
+  recent tip
+  exists only where the check was skipped mid-load (a reindex or import the
+  app cannot produce), and certifying past a set flag would contradict the
+  node's own report ([research §3](./research.md)).
 - **Budget spent** — a wall-clock budget counted from the first answer. Fifteen
-  minutes is the starting constant, re-measured with the screen locked before it is
-  trusted (ADR 0008's rule). Total worst-case run is preflight + private-network
-  grace + first-answer wait + budget ≈ 21 minutes.
-- **Stalled** — §3.5; `unproductive` trips on nothing advancing while known
-  work stands undone (~2 min), or `flatWindow` trips (~4 min flat and never
-  once peer-certified — never peered, connectivity too broken for any peer to
-  announce, or peers announcing heights beyond ours that never arrived).
+  minutes is the starting constant, re-measured locked before it is trusted
+  (ADR 0008's rule). Total worst case ≈ 21 minutes including preflight, grace,
+  and first-answer wait.
+- **No progress** — §3.5; `unproductive` trips on nothing advancing while
+  known work stands undone (~2 min), `flatWindow` on ~4 min flat.
 - **Conditions drifted** — §3.6.
 - **Stopped** — the existing `onCancel` path, unchanged.
 - **Node stopped** — someone stops the node from the app while the watch runs.
   The poll loop checks `isStoppedOrStopping` at the top of each pass and again
-  before accepting each answer — the same re-check every existing question
-  makes, so a stop that lands mid-question discards the answer rather than
-  feeding it to the watch — deliberately separate
-  from `Task.isCancelled`, which keeps the existing cancel path — and it does
-  *not* take the no-answer path: that path blanks every measured field and
-  stamps `noAnswer`, which would discard an hour of real gains and write a
-  sync-axis event over the outcome axis. The run ends on the normal measured
-  report — the earned outcome, the last good reading — with `syncResult` =
-  `nodeStopped` and wording that says the node was stopped, not left running.
+  before accepting each answer, deliberately separate from `Task.isCancelled`;
+  it does *not* take the no-answer path — that would blank every measured field
+  and discard a quarter-hour of real gains. The run ends on the normal measured
+  report — earned outcome, last good reading — with `syncResult` =
+  `nodeStopped`.
+
+The list above is presentation order, not precedence. When several endings
+hold on the same pass — the node stopped as the network turns metered, a stall
+tripwire tripping as the catch-up proof lands — exactly one is reported, by
+precedence (FR-019): `nodeStopped`, then `caughtUp`, then `conditionsChanged`,
+then `noProgress`, then `stillSyncing`. A deliberate stop ends measurement
+itself; a completed proof is terminal truth — drifted conditions are advisory
+for the next run, not a verdict on one that finished; unconsented conditions
+outrank a tripwire; any verdict outranks a spent budget. The poll loop checks
+in that order, and cancellation stays outside the list entirely — it is the
+existing `onCancel` path, not a sync result.
 
 ### 3.3 The goal is the live tip itself
 
-The bar needs a target, and the honest one is the thing the feature was asked
-for: the current tip, re-read each poll. A rate-projected endpoint was
-considered and rejected — the algebra degenerates. For the case the feature
-exists for (a node that cannot catch up inside the budget, so the projection is
-what binds), `goal = h₀ + rate·B` gives `fraction = (h − h₀)/(rate·B)` — and any
-estimator that converges to the true rate makes that `rate·(t − t₀)/(rate·B) =
-(t − t₀)/B`: a clock wearing a progress bar's clothes, *most* clock-like exactly
-when the estimate is good. A trailing window only produces a lagged clock. So
-there is no estimator:
+The bar's target is the current tip, re-read each poll — the distance this
+run closed over the distance that remained at watch entry (the FR-002
+contract; the algebra lives here):
 
 ```
 fraction = (h − h₀) / max(liveHeaders − h₀, 1)
 ```
 
 - A node that will catch up sweeps toward the working ceiling as `h` closes on
-  `liveHeaders` — then the IBD-clear + equality check fires `caughtUp` and the
-  ending fills the bar.
+  `liveHeaders` — then a `caughtUp` proof fires and the ending fills the bar.
 - A node that cannot catch up shows the truth: distance closed this run over
   the distance remaining when it began — small, real, never clock-like. The
   detail line carries the absolute position, so a single-digit bar beside
@@ -154,637 +182,515 @@ fraction = (h − h₀) / max(liveHeaders − h₀, 1)
   pull the true fraction down — the meter's never-retreat floor absorbs the dip
   while the detail line keeps reporting ground truth. A reorg below the run's
   baseline clamps the numerator at zero the same way.
-- While the node knows no gap yet — `liveHeaders ≤ h₀`, the cold-IBD window
-  before first headers — the bar holds at the band floor and the heartbeat
-  keeps the run alive: nothing measurable is moving, and nothing claims it is.
+- While the node knows no gap yet (`liveHeaders ≤ h₀` — the cold-IBD window
+  before first headers) the bar holds at the band floor and the heartbeat keeps
+  the run alive: nothing measurable is moving, and nothing claims it is.
 
-`verificationprogress` was considered for the fraction and rejected: it is a
-transaction-count estimate whose denominator is extrapolated from *wall-clock
-time*, so it sits under 1.0 forever at the tip and can even drift downward on a
-fully synced node (bitcoin/bitcoin#28847, #31127, #26433) — non-monotone, and
-its growth-rate assumption is calibrated to mainnet, which makes it misleading
-on the signet this feature is verified against. Height over the live tip is
-both the honest fraction and the one the feature was asked for.
+The rate-projected alternative degenerates to a clock and
+`verificationprogress` is non-monotone — both rejected, with the algebra and
+upstream issues in [research §1](./research.md).
 
-The watch asks `blockchainInfo` every ~5 seconds, and `peers()` only on flat
-readings — the seam `DashboardDataSource` already exposes, so no protocol
-widens. Each
-question carries two bounds: `watchQuestionBudget` (~30 s — the watch's own
-patience, deliberately not a match to any transport's: `HTTPTransport` rides
-`URLSession.shared` at the 60 s system default and the direct bridge gives up
-at 30, so whichever bound fires first ends the wait — and a question
-unanswered this long is stale for a 5-second cadence anyway. The 10 s
-`questionBudget` is shaped for the short action's ~30 s window, and a node
-answering consistently in 11 s is slow, not dead), and the *remaining watch
-budget* — `min(watchQuestionBudget, remaining)` — the clamp `awaitFirstAnswer`
-already documents, inherited here so the sync budget is a real bound rather
-than soft by a whole pass. The leashes' resolution is the pass cadence:
-"120 seconds" resolves to 2–3 passes — stated so the constant is not
-over-trusted.
+The watch asks `blockchainInfo` every ~5 s — the seam `DashboardDataSource`
+already exposes, so no protocol widens; `getpeerinfo` joins only on the flat
+passes that can't prove a catch-up any other way — flag clear, gap closed,
+headers never advanced — for the peer-confirmation count (§3.5). A
+budgeted run
+bounds *every* question at `watchQuestionBudget` (~30 s — the watch's own
+patience; a question unanswered this long is stale for a 5-second cadence
+anyway), the first-answer wait included: the 10 s
+`questionBudget` is shaped for the short action's ~30 s window, where an 11 s
+answer is slow, not dead — a run carrying a fifteen-minute budget can afford
+the wider bound everywhere or the slow-but-alive node never reaches the watch
+at all.
+
+Which transport carries a question is decided *per call* — `AutoTransport`
+routes direct when `bitcoin_rpc_ready() == 1`, HTTP otherwise — and on a
+locked device the expected case is HTTP for the node's whole life. The
+bridge's bootstrap is a fire-and-forget `Task` inside `NodeViewModel.start`
+— the same `start` the run shares — so early questions already flow over
+HTTP while its one-shot ~30 s poll loses to the 47–121 s block-index loads
+ADR 0008 measured, and nothing retries (the deferred re-bootstrap is what
+closes it — 004 makes it load-bearing rather than anecdotal,
+[research §4](./research.md)). The selection is real, not hypothetical: on a
+fast-starting node the bridge can flip mid-watch, so poll 3 and poll 40 may
+ride different transports. A corollary worth stating before anyone "fixes"
+it: the watch — like `awaitFirstAnswer` — trusts *answers*, never the
+`.running` flag; the flag itself waits on that same bootstrap poll, so a
+state-gated wait would stall on a node already answering. The ~30 s figure
+stays honest on both paths, for
+opposite reasons: on the direct bridge it equals the transport's own
+give-up, so an abandoned call parks ≈0 s; over HTTP the `CookieTransport`
+ceiling sits at 60 s, and the 30 s orphan is *cancelled* —
+`withHardTimeout`'s `work.cancel()` is the one signal `URLSession`
+observes. Orphan lifetime and cancellability are inversely coupled, selected
+per call by a C function — which is why T012 logs the serving transport per
+poll: `bitcoin_rpc_ready()` itself is package-internal, so the run reads a
+`bridgeReady` flag `NodeViewModel` records from its bootstrap outcome, and a
+`noProgress` verdict on device cannot attribute its timings without it (an ~11 s
+answer means different things under a 30 s and a 60 s ceiling).
+
+The second bound is the *remaining watch budget* —
+`min(watchQuestionBudget, remaining)`, the clamp `awaitFirstAnswer` already
+documents, so the sync budget is a real bound rather than soft by a whole
+pass. The leashes' resolution is the pass cadence: "120 seconds" resolves to
+~24 passes — a floor, tripped on the first boundary at or after the deadline —
+stated so the constant is not over-trusted. Sleeps carry a
+policy, set while T015 threads the clock through the loops: of the ~540 timed
+wakeups a watch schedules, only `withHardTimeout`'s ~180 deadline races keep
+`tolerance: nil` — "late answers are timeouts" is load-bearing — while the
+cadence and heartbeat sleeps take ~1 s, letting the system coalesce them with
+its other wakeups on a locked phone ([research §4](./research.md)).
 
 The tip is a *display target*, never an ending condition: only `caughtUp`'s
-two proofs — flag-clear + equality, or peer certification — end a run on it,
-since a tip can still be stale, and missing it at budget's end is simply what
+single proof ends a run on it; missing it at budget's end is simply what
 `stillSyncing` reports.
 
 ### 3.4 What the card shows
 
-On entering the watch the headline becomes "Syncing the Bitcoin node" and the detail
-line carries the absolute position — `Block 843,210 of 915,000` — refreshed with
-each gain. The bar's honesty rules: never backwards; a tick keeps the count
-fresh without ever posing as earned progress — under the dither it cannot lift
-the bar at all — and only an earned finish fills.
+On entering the watch the headline becomes "Syncing the Bitcoin node" and the
+detail line carries the absolute position — `Block 843,210 of 915,000` —
+refreshed with each gain. The bar's honesty rules: never backwards; a tick
+keeps the count fresh without posing as earned progress; only an earned finish
+fills.
 
 The watch shares one bar with the stages before it, and the never-retreat rule
-makes that load-bearing: a completed reading already writes `1.0` and the start-up
-writes reach `0.9`, so a sync fraction starting near zero would be silently
-discarded for the whole watch — the person would see a bar pinned near full while
-the node grinds. A run carrying a `syncBudget` therefore maps its stages onto
-bands — a `NodeAutomation` pure function — so every stage's writes land above
-whatever came before: every pre-watch write — the fixed milestones and the smooth
-first-answer ramp alike — compresses into the first ~10%, and the watch's distance
-fraction sweeps from there up to the working ceiling (~95%). With no budget the
-writes keep the full range — the short action has no card at all, and nothing it
-emits changes.
+makes that load-bearing: a completed reading already writes the
+completion-equivalent value and start-up writes reach ~0.9, so a sync fraction
+starting near zero would be silently discarded for the whole watch — a bar
+pinned near full while the node grinds. A budgeted run therefore maps its
+stages onto bands — a `NodeAutomation` pure function — every pre-watch write
+(the fixed milestones and the smooth first-answer ramp alike) compresses into
+the first ~10%, and the watch's distance fraction sweeps from there to the
+working ceiling (~95%). With no budget the writes keep the full range.
 
-Liveness likewise stops being a hope and becomes construction. The system grants
-the extended window on one condition — progress keeps arriving; silence ends a
-run at roughly thirty seconds — *documented*, not folklore:
-`IntentCancellationReason.timeout` states it plainly, and only the total-run
-ceiling stays unpublished (§6) — and the count is the signal every Apple
-example demonstrates — and
-a `tick()` only counts
-when it can write a *new* value. Two reachable states exhaust the current meter:
-the 50-notch heartbeat budget drains in ~4 minutes of accumulated silence —
-ticks are skipped only when a real report just landed, so a Tor IBD path whose
-gains arrive minutes apart spends the whole budget in a couple of gaps — and
-once the bar sits at the
-`scale − 1` ceiling — the "nearly caught up, then gone quiet" case — every tick
-writes
-the same value and the run dies ~30 seconds in as a generic timeout instead of its
-designed ending. A monotonic tick into a reserve has a subtler third: once ticks
-have ratcheted `reported` above `advance()`'s cap, no earned gain can ever show
-again — and during a stall the bar visibly creeps toward full while nothing is
-earned. So the meter's unit space grows (`scale` ≈ 10,000 — units are
-arbitrary per Foundation's own guidance, and byte-scale counts are the canonical
-case), `advance()` caps at `scale − 1 − reserve` (~95%), and `tick()` *dithers*
-rather than ratchets: it writes whichever of the two absolute values `earned`
-and `min(earned + 1, scale − 1)` is not currently standing — always distinct,
-since `advance()`'s cap keeps `earned ≤ scale − 1 − reserve` — a fresh integer
-on every call, never accumulating, never stranding earned progress beneath it.
-The dither costs
-the meter one split: its write floor moves from `reported` (which today forbids
-any downward write) to `earned` — the monotone track of real progress — so a
-tick can dip one sub-visible notch and recover, while no earned advance is ever
-written backwards. The reserve stays ≈500 notches so the ratchet fallback needs
-no re-layout — headroom, not a consumable: the dither never wanders more than a
-notch from the frontier, so nothing drains it, and the `heartbeatUnits`
-contribution cap goes with it. Its cost is stated plainly: a ~95% working
-ceiling instead of ~99.99%, paid so the fallback stays a fallback rather than a
-redesign. If device verification shows the system counts only
-*increasing* writes as liveness, that fallback — a ratchet bounded inside the
-reserve — is the shape this replaced, trading the two invariants back for
-certainty.
+Liveness is construction, not hope: the system cancels silent runs at ~30 s
+(documented — [research §4](./research.md)), so a fresh numeric write must land
+every pass. Two reachable states exhaust the current meter — the 50-notch
+heartbeat budget drains in ~4 minutes of accumulated silence, and at the
+`scale − 1` ceiling every tick writes the same value — and a monotonic tick has
+a subtler third failure: once ticks ratchet `reported` above `advance()`'s cap,
+no earned gain can ever show again. So, *if the device experiment requires
+numeric writes* ([research §4](./research.md) — Apple's own example writes text
+on every chunk, and text alone may satisfy the check at zero honesty cost):
 
-The card's words need the same invariants the numbers have. Today the meter
-writes `localizedDescription`/`localizedAdditionalDescription` only at
-`finish()`, and `onProgress` carries a bare `Double`. The meter gains
+- `scale` grows to ≈10,000 (units are arbitrary per Foundation's guidance).
+- `advance()` caps at `scale − 1 − reserve` (~95%).
+- The write floor splits: `earned` (monotone — the honesty invariant) and
+  `reported` (last written — may dither ±1 around it).
+- `tick()` *dithers*: writes whichever of `{earned, earned + 1}` is not
+  currently standing — always distinct, never accumulating, never stranding
+  earned progress beneath it. Its skip gate keys on `earned` having moved, not
+  `reported` (a flat `advance()` can re-settle `reported` after a dither and
+  halve the liveness margin).
+- The reserve stays ≈500 notches so the ratchet fallback needs no re-layout —
+  headroom, not a consumable; the `heartbeatUnits` cap retires. The cost is
+  stated plainly: a ~95% working ceiling instead of ~99.99%, paid so the
+  fallback stays a fallback.
+
+One interaction the experiment does not size — it breaks a guard: under
+compression the first-answer ramp writes ~10 distinct notches across the wait
+rather than ~90, so ~38 of the meter's 50 heartbeat units are spent before the
+watch begins — ~60 s of numeric coverage against a 900 s watch — while
+`heartbeatCoverageExceedsWait`, which ticks a fresh meter dry, keeps passing.
+The re-pointed guard (T019) simulates the compressed ramp and asserts coverage
+across `waitForFirstAnswer + syncBudget`, written to fail on the pre-004
+layout — the phase's red-first — whichever branch the experiment takes
+([research §4](./research.md)).
+
+The card's words need the same invariants the numbers have. The meter gains
 headline/detail writes on the underlying `Progress`, and the run's progress
 callback widens to a small value type — fraction, headline, detail — so the
-watch can push "Block X of Y" wording, not just numbers. Two rules mirror the
-numeric channel's: `finish()` makes *all* writes final — a flag gates text and
-count alike, so a heartbeat landing after the ending cannot overwrite it — and
-the detail is one composed sentence, not two competing for a line: the position
-clause always ("Block 843,210 of 915,000"), with a staleness clause appended
-once the run has been flat long enough to be worth saying ("…, last gain 3 min
-ago") — an extra `Progress` property write for the system besides, though the
-liveness guarantee stays the numeric channel's job.
+watch pushes wording, not just numbers. `finish()` makes *all* writes final — a
+flag gates text and count alike — and the detail is one composed sentence, not
+two competing for a line: the position clause always, a staleness clause
+appended once the run has been flat long enough ("…, last gain 3 min ago").
 
 ### 3.5 Stall: when no new block is the answer
 
-A watch that cannot gain is done — and a watch that can prove there is nothing
-left to gain is done *successfully*, which is what `certified` exists to tell
-apart. The state is three quantities, all *accumulators*, never a timestamp
+A watch that cannot gain is done — on one of two leashes, never a timestamp
 difference: a first-ever start has never produced an advancing reading, so a
-since-last-gain clock would already read minutes when its headers land and
-would declare a stall exactly as real work begins.
+since-last-gain clock would declare a stall exactly as real work begins.
 
-Each pass feeds exactly one accumulator — `certified` taking the flat no-gap
-passes it earns in place of `flatWindow` — chosen in order:
+Each pass feeds exactly one accumulator, chosen in order:
 
 - An *advancing* reading — `blocks` or `headers` higher than the best yet seen —
-  resets all three and feeds none. Advancing **headers** count as gain: during
-  header fetch the blocks are legitimately frozen while the gap opens, and
-  ignoring that movement is what would declare a healthy IBD stalled.
-- No fresh reading at all feeds `unproductive` — **120 seconds** — whatever the
-  last peer answer said: a node answering nothing is dead to the watch
-  regardless of what it last claimed.
+  resets both and feeds none. Advancing **headers** count as gain: during
+  header fetch the blocks are legitimately frozen while the gap opens.
+- No fresh reading at all feeds `unproductive` — **120 s**: a node answering
+  nothing is dead to the watch. The 120 s figure sits inside Core's own
+  stall-recovery gaps ([research §3](./research.md)).
 - A fresh reading with nothing advancing feeds `unproductive` only when the
-  node has shown work it is not doing — `headers > blocks`, with peers known
-  connected (≥ 1) *or unknown*. Everything else flat feeds `flatWindow` —
-  **~240 seconds** (a flat no-gap pass with *full* peer evidence feeds
-  `certified` instead — below) — because neither of its states can be expected
-  to move:
-  peers *known zero* — the ordinary cold-start connect, which over Tor can run
-  well past two minutes — and an IBD-flagged node that has learned no gap yet
-  (`headers ≤ blocks`), whose first `getheaders` over a cold circuit is work
-  that cannot produce block movement. Pricing either at the `unproductive`
-  trip would fail the run's most common first-ever path — the case this watch
-  exists to survive.
+  node has shown work it is not doing (`headers > blocks`). Everything else
+  flat feeds `flatWindow` — **~240 s** — because its state cannot be expected
+  to move on a leash's timescale: an IBD-flagged node that has learned no gap
+  yet (`headers ≤ blocks`), whose first `getheaders` over a cold circuit is
+  work that cannot produce block movement; and — the honest edge — a chain
+  quiet past the 24 h recency window, whose flag stays set on Core's own rule
+  until the next block connects.
 
-Inside a flat, no-gap window the watch also accumulates `certified` — and the
-evidence is Core's own leave-IBD test evaluated live, not anything a peer must
-volunteer. A peer with nothing newer *announces nothing* — `pindexBestKnownBlock`
-only ever populates from real announcements (non-empty headers, `inv`,
-`cmpctblock`; an empty `getheaders` reply returns before the update site), and
-peer state is per-connection, so every restarted synced node's `syncedHeaders`
-read `-1` indefinitely. What the watch can actually see is work we initiated
-and freshness we already hold. A flat no-gap pass earns `certified` seconds
-when all of:
+Beside the accumulators the state keeps one latch — `headersAdvanced`, set
+when best-seen `headers` passes the entry reading's: the leg `caughtUp` needs
+on runs the tip-age gate admitted, where flag-clear and gap-closed described
+the *starting* state and only observed growth or a fresh tip proves the
+catch-up happened.
 
-- at least one *established* peer (`connectionType` resolved with the same
-  fallback the dashboard already uses — `peer.connectionType ?? (peer.inbound
-  ? "inbound" : "outbound")` — then excluding `feeler`/`addr-fetch`, which
-  are short-lived and never serve, so an unfiltered read would break the
-  streak on every ~2-minute churn tick);
-- no peer has block requests outstanding (`inflight` empty) — work in flight
-  is work outstanding regardless of what heights say;
-- no peer is mid low-work sync (`(presyncedHeaders ?? -1) == -1` — the field
-  is `Int?`, and `nil` must read as "not presyncing," not fail the clause);
-- the tip is still recent — `blockchainInfo.time` (already in `ChainSummary`)
-  within a generous window, days rather than the flag's 24 h — because a tip
-  older than the window cannot be told from "connected to peers that serve
-  nothing": the one ambiguity recency cannot resolve, so a chain quiet past
-  the window ends `stalled`, the safe direction. A fresh datadir fails here
-  by construction — its tip is the genesis timestamp — which is the
-  discrimination this clause exists to make.
+Every flat pass that can't otherwise prove a catch-up has one more way out,
+because Core gives it one: on a tip under a day old, Core's connect path
+sends every block-serving peer a `getheaders` anchored one block back — so a
+current peer's reply is never empty and its best-known block records within a
+round trip (`net_processing.cpp`; [research §3](./research.md)). A pass
+qualifies to ask when the flag is clear, the gap is closed, and
+`headersAdvanced` is still false — a fresh tip would already have ended the
+run on the freshness leg, so staleness is implied, and a run whose passes
+advance never asks at all. On each such pass the watch asks `getpeerinfo`
+once, bounded like every question at `min(watchQuestionBudget, remaining)`,
+and counts peers whose `connectionType` resolves to `outbound-full-relay` or
+`block-relay-only` — the field itself, falling back to the `inbound` boolean
+when absent, so an unresolved outbound peer fails closed — reporting
+`synced_headers == headers`. Two or more means the reachable network holds
+nothing higher than our tip: `caughtUp`. The answer proves height, not block
+identity — a same-height fork satisfies it too, which is the right question
+to ask. Fewer, none, or a timed-out answer is no evidence — the pass falls
+through to the leashes exactly as it does today, and the peer answer is
+evidence only: it is not a chain reading and never resets a leash. The
+guards match the risk: inbound and manual connections never count (inbound is
+attacker-selected), and the ≥2 floor means a run is fooled only by peers as
+compromised as its own whole view already is — the residual an all-outbound
+eclipse already gives every node. The send fires once per connection at
+connect time, so a tip crossing 24 h mid-session keeps the confirmations
+earlier-connecting peers already recorded, while a chain stale the whole
+time gathers none — the flag-admitted quiet chain keeps its `noProgress`.
+The leash assumes two confirmations complete well inside ~240 s — unmeasured
+over Tor on a locked device with a stale address book; T024 times it and
+carries the contingent fix.
 
-`certified` is a consecutive streak ending `caughtUp` at **≥ 60 s *and* ≥ 6
-qualifying passes** — the pass floor matters more here than on the leashes,
-because this is the success verdict and a ~30 s pass budget makes "60 s"
-reachable in two or three samples. A flat-window pass failing a clause —
-no established peers, work in flight, presync running, stale tip — breaks
-the streak to zero and feeds `flatWindow` instead. An *absent* peer answer
-(the question timed out while the chain still answered) is no evidence either
-way: it holds the streak *and* withholds the pass from `flatWindow`, so a
-watch whose peer question goes permanently quiet runs to `stillSyncing`
-rather than convicting a node it cannot see.
+A live copy of Core's leave-IBD test (`chainwork` ≥ the network minimum, tip
+inside `max_tip_age`) was once this section's second proof. It was deleted,
+not weakened: Core runs the same check at `LoadChainTip`, after each
+block-file import, and on every `ConnectTip`/`DisconnectTip`
+([research §3](./research.md)), so a
+flag still set while the tip is recent exists only where the check was
+skipped mid-load — a reindex or import the app cannot produce — and
+reporting `caughtUp` while `initialblockdownload` is still set would
+contradict the node's own verdict. The flag stays the proof's spine. A chain
+quiet past the recency window — where the peer mechanism cannot gather two
+answers — is indistinguishable from a dead network and ends `noProgress` — the
+safe direction, stated honestly.
 
-The leashes end `stalled`: `unproductive` at ~2 minutes, `flatWindow` at ~4 —
-which now only ever means failure: a node that stayed unmovable without once
-showing it is current. The fresh-datadir false positive dies on the *tip-age*
-clause — a fresh node's tip is the genesis timestamp, which no recency window
-admits — while the restarted-and-synced node has a tip the network built
-recently enough to prove currency. The peer question is asked only on flat
-passes — `getpeerinfo`
-takes `cs_main` once per peer row, contending with the block connection the
-watch exists to let proceed, and an advancing reading discards the answer
-entirely — so during healthy sync the watch asks it never at all. And it
-backs off when it cannot answer: an absent answer is already defined as no
-evidence either way, so after ~3 consecutive peer-question timeouts the watch
-stops asking it for the rest of the run — a question that has proven it will
-not answer is pure cost, and dropping it restores the ~30 s pass ceiling in
-the one degraded state that would otherwise pay ~60 s per pass and resolve
-the `unproductive` leash on two samples instead of three. The 120 s figure sits
-deliberately inside Bitcoin Core's own recovery gap — during deep download the
-node drops a stalling peer in 2–64 s (`BLOCK_STALLING_TIMEOUT_DEFAULT`/`_MAX`),
-and near the tip the fallback takes ~10 minutes per stalled block
-(`BLOCK_DOWNLOAD_TIMEOUT_BASE` plus ~5 minutes per parallel peer) — so what peer
-churn can fix resolves inside the leash, and what it cannot is dead peers, a
-lost network, a wedged validation thread. One honest edge, kept deliberately:
-a mid-watch reorg reads as flat and feeds `unproductive` even while the node
-refills — no forward progress *is* happening; counting a changed
-`bestblockhash` as activity is the optional refinement, not a requirement.
+One honest edge, kept deliberately: a mid-watch reorg reads as flat and feeds
+`unproductive` even while the node refills — no forward progress *is*
+happening; counting a changed `bestblockhash` is an optional refinement.
 
 ### 3.6 Conditions at entry and mid-watch
 
 Two paths reach the watch having never weighed preflight —
 `reportExistingNode` and `waitForStartingNode` — and a fifteen-minute watch is
 not the quick read that exemption was written for. Before the watch commits,
-the run weighs the full `refusal(for:)` once — power conditions included,
-which needs the tested type to carry the granularity both policies use:
-`DeviceConditions.overheating` is `.serious || .critical` collapsed to a
-`Bool`, so it gains the `thermalState` itself; entry keeps refusing at
-`.serious` while the drift check reads `.critical` from the same field — no
-passing power conditions in as healthy, which would also have let a
-`.critical`-at-entry device on `reportExistingNode` drift out on pass one
-instead of being refused at the weigh-in. The gather stays narrow even here:
-a running or starting node proves the chain folder exists, so
-`prepareChainFolder()` is not re-run, `freeDiskBytes()` reads directly, and
-the network answer comes from `NetworkCostMonitor.shared.current`. A refusal
-ends the run `conditionsChanged` with the condition named — the disk floor
-matters most: "filling the disk is far worse than skipping a run," and a node
-writing blocks for fifteen more minutes is exactly what the floor protects.
+the run weighs the full `refusal(for:)` once — power conditions included, which
+needs the tested type to carry the granularity both policies use:
+`DeviceConditions` gains the `thermalState` itself (today's `overheating`
+collapses `.serious || .critical` to a `Bool` — [research §5](./research.md));
+entry keeps refusing at `.serious` while the drift check reads `.critical`
+from the same field — no passing power conditions in as healthy. The gather
+narrows further than narrow: by the time the weigh-in runs, the node is
+answering RPCs, which has already proven it read the chain — `filesReadable`
+and `chainFolderExists` are inferred from the running node rather than
+re-read, `prepareChainFolder()`'s write is skipped either way, and the weigh-in
+never touches `UIApplication.isProtectedDataAvailable`, a main-actor read —
+leaving it actor-free, which is what the deferred non-isolated `perform()`
+needs. `freeDiskBytes()` reads directly, and the network answer waits on
+`NetworkCostMonitor.first()` bounded at ~2 s — the weigh-in runs once per run,
+so it can afford the wait `readConditions()` pays, and it cannot afford
+`current`: `.unknown` reads as "not costly," and a background launch reaching
+the weigh-in before the first report lands is the exact cold-launch case
+`first()` exists for. A refusal ends the run
+`conditionsChanged` with the condition named — the disk floor matters most:
+"filling the disk is far worse than skipping a run."
 
-Mid-watch, two kinds of condition get two rules. The money conditions —
-metered, Low Data Mode — are absolute, checked every pass from the first: they
-spend something continuously and are never consented to anywhere in the app,
-so a watch that finds one ends the same pass. The power conditions differ
-because of what they are. Low Power Mode already on at entry is a *standing
-preference* — ending on it would silently remove the feature for everyone who
-leaves it on, on every single run — so it ends the watch only if switched on
-mid-watch. Thermal stays absolute but only at `.critical`: a thermal emergency
-gets no fifteen-minute watch, while `.serious` — reached routinely by fifteen
-minutes of validation on a locked phone — never ends it, or the headline
-behavior would be "runs four minutes, then stops because the phone got warm."
+Mid-watch, two kinds of condition get two rules (rationale in [research
+§5](./research.md)):
 
-The per-poll read is a narrow gather, deliberately not `readConditions()`:
-that routine does two things a ~180-pass watch must not — `prepareChainFolder()`
-is a filesystem write, and its network read waits on `NetworkCostMonitor.first()`
-behind a two-second timeout, adding a suspension point to every poll. The watch
-reads `NetworkCostMonitor.shared.current` — never waits; the monitor has long
-since reported — plus `thermalState` and `isLowPowerModeEnabled`, and nothing
+- **Money conditions** — metered, Low Data Mode — absolute, checked every pass:
+  they spend something continuously and are never consented to anywhere.
+- **Power conditions** — Low Power Mode already on at entry is a standing
+  preference (ends the watch only if switched on mid-watch); thermal is
+  absolute only at `.critical` (`.serious` is routine on a validating phone).
+
+The per-poll read is a narrow gather, deliberately not `readConditions()` —
+that routine writes the filesystem and waits on a network read behind a
+two-second timeout, both forbidden in a ~180-pass watch ([research
+§5](./research.md)). The watch reads `NetworkCostMonitor.shared.current`
+(never waits) plus `thermalState` and `isLowPowerModeEnabled`, and nothing
 else.
 
-On drift the run ends early with its own ending: `conditionsChanged`, a fifth
-`NodeSyncResult` case, not `stillSyncing` — budget-spent means "run me again
-now" and drifted-unsafe means "back off," and an automation can only branch on
-what it can name. The wording is likewise the watch's own: `Refusal`'s
-sentences all end "so the node did not start," which a mid-watch ending would
-make a lie — the node did start, is running, and is left running. Ending the
-run is not entirely consequence-free either way: `perform` returning lets the
-app suspend, which freezes the in-process daemon — so a `.critical` abort does
-relieve the device, indirectly. Stopping the node is deliberately not here —
-it is a new act that needs its own ADR (§7). Files and disk stay preflight-only
-past the entry weigh-in: they cannot drift the way the four can, and a
-free-space re-check was explicitly deferred (§7).
+On drift the run ends `conditionsChanged` — a fifth `NodeSyncResult` case, not
+`stillSyncing`: budget-spent means "run me again now," drifted-unsafe means
+"back off," and an automation can only branch on what it can name. The wording
+is the watch's own: `Refusal`'s sentences all end "so the node did not start,"
+which a mid-watch ending would make a lie — the node did start, is running, is
+left running. Ending the run lets the app suspend, which freezes the in-process
+daemon — a `.critical` abort does relieve the device, indirectly. Stopping the
+node is deliberately not here (Deferred work). Files and disk stay
+preflight-only past the entry weigh-in; the free-space re-check was explicitly
+deferred (Deferred work).
 
 ### 3.7 The report's vocabulary grows on a second axis
 
-`outcome` is untouched — it keeps meaning *what the run did to the node*
-(`started`/`alreadyRunning`/…), the distinction ADR 0005 relies on. The sync ending
-is a separate, orthogonal fact, so it is a separate, additive field:
+`outcome` is untouched — it keeps meaning *what the run did to the node*, the
+distinction ADR 0005 relies on. The sync ending is orthogonal, so it is a
+separate, additive field:
 
 ```swift
-@Property(title: "Sync result") var syncResult: NodeSyncResult?
+@Property(title: "Sync result") var syncResult: NodeSyncResult
 ```
 
-`NodeSyncResult` is an `AppEnum` — `caughtUp`, `stillSyncing`, `stalled`,
-`nodeStopped`, `conditionsChanged` — with explicit raw strings and a
-completeness test, following the
-slice-6 pattern: append only, pinned text, a test that every case has display
-wording. `nodeStopped` names exactly what it means — the node was stopped
-mid-watch (§3.2) — because the other reading, "the run was stopped," cannot
-occur: a run-stop is a thrown `CancellationError` and produces no report to
-carry a case. The field is `nil` whenever the run has no sync answer to give —
-declined before the weigh-in, no answer before the watch, still coming up,
-every short-action run — so the report's absent-means-not-measured discipline
-holds; an entry-weigh-in refusal is the one pre-watch ending that does carry a
-case (`conditionsChanged`), since the weigh-in is already the conditions
-mechanism answering. A watched run also gains
-`blocksGained` — heights earned while this run watched — because
-`blocksSinceLastCheck` keeps its existing meaning (measured against the pre-run
-`lastKnown` snapshot) and a fifteen-minute watch would otherwise leave that
-field answering two questions at once. `lastKnown` itself keeps its
-run-boundary discipline: written once at report time, never per-poll — a
-killed run persists nothing, so the next run's delta spans the whole gap,
-which is the honest answer since no report ever claimed those blocks; and a
-*retried* run reads the same pre-run snapshot, so a system retry reports the
-full delta rather than ≈0 against its own abandoned attempt's writes.
-`blocksGained` is the field an automation reads for this run's answer. A run that watched
-builds its report from the *final* poll's reading, not the first answer's —
-otherwise the height and blocks-behind figures describe a moment a quarter-hour
-old, and a `caughtUp` verdict would sit beside a stale five-thousand-block gap,
-contradicting itself on its face. The bar-filling rule the end
-card consults gains a second half: a run that never entered the watch — including
-a node found already at the tip — has no goal, and the existing rule stands
-(earned endings fill, so the caught-up node still gets a full bar); a run that
-watched fills iff it ended `caughtUp` — the only watched ending where the goal
-was actually reached, and under a live-tip goal there is no "met early": only
-the ending check knows the tip was truly reached.
+`NodeSyncResult` is an `AppEnum` over the FR-005 case set — explicit raw
+strings, a completeness test,
+append-only per the slice-6 pattern. `nodeStopped` names exactly what it means;
+"the run was stopped" cannot occur (a run-stop throws `CancellationError` and
+produces no report). A sixth case, `notMeasured`, is what the field reads when
+the run has no sync answer — declined before the weigh-in, no answer before
+the watch, every short-action run — except the entry-weigh-in refusal, which
+reports `conditionsChanged` since the weigh-in is already the conditions
+mechanism answering. Non-optional deliberately: whether `Optional<some
+AppEnum>` satisfies `EntityProperty<Value>` is unverified ([research
+§6](./research.md)), a non-optional enum is the standard shape, and a
+branchable value beats a `nil` automations must test for.
+
+A watched run also gains `blocksGainedThisRun` — heights earned while this run
+watched — because `blocksSinceLastCheck` keeps its existing meaning (measured
+against the pre-run `lastKnown` snapshot) and a fifteen-minute watch would
+otherwise leave it answering two questions at once. `lastKnown` keeps
+run-boundary discipline — written once at report time, never per-poll
+([research §6](./research.md)). A watched run builds its report from the last
+good reading — the last poll that returned data, which on a `noProgress` or
+`nodeStopped` ending is earlier than the last pass — otherwise a `caughtUp`
+verdict would sit beside a stale five-thousand-block gap. The bar-filling rule gains a second half: a run
+that never entered the watch (including a node found already at the tip) keeps
+the existing rule — earned endings fill — while a run that watched fills iff it
+ended `caughtUp`: the only watched ending where the goal was actually reached,
+and under a live-tip goal there is no "met early."
 
 ### 3.8 The long action can wait for the private network
 
 When a run decides the private network is not ready, the shared routine starts
 Tor and declines — a shape that starves on the most common automation topology:
-Tor lives in the app process, bootstrap takes ~5–60 seconds, and a periodic run
-on a device iOS reclaims between runs kicks Tor, declines, and dies mid-bootstrap
-— forever. A run carrying `privateNetworkGrace` (the long action passes ~90
-seconds, comfortably over a cold bootstrap) instead waits inside its window —
-but *not* by wrapping `waitUntilReady` in `withHardTimeout`: that helper
-abandons its work on timeout, and `waitUntilReady` is a `@MainActor` poll loop
-whose `try?` sleep swallows the cancellation — the abandoned loop would spin on
-the main actor for as long as Tor's retry machinery keeps the state `.starting`,
-long past the run. The grace is instead a deadline-bounded poll written in
-`NodeRun`'s own loop — the `awaitFirstAnswer` shape: `Task.isCancelled` and
-`session.tor.isReady` checked each pass, a cancellable sleep between, an early
-exit when Tor leaves `.starting`, and `onProgress` writes allowed throughout.
+a periodic run on a device iOS reclaims between runs kicks Tor, declines, and
+dies mid-bootstrap — forever. A run carrying `privateNetworkGrace` (~90 s,
+comfortably over a cold bootstrap) instead waits inside its window — *not* by
+wrapping `waitUntilReady` in `withHardTimeout`: that helper abandons its work,
+and `waitUntilReady` is a `@MainActor` poll loop whose `try?` sleep swallows
+cancellation — the abandoned loop would spin on the main actor past the run
+([research §4](./research.md)). The grace is a deadline-bounded poll in
+`NodeRun`'s own loop shape: `Task.isCancelled` and `session.tor.isReady`
+checked each pass, a cancellable sleep between, early exit when Tor leaves
+`.starting`, `onProgress` writes throughout.
+
 A Tor that readies does not jump to start — the run *re-decides*: node state,
 device conditions, and the step itself are re-read, because ninety seconds is
-long enough for the person to have started the node from the app, or the
-network to have gone metered. A second `waitForPrivateNetwork` verdict declines
-— the grace was spent. A Tor that never readies declines with the same
-`privateNetworkNotReady` reason, so the report vocabulary is unchanged. Waiting
-is also the more private posture: the run never starts on a direct connection
-either way (ADR 0006's floor). On the card the wait is another pre-watch stage
-inside the start-up band; the short action passes no grace and declines
-instantly as today.
+long enough for the person to have started the node or the network to have gone
+metered. Settings are deliberately *not* in that list — they were snapshotted
+once at entry (T001, widened from `tor_enabled` alone to every key
+`buildArguments` consults), so a mid-grace change applies to the next run
+rather than re-scoping this one mid-flight — `bitcoin_network` included, whose
+flip would otherwise start a chain the regtest gate never weighed and leave
+`blocksSinceLastCheck` diffing against a snapshot of the old chain. A second
+`waitForPrivateNetwork` verdict declines — the grace was spent. A Tor that never readies declines with the same `privateNetworkNotReady`
+reason — the report vocabulary is unchanged. Waiting is also the more private
+posture: the run never starts on a direct connection either way (ADR 0006's
+floor). On the card the wait is another pre-watch stage inside the start-up
+band; the short action passes no grace and declines instantly as today.
 
-## 4. Implementation steps
+### 3.9 The long action pins its process
 
-0. **Prerequisite, shipped on its own commit ahead of the feature:** thread the
-   entry-time `privacyEnabled` snapshot through `startArguments`'s build closure —
-   today `DaemonConfig.buildArguments` re-reads `tor_enabled` live, so a mid-run
-   toggle can start the node on a direct connection while the pref says Tor.
-   That is a live ADR 0006 hole, not a wart, and it deserves a reviewable diff of
-   its own rather than riding inside a progress feature. The same commit stops
-   the start-failure path from resurrecting a Tor the user just switched off.
-1. `NodeSyncResult` AppEnum (five cases), the `syncResult` field and
-   `blocksGained` on `NodeRunReport`
-   (+ string-pinning and wording-completeness tests). Compile-check the
-   optional `AppEnum` `@Property` on day one — `EntityProperty<Value>`
-   requires `Value: _IntentValue` and the report's existing optionals are
-   `Int?`/`String?`, so it is plausible but not free; better learned here than
-   in §5.
-2. `NodeAutomation`: `LiveReading` gains `isInitialBlockDownload` and `headers` —
-   everything it holds still comes from one answer — while the peer answer
-   stays its own value passed beside it: it answers a different question under
-   its own budget, and absent ≠ zero matters now that zero ends a run. A `SyncWatchState`
-   value type holds the watch's pure state — baseline height, best-seen heights,
-   both stall accumulators, the `certified` streak (consecutive qualifying
-   flat seconds — §3.5's clauses: established peers, no `inflight`, no
-   presync, recent tip; trips at ≥60 s *and* ≥6 passes), and the
-   entry-time Low-Power snapshot the delta check compares — advanced by
-   `(instant, reading?, peersAnswer)` where the peer answer carries the count
-   *and* each peer's `inflight`/`presyncedHeaders`/`connectionType` (absent ≠
-   zero still matters), emitting
-   the ending decisions; the
-   watch-entry decision on the IBD flag; the two `caughtUp` proofs (flag-clear
-   + equality; the ~60 s `certified` settle); the live-tip fraction
-   `(h − h₀)/max(liveHeaders − h₀, 1)`; the §3.6 decisions — the one-time
-   `refusal(for:)` weigh-in on paths that skipped preflight (thermal carried
-   honestly as `thermalState` in `DeviceConditions` — no healthy-passed
-   power conditions) and the per-pass split: money absolute, thermal absolute at
-   `.critical`, Low Power Mode delta — returning the *condition*, not a
-   sentence, since `Refusal`'s messages all end "did not start," true only at
-   entry. Plus the stage→band card-fraction map from §3.4 and the
-   summary/ending sentences for the five endings — `caughtUp` carries two
-   wordings, flag-cleared vs peer-certified (+ tests).
-3. `NodeRun`: the §3.8 grace poll and post-grace re-decision on the
-   private-network path, and the watch stage — poll loop asking the chain
-   question every pass and `peers()` only when it comes back flat, each
-   bounded at `min(watchQuestionBudget, remainingBudget)` (~30 s ceiling, per
-   §3.3's inherited clamp — the budget stays a real bound), the peer question
-   backing off entirely after ~3 consecutive timeouts (§3.5),
-   `Task.isCancelled`
-   and `isStoppedOrStopping` consulted *separately* each pass — the first takes
-   the existing cancel path, the second builds the `nodeStopped` report from
-   the last good reading. The `previous` snapshot for
-   `blocksSinceLastCheck` is captured *before* the watch on the
-   `reportExistingNode` path — today `measuredReport` reads
-   `lastKnownReading()` at its call site, and the app's own sync poll can
-   overwrite `lastKnown` during a fifteen-minute watch — reporting ~0 for a
-   run that watched real gains; the start/wait paths already capture early
-   for the same reason. And `measuredReport`'s closing `onProgress(1)` is
-   suppressed on a budgeted run — it lands after the watch and would pin the
-   bar full on every ending, exactly the dishonesty the band map exists to
-   prevent; `finish(_:)` alone decides whether the bar fills. The split lives inside the *budgeted* path only:
-   `measuredReport`'s closing `answerIsStillWanted` guard runs unchanged for an
-   unbudgeted run, so the short action's a node-stopped-mid-question still
-   returns `noAnswer` — byte-identical means byte-identical —
-   `persistLastKnown` at report time only — never per-poll, so a retried run's
-   `previous` is the true pre-run snapshot rather than an abandoned attempt's
-   last write — the §3.6 machinery — the one-time weigh-in before the
-   watch commits on the paths that skipped preflight, then the split per-pass
-   check, all via the narrow gather (never `readConditions()`) — the §3.5
-   accumulators via `SyncWatchState`, and the progress/detail writes — ending on
-   a report built from the final poll's reading — with every pre-watch write,
-   milestones and the first-answer ramp alike, routed through the band map.
-   `WithHardTimeout`'s pile-up comment gets its bound re-derived: the
-   stall/nodeStopped endings cap abandoned calls near the documented figure,
-   because a node that stops answering ends the watch within ~2 minutes. Its
-   premise
-   note also gets a line: pre-bootstrap questions ride `HTTPTransport` and are
-   genuinely cancellable — the uncancellable shape is the post-boot bridge.
-   While in this file: give `report()` the same `isStoppedOrStopping` pre-check
-   `awaitFirstAnswer` already makes. Both new loops are generic over
-   `C: Clock<Duration>` — not `any Clock<Duration>`, on which `clock.now`
-   erases to a non-`Comparable` `any InstantProtocol` and cannot compare
-   deadlines; `withHardTimeout` documents exactly this and supplies the
-   overload pattern for the `ContinuousClock` default — so their sleeps and
-   deadlines are drivable under a `TestClock`, the same reason
-   `TorViewModel(clock:)` takes one. The clock enters at `perform` as a
-   defaulted parameter and threads through `runWithHeartbeat`'s work closure —
-   `awaitFirstAnswer` reads `ContinuousClock.now` directly today, so it gains
-   the parameter too rather than mixing two clocks inside one run.
-4. `ProgressMeter`: gated on §5's first device experiment — text-only writes
-   versus numeric-only, both — because the redesign's whole purpose is a
-   guaranteed-fresh numeric write, and Apple's own `LongRunningIntent`
-   example writes `localizedAdditionalDescription` on every chunk alongside
-   the count. If a text write alone satisfies the system's liveness check,
-   the dither/reserve machinery is unearned: the staleness clause the detail
-   line already carries is fresh on every poll at zero honesty cost, and this
-   step shrinks to the text surface. If it does not: the §3.4 construction —
-   `scale` ≈ 10,000, `advance()` capped
-   at `scale − 1 − reserve`, the write floor split into `earned` (monotone — the
-   honesty invariant) and `reported` (last written — may dither ±1 around it),
-   `tick()` alternating `{earned, earned + 1}` at the frontier, its skip gate
-   keyed on `earned` having moved — not `reported`, which a flat `advance()`
-   can re-settle after a dither and thereby halve the liveness margin to
-   alternate heartbeats — and the now-purposeless `heartbeatUnits` cap
-   retired — plus the
-   text surface the card needs (headline/detail writes on the underlying
-   `Progress`) and the widened
-   `onProgress` payload (a small value type: fraction, headline, detail) so the
-   run can push wording, not just numbers (+ invariant tests: a tick at the
-   working ceiling still writes a new value; a tick never strands earned
-   progress beneath it; the dither stays inside `{earned, earned + 1}`; after
-   `finish()` no write lands — text or count). The widened
-   payload is shared: `SyncNodeIntent` compiles through the same signature — it
-   passes no headline or detail, and its progress sink stays the default no-op.
-5. `SyncNodeLongRunningIntent`: pin `static var allowedExecutionTargets:
-   ExecutionTargets { .main }` — iOS 27's execution-target declaration turns
-   ADR 0005's "runs in the app process" from a fact about today's build graph
-   (no extension target exists) into a constraint the system honors if a
-   widget, control, or App Intents extension ever appears. The same
-   `@available(iOS 27.0, *)` declaration lands on `SyncNodeIntent` — a second
-   process against the daemon's exclusive folder lock is refused at any run
-   length, and a 21-minute watch makes the silent version expensive. Then
-   pass `syncBudget` (the 15-minute constant),
-   `privateNetworkGrace` (~90 s), `stallThreshold`/`flatWindowLeash`/
-   `certifiedSettle` (120 s / ~240 s / ~60 s), `watchQuestionBudget` (~30 s),
-   the larger `scale`, and flip
-   the headline on entering the watch. Prerequisite: the target has no
-   `.xcstrings` catalog and every existing sentence is a bare literal — adding
-   one is part of this step. Localization then has two sinks, named so the
-   distinction survives implementation: `String(localized:)` for the card text
-   (`Progress`'s `localized*` properties are plain `String`s, resolved in the
-   app's locale), and — for the *dialog* — a `LocalizedStringResource` built
-   from the same values, so `IntentDialog` resolves in the requester's locale.
-   The report's `summary` property stays `String` — it is an existing
-   `@Property` other fields share, and re-typing it would break automations §3.7
-   says must not. The "Block X of Y" detail is the feature's first
-   formatted substitution — where localization stops being optional either way.
-   Caveat to verify while wiring it: `AppShortcut` phrases may localize through
-   a dedicated `AppShortcuts.xcstrings` rather than the general catalog — if
-   that holds, the phrase-localization follow-up (003 §7) needs its own file
-   and does not come along free with this one.
-6. Re-point `heartbeatCoverageExceedsWait`: the budget-longevity coupling it
-   guarded dissolves with the cap — under the dither nothing is drained — so the
-   test becomes the dither invariant itself: a tick at any reachable state
-   writes a value different from the last, for the whole of a maximum-length
-   run. (If device verification sends us to the ratchet fallback, the test
-   returns to sizing the reserve against the whole-window tick count.)
-7. Re-measure ADR 0008's locked-device timings and ADR 0009's post-return survival
-   in the same device session §5 requires, so both records can move off `Proposed`.
+ADR 0005's correctness requirement — the daemon holds an exclusive lock on the
+chain folder, so a second process starting against it is refused — is today
+enforced only by the absence of an extension target: a build-graph fact, not a
+constraint. iOS 27's `allowedExecutionTargets` makes it one the system honors,
+and `SyncNodeLongRunningIntent` declares `.main` — ahead of any widget,
+control, or App Intents extension; at a ~21-minute watch the silent version of
+that failure is expensive. Only the long action takes the pin: Apple reserves
+`.main` for code that genuinely needs the process, since forcing it defeats
+extension-based execution and adds launch latency — and the short action's
+whole budget is ~30 s, where that latency is a real change to a path FR-014
+says is unchanged.
 
-## 5. Verification
+## Verification
 
-All on a physical device, screen locked, per ADR 0008:
+All on a physical device, screen locked, per ADR 0008 — executed as the gated
+Phase 6 in [tasks.md](./tasks.md):
 
 - [ ] Node behind on signet: the watch runs, the bar visibly climbs from where
-      start-up left it (not pinned near full), the detail line reads "block X of
-      Y", and the run ends `stillSyncing` at the budget.
+     start-up left it (not pinned near full), the detail line reads "block X of
+     Y", and the run ends `stillSyncing` at the budget. (SC-001, SC-004)
 - [ ] Node nearly caught up: the run ends `caughtUp`, the bar fills.
 - [ ] Synced signet node restarted after a >24 h quiet stretch — IBD `true`,
-      `blocks == headers`, peers connected, tip recent: the watch ends
-      `caughtUp` on certification — ≥60 s *and* ≥6 qualifying passes — never
-      `stalled`, and `feeler`/`addr-fetch` churn or one missed peer answer
-      does not break the streak.
-- [ ] Fresh datadir or resumed-stale node: the watch enters on the IBD flag even
-      before headers arrive, survives the header-download stretch without a
-      `stalled` verdict, keeps the bar at the band's floor rather than leaping to
-      a believed tip, and never ends `caughtUp` while the flag is set — the
-      genesis-age tip fails the recency clause by construction, so a node
-      whose peers connect but serve nothing ends `stalled` on `flatWindow`,
-      not `caughtUp`.
-- [ ] A node whose peer question never answers while its chain readings keep
-      arriving flat: nothing accumulates (absent answers are no evidence
-      either way), the question backs off after ~3 consecutive timeouts so
-      passes stay at ~30 s, and the run ends `stillSyncing` at the budget —
-      not `stalled` on a node the watch cannot see.
-- [ ] A regtest node: the watch declines entry at the gate (`chain ==
-      "regtest"` never enters) — no leash burned, no `stalled` verdict on a
-      self-defined chain.
+     `blocks == headers`, tip past Core's own recency rule: the flat-window
+     leash ends it `noProgress` in ~4 min — and when the next block connects,
+     `ConnectTip` clears the flag and the run ends `caughtUp`. (SC-002)
+- [ ] Fresh datadir or resumed-stale node: the watch enters on the IBD flag
+     even before headers arrive, survives the header-download stretch without
+     `noProgress`, keeps the bar at the band floor, and never ends `caughtUp`
+     while the flag is set — the genesis-age tip keeps the flag set on Core's
+     own rule, so a node that cannot fetch ends `noProgress` on `flatWindow`.
+- [ ] A regtest node: the watch declines entry at the gate — no leash burned,
+     no `noProgress` on a self-defined chain.
 - [ ] First experiment, before the meter redesign: does a text-only write
-      (`localizedAdditionalDescription`) satisfy the system's liveness check?
-      Test text-only, numeric-only, and both on a locked device — the step-4
-      diff depends on the answer.
-- [ ] `inflight`/`presyncedHeaders` populate as expected on a live node (the
-      two `getpeerinfo` fields the certification rule actually reads), and a
-      peer with requests in flight or mid-presync fails certification.
+     (`localizedAdditionalDescription`) satisfy the system's liveness check —
+     `BGContinuedProcessingTask`'s expiration? Text-only, numeric-only, and
+     both on a locked device — Phase 4's size depends on the answer.
 - [ ] Node stopped from the app's own UI mid-watch: the run ends on the normal
-      measured report — earned outcome, last good reading, `syncResult` =
-      `nodeStopped` — never a blanked `noAnswer` or a false `stalled`.
-- [ ] Node comes up unable to reach a single peer (network collapsed after the
-      start checks passed): the run ends `stalled` on the `flatWindow` leash
-      (~four minutes) rather than burning the whole budget to `stillSyncing`.
+     measured report — earned outcome, last good reading, `syncResult` =
+     `nodeStopped` — never a blanked `noAnswer` or a false `noProgress`.
+- [ ] Node comes up unable to reach a single peer: the run ends `noProgress` on
+     `flatWindow` (~4 min) rather than burning the whole budget. (SC-003)
 - [ ] Tor enabled and cold on a locked device: the run waits through bootstrap
-      inside the grace and proceeds to start — and a Tor that never readies
-      declines with the unchanged `privateNetworkNotReady` reason, leaving no
-      abandoned poll loop spinning on the main actor after the run returns.
+     inside the grace and proceeds — and a Tor that never readies declines with
+     the unchanged `privateNetworkNotReady` reason, leaving no abandoned poll
+     loop spinning on the main actor.
 - [ ] During the grace, conditions drift (network goes metered, or the person
-      starts the node from the app): the post-grace re-decision declines or
-      reports accordingly rather than starting on a stale snapshot.
-- [ ] A node answering every question in ~11 s — slower than the short action's
-      `questionBudget`, inside the watch's own — produces readings, resets the
-      accumulators, and is never declared `stalled`.
-- [ ] Network pulled mid-watch: ends `stalled` about two minutes after the last
-      gain — reliably the designed ending, not a generic system timeout.
+     starts the node from the app): the post-grace re-decision declines or
+     reports accordingly rather than starting on a stale snapshot.
+- [ ] A node answering every question in ~11 s produces advancing readings —
+     the only kind that resets the leashes — and is never `noProgress`.
+- [ ] A node the run started whose stored tip is hours old but under a day —
+     the warm restart: the first answer shows flag clear and no gap, yet the
+     tip-age leg still enters the watch, and when the fetched gap closes the
+     run ends `caughtUp` rather than an early `notMeasured` return. The device
+     pass needs the phone left idle for hours beforehand — its own T024 item.
+- [ ] The warm restart on a quiet signet — headers never advance because
+     nothing new exists: at least two outbound block-serving peers report
+     `synced_headers == headers` and the run ends `caughtUp`, not
+     `noProgress` — on signet's small network, check the daemon's outbound
+     set is actually populated before reading the result. (SC-002's
+     quiet-past-a-day sibling keeps `noProgress` — past 24 h Core asks only
+     one peer, so two can never confirm.)
+- [ ] The same quiet-signet shape with no qualifying peers — none connected,
+     none answering, or only inbound ones — ends `noProgress` on `flatWindow`:
+     no confirmation is no evidence.
+- [ ] Network pulled mid-watch: ends `noProgress` ~2 minutes after the last gain —
+     the designed ending, not a generic system timeout. (SC-003)
 - [ ] Node already running on a metered link — or a device under the disk
-      floor — when the long action fires: the `.reportExistingNode` path
-      consults no preflight, so the entry weigh-in ends it `conditionsChanged`
-      before the watch commits, node left running.
-- [ ] Handoff to a metered link mid-watch: early `conditionsChanged` end, honest
-      wording, node running.
-- [ ] Device warms mid-watch: `.serious` changes nothing (routine on a
-      validating phone), `.critical` ends `conditionsChanged` whenever seen;
-      Low Power Mode already on at entry changes nothing — the watch runs —
-      and switched on mid-watch ends it `conditionsChanged`; wording names the
-      condition, node left running.
-- [ ] A run ending `stillSyncing`/`stalled`/`conditionsChanged`: the card
-      resolves as ended rather than hanging at ~95% — `Progress.isFinished`
-      stays false by design on these endings, and if the card sticks, the
-      honest-bar rule needs a different expression than leaving the count
-      short.
+     floor — when the long action fires: the `reportExistingNode` path consults
+     no preflight, so the entry weigh-in ends it `conditionsChanged` before the
+     watch commits, node left running.
+- [ ] Handoff to a metered link mid-watch: early `conditionsChanged` end,
+     honest wording, node running.
+- [ ] Device warms mid-watch: `.serious` changes nothing, `.critical` ends
+     `conditionsChanged`; Low Power Mode already on at entry changes nothing,
+     switched on mid-watch ends it `conditionsChanged`; wording names the
+     condition, node left running.
+- [ ] A run ending `stillSyncing`/`noProgress`/`conditionsChanged`: the card
+     resolves as ended rather than hanging at ~95% — `Progress.isFinished`
+     stays false by design on these endings, and if the card sticks, the
+     honest-bar rule needs a different expression.
 - [ ] Stop button mid-watch: `CancellationError` thrown, node keeps running.
-- [ ] The report's `syncResult` — the first optional `AppEnum` `@Property` on
-      this report — renders and branches correctly in the Shortcuts UI.
-- [ ] The short action on the same build behaves exactly as before.
-- [ ] ADR 0008 timings and ADR 0009 survival re-measured and the records updated.
+- [ ] `syncResult` — the report's new `AppEnum` `@Property`, `notMeasured`
+     included — renders and branches correctly in the Shortcuts UI.
+- [ ] The short action on the same build behaves exactly as before. (SC-005)
+- [ ] The watch's detached-task cost measured, not assumed: ~360 `Task.detached`
+     spawns per run — a work task and a timer task per bounded question — none
+     inheriting the background task's QoS; observe memory and energy on a
+     locked run.
+- [ ] The serving transport is logged per poll — a `noProgress` or slow verdict
+     attributes to a 30 s or a 60 s ceiling; the timings feeding T025's ADR
+     0008 re-measure are meaningless without it.
+- [ ] ADR 0008 timings and ADR 0009 survival re-measured and the records
+     updated.
 
-## 6. Risks and mitigations
+## Risks
 
 - **The system's patience with a ~21-minute run is unpublished** — the ~30 s
-  silence rule *is* documented (`IntentCancellationReason.timeout`); the total
-  ceiling is not. Mitigated by
-  construction: the run bounds itself, and a fresh progress write is guaranteed
-  every 5 seconds for the whole window by §3.4's dither — a tick at any
-  reachable state writes a value different from the last — rather than by luck;
-  a system timeout already has an honest card ending. The ~21-minute
-  figure is the one ceiling the three stage constants — grace, first-answer
-  wait, watch budget — are reviewed against, not three independent numbers. The
-  budget constant is the tunable. No API lever exists for it either:
-  `LongRunningTaskOptions` — the `options:` parameter — is an OptionSet with
-  no public members surfaced (Apple's only example is GPU resources), so
-  `options: []` is the only spelling and the run's own bound is the bound.
+  silence rule is `BGContinuedProcessingTask`'s documented expiration
+  behavior; the total ceiling is not. Mitigated by construction: the run
+  bounds itself and a fresh progress write is guaranteed every ~5 s for the
+  whole window by §3.4's mechanism. The ~21-minute figure is the one ceiling
+  the three stage constants are reviewed against. No API lever for a longer
+  window exists — recorded in [research §4](./research.md) so nobody re-opens
+  it.
 - **A dithered tick may not count as liveness.** If the system only credits
   *increasing* counts, the run dies at ~30 s of silence despite fresh writes —
-  caught by the first locked-device pass in §5, and the fallback (a ratchet
-  bounded inside a ~500-notch reserve) is already specced in §3.4.
-- **The tip outgrowing the bar.** Fresh headers arriving mid-watch grow the
-  denominator, so the true fraction can fall; the meter's never-retreat floor
-  holds the bar while the detail line keeps reporting ground truth — the person
-  sees "Block X of Y" move honestly even when the bar cannot dip.
+  caught by the first locked-device experiment, with the ratchet fallback
+  already specced in §3.4.
+- **The tip outgrowing the bar.** Fresh headers grow the denominator mid-watch;
+  the never-retreat floor holds the bar while the detail line reports ground
+  truth.
 - **A mid-watch suspension lands as a giant delta.** A frozen process resumed
-  later hands the accumulators and the budget one huge `Δt` — the run ends
-  instantly on `stalled` or `stillSyncing`. Correct, not a bug: the in-process
-  daemon froze for exactly as long. Noted so nobody "fixes" it.
-- **A synced node whose IBD flag never clears.** The flag latches per-process
-  on a 24-hour tip-age rule — a normal restart of a synced node latches *clear*
-  at init, so the stuck case needs a tip older than a day: regtest always,
-  signet when its miners stall that long. Worth covering, but an edge — which
-  is why the peer question is asked only on flat passes rather than paying
-  `getpeerinfo`'s per-peer `cs_main` acquisitions on every poll forever.
-  Certification still keeps that edge cheap: the run settles in about a
-  minute instead of burning the leash — and it is Core's own leave-IBD test
-  evaluated live (recent tip + peers + nothing in flight), because the
-  announce-based fields cannot answer: a peer with nothing newer says
-  nothing, leaving `syncedHeaders` at `-1` on precisely the healthy
-  connections this case is made of. What still ends `stalled` is the
-  unprovable version — a node that cannot show currency, including a fresh
-  datadir whose genesis-age tip fails the recency clause. One corollary worth
-  noting: opening the app mid-watch adds two more `peers()` pollers
-  (`DashboardViewModel.refresh`, `NodeViewModel`'s own poll) — the same
-  `cs_main` cost argument for keeping the watch's asks flat-only.
-- **`NodeRun` is shared.** The short action passes `nil` budget and takes the same
-  code path as today; the regression surface is the new stage's entry condition,
-  covered by tests on the decision functions.
-- **A dead node could pile up abandoned questions for ~21 minutes.** It cannot: a
-  node that stops answering produces no fresh readings, and §3.5's `unproductive`
-  clock counts *then too* — so `stalled` (or `nodeStopped`, checked every pass)
-  ends the watch within ~2 minutes. Abandoned calls stay at the documented scale: two
-  30-second questions per pass across a ~2-minute window is on the order of a
-  handful — under the figure `WithHardTimeout`'s comment already claims.
+  later ends instantly on `noProgress` or `stillSyncing`. Correct, not a bug — the
+  in-process daemon froze for exactly as long. Noted so nobody "fixes" it.
+- **A synced node whose IBD flag never clears.** Reported honestly, not
+  certified around: the flag is Core's own verdict, and the only state where
+  it stays set with a recent tip is a `LoadingBlocks` skip (a reindex or
+  import the app cannot produce — [research §3](./research.md)). A quiet
+  chain whose flag never clears still ends `noProgress` — peer confirmation
+  cannot certify past a set flag; the flag clears on the next connected
+  block. A
+  fresh datadir still ends `noProgress` on the genesis-age tip.
+- **`NodeRun` is shared.** The short action passes `nil` budget and takes the
+  same code path as today; the regression surface is the new stage's entry
+  condition, covered by tests on the decision functions.
+- **The feature certifies the foundations it stands on.** The leash and
+  budget constants rest on ADRs 0008 and 0009, both still `Proposed` — and
+  T025's locked-device re-measure is what moves them to `Accepted`. A
+  measurement that disagrees reopens the constants, not just the records;
+  the slicing table marks the dependent slices provisional for exactly this
+  reason.
+- **A dead node could pile up abandoned questions.** It cannot — for a reason
+  that splits cleanly per transport. The poll loop is sequential (ask, answer
+  or timeout, sleep to the next tick), so nothing overlaps unless a call is
+  abandoned; on the direct bridge the ~30 s budget equals the give-up, so an
+  orphan parks ≈0 s; over HTTP — the expected locked-device path — the 30 s
+  orphan is *cancelled*, `URLSession` being the one transport
+  `withHardTimeout`'s `work.cancel()` reaches. Neither path accumulates;
+  T016's re-derived comment records both halves.
 
-## 7. Out of scope (follow-ups)
+## Deferred work
 
-- **AssumeUTXO bootstrap.** Every mobile full-node deployment that claims a usable
-  node in hours does it via a UTXO snapshot or a trusted chainstate copy. It is the
-  real answer to IBD-scale gaps on a phone — and a package-level feature, not an
-  action feature.
-- **Idle-time sync via `BGProcessingTask`.** Same prerequisite noted in 003 §7:
-  the Background Modes capability and a task identifier.
-- **Stopping a run-started node on metered drift.** The stronger protection —
-  fire-and-forget `stop`, only ever for a node this run started — is a posture
-  change that deserves its own ADR rather than shipping inside this feature.
-- **Free-space re-check mid-watch.** Same mechanism as the network re-check;
-  excluded only because the approved scope was the driftable conditions.
-- **Lazy direct-bridge re-bootstrap.** `Daemon.bootstrap` is a one-shot ~30 s
-  poll, and locked-device block-index loads are measured at 47–121 s — so on the
-  run shape this feature serves, bootstrap can time out, `AutoTransport` falls
-  back to `HTTPTransport`, and *nobody retries the bridge*: a node left running
-  across many runs answers over HTTP for its whole life. A re-bootstrap attempt
-  from the sync poll while `bitcoin_rpc_ready() == 0` would close it; package
-  work, not action work.
-- **Grace for the short action.** Deliberately declined: its ~30 s window cannot
-  afford a cold bootstrap, so it keeps kicking-and-declining — the one shape
-  §3.8 exists to outgrow on the long action.
+- **AssumeUTXO bootstrap** — the real answer to IBD-scale gaps on a phone; a
+  package-level feature, not an action feature.
+- **Idle-time sync via `BGProcessingTask`** — a different API from the
+  `BGContinuedProcessingTask` this feature's runs ride: opportunistic,
+  idle-time work versus user-initiated continued processing. Same prerequisite
+  noted in 003: the Background Modes capability and a task identifier.
+- **Surfacing the measured report when the system ends a run on `.timeout`** —
+  `CancellableIntent`'s throw discards it (`syncResult`, `blocksGainedThisRun`, the
+  last good reading); recovering it needs a report channel that survives the
+  throw.
+- **Non-isolated `perform()` with explicit `MainActor.run` hops** — Apple's
+  recommended intent shape; it would take the watch's ~180 poll iterations
+  off the main actor and remove the grace-loop hazard at its root rather than
+  working around it. Touches every `NodeSession` caller — bigger than this
+  feature.
+- **A guard for retried runs** — `restartPerform` re-runs the whole ~21-minute
+  pipeline per attempt and nothing bounds the count; the pre-run snapshot
+  already timestamps the last attempt, which is enough to detect (and decide
+  on) a just-finished run.
+- **Stopping a run-started node on metered drift** — a posture change that
+  deserves its own ADR.
+- **Free-space re-check mid-watch** — same mechanism as the network re-check;
+  deferred because the approved scope was the driftable conditions.
+- **Lazy direct-bridge re-bootstrap** — `Daemon.bootstrap` is a one-shot ~30 s
+  poll fired once (fire-and-forget) inside `NodeViewModel.start`, and
+  locked-device block-index loads measure 47–121 s, so it can time out and
+  leave the node answering over HTTP for its whole life. Two closes of
+  different sizes: the transparent version — the bridge quietly retrying
+  while `bitcoin_rpc_ready() == 0` — is package work; the explicit version —
+  a guarded second `Daemon.bootstrap` call — is action work (`Daemon.bootstrap`
+  is public; the app already calls it). 004 is the first feature for which
+  "HTTP for life" is the expected case, so this item now determines the
+  watch's entire cost model, and the watch hands it a trigger it never had:
+  the first successful reading proves the RPC server is up — exactly the
+  condition bootstrap polled for. One guarded attempt there converts the
+  remaining ~179 loopback round trips into in-process calls for a single
+  `_bridge_init`. Until it lands, §3.3 designs for HTTP, not the bridge.
+- **Grace for the short action** — declined: its ~30 s window cannot afford a
+  cold bootstrap.
 
-## 8. Division of labor
+## Division of labor
 
 Every decision — the fraction, stall, ending choice, wording — lives in
-`NodeAutomation` as plain values, unit-tested on every platform in CI. `NodeRun`
-orchestrates: it polls, it measures, it writes the card. Anything touching the
-system's patience, the card, or suspension is verifiable only on a locked device,
-which is what §5 exists for — the same session that re-measures ADRs 0008 and 0009.
+`NodeAutomation` as plain values, unit-tested on every platform in CI.
+`NodeRun` orchestrates: it polls, it measures, it writes the card. Anything
+touching the system's patience, the card, or suspension is verifiable only on a
+locked device — the gated Phase 6 session, which also re-measures ADRs 0008 and
+0009.

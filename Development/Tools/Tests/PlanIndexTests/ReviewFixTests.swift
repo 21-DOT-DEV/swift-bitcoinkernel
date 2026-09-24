@@ -377,3 +377,237 @@ private func makeNumberedTree(folder: String, feature: String,
     let report = Indexer(development: root).run(check: false)
     #expect(report.errors.filter { $0.contains("001-x/plan.md") }.count == 1)
 }
+
+// MARK: - Coverage honesty: a ticked task still cites, and only `verifies` claims a test
+
+private func makeCoverageTree(spec: String, tasks: String, planExtra: String = "SC-001") throws -> URL {
+    let root = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("coverage-\(UUID().uuidString)")
+    let fm = FileManager.default
+    try fm.createDirectory(at: root.appendingPathComponent("Specs/002-thing"), withIntermediateDirectories: true)
+    try fm.createDirectory(at: root.appendingPathComponent("ADRs"), withIntermediateDirectories: true)
+    try """
+    ---
+    feature: 002
+    title: A thing
+    phase: null
+    status: Planned
+    updated: 2026-08-31
+    ---
+    # A thing
+    \(planExtra)
+    """.write(to: root.appendingPathComponent("Specs/002-thing/plan.md"), atomically: true, encoding: .utf8)
+    try spec.write(to: root.appendingPathComponent("Specs/002-thing/spec.md"), atomically: true, encoding: .utf8)
+    try tasks.write(to: root.appendingPathComponent("Specs/002-thing/tasks.md"), atomically: true, encoding: .utf8)
+    try "---\nadr: 1\ntitle: A choice\nstatus: Accepted\ndate: 2026-05-07\n---\n"
+        .write(to: root.appendingPathComponent("ADRs/0001-a-choice.md"), atomically: true, encoding: .utf8)
+    for p in ["Specs/README.md", "ADRs/README.md"] {
+        try "# Index\n\n\(beginMarker)\n\(endMarker)\n".write(to: root.appendingPathComponent(p), atomically: true, encoding: .utf8)
+    }
+    return root
+}
+
+private let coveredSpec = """
+# Spec
+
+### Acceptance scenarios
+
+1. **Given** x, **when** y, **then** z — covers FR-001, FR-002.
+
+- **FR-001** First.
+- **FR-002** Second.
+- **SC-001** An outcome.
+"""
+
+@Test func aTickedTaskStillAttributesItsCitations() throws {
+    // `- [x]` marked the slice landed — but the cite still counts, since a
+    // finished task does not stop serving its requirement. Recognising only
+    // `- [ ]` made the first merge misread completion as a coverage gap.
+    let tasks = "- [x] T001 Build it (FR-001)\n- [ ] T002 Tests (verifies FR-001)\n- [ ] T003 Rest (FR-002)\n"
+    let root = try makeCoverageTree(spec: coveredSpec, tasks: tasks)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let report = Indexer(development: root).run(check: false)
+    let text = report.coverage.joined(separator: "\n")
+    #expect(text.contains("FR-001 → T001, T002 · tests: T002 · scenario: 1"))
+}
+
+@Test func onlyAVerifiesCiteClaimsTestCoverage() throws {
+    // Naming a test file is a cite about where tests live, not a claim that
+    // this task's tests exercise the requirement. Before the marker existed the
+    // map credited any task whose prose said "test".
+    let tasks = """
+    - [ ] T001 Build it (FR-001)
+    - [ ] T002 Update `Sources/XTests/FooTests.swift` (FR-002)
+    - [ ] T003 Test it (verifies FR-001)
+    """
+    let root = try makeCoverageTree(spec: coveredSpec, tasks: tasks)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let report = Indexer(development: root).run(check: false)
+    let text = report.coverage.joined(separator: "\n")
+    #expect(text.contains("FR-001 → T001, T003 · tests: T003 · scenario: 1"))
+    #expect(text.contains("FR-002 → T002 · tests: — · scenario: 1"))
+}
+
+@Test func warningsDoNotFailTheCheck() throws {
+    // Scenario-only verification warns without erroring — device-verified is an
+    // honest state, and `warning:` exists so it is not lost among the notes.
+    let root = try makeCoverageTree(spec: coveredSpec, tasks: "- [ ] T001 Do it (FR-001, FR-002)\n")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let report = Indexer(development: root).run(check: false)
+    #expect(!report.warnings.isEmpty)
+    #expect(!report.isFailure)
+}
+
+// MARK: - Definitions live in the sections that define them
+
+@Test func aBoldedIDOutsideTheDefinitionSectionsIsNotADefinition() throws {
+    // **FR-009** is bolded for emphasis inside a scenario; it is not a
+    // definition, so nothing owes it a cite. Before the scan was scoped to the
+    // defining sections, that tag minted a phantom requirement whose "never
+    // cited" error then blamed tasks.md.
+    let spec = """
+    # Spec
+
+    ### Functional requirements
+
+    - **FR-001** The only one.
+
+    ### Measurable outcomes
+
+    - **SC-001** An outcome.
+
+    ### Acceptance scenarios
+
+    1. **Given** x, **when** y, **then** **FR-009** elsewhere — covers FR-001.
+    """
+    let root = try makeCoverageTree(spec: spec, tasks: "- [ ] T001 Do it (verifies FR-001)\n")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let report = Indexer(development: root).run(check: false)
+    #expect(report.errors.isEmpty)
+    #expect(!report.coverage.joined(separator: "\n").contains("FR-009"))
+}
+
+@Test func aSpecWithoutDefinitionSectionsIsStillScannedWhole() throws {
+    // A minimal spec with no requirement headings keeps the old behaviour:
+    // bolded IDs anywhere in it are definitions.
+    let spec = "# Spec\n\n- **FR-001** The only one.\n- **SC-001** An outcome.\n"
+    let root = try makeCoverageTree(spec: spec, tasks: "- [ ] T001 Do it (verifies FR-001)\n")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let report = Indexer(development: root).run(check: false)
+    #expect(report.errors.isEmpty)
+    #expect(report.coverage.joined(separator: "\n").contains("FR-001 → T001"))
+}
+
+// MARK: - A scenario's tag survives losing its indent
+
+@Test func aFlushLeftCoversLineStillAttributesToItsScenario() throws {
+    // A wrapped "covers" line that loses its indent used to end the scenario,
+    // silently unmapping its requirements.
+    let spec = """
+    # Spec
+
+    ### Acceptance scenarios
+
+    1. **Given** x, **when** y, **then** z —
+    covers FR-001
+
+    - **FR-001** First.
+    - **SC-001** An outcome.
+    """
+    let root = try makeCoverageTree(spec: spec, tasks: "- [ ] T001 Do it (verifies FR-001)\n")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let report = Indexer(development: root).run(check: false)
+    #expect(report.coverage.joined(separator: "\n").contains("FR-001 → T001 · tests: T001 · scenario: 1"))
+}
+
+// MARK: - A template is not a feature; a cited record must be listed
+
+@Test func theTemplateFolderPrintsNoCoverageMap() throws {
+    // _template satisfies the sibling checks it demonstrates, but it is not a
+    // feature — a coverage line for it is permanent noise on every run.
+    let root = try makeCoverageTree(spec: coveredSpec, tasks: "- [ ] T001 Do it (verifies FR-001)\n")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let template = root.appendingPathComponent("Specs/_template")
+    try FileManager.default.createDirectory(at: template, withIntermediateDirectories: true)
+    try "---\nfeature: NNN\ntitle: skeleton\nphase: null\nstatus: Planned\nupdated: YYYY-MM-DD\n---\n"
+        .write(to: template.appendingPathComponent("plan.md"), atomically: true, encoding: .utf8)
+    try coveredSpec.write(to: template.appendingPathComponent("spec.md"), atomically: true, encoding: .utf8)
+    try "- [ ] T001 Do it (verifies FR-001)\n"
+        .write(to: template.appendingPathComponent("tasks.md"), atomically: true, encoding: .utf8)
+    let report = Indexer(development: root).run(check: false)
+    #expect(report.coverage.allSatisfy { !$0.contains("_template") })
+}
+
+@Test func aDecisionRecordCitedButNotListedWarns() throws {
+    // The adrs: field checks listed→exists; this is the other direction. A
+    // mention is not proof the record belongs to the feature — but a record the
+    // plan relies on without listing is exactly the omission the field is for,
+    // so it warns for a human to resolve.
+    let root = try makeCoverageTree(spec: coveredSpec, tasks: "- [ ] T001 Do it (verifies FR-001)\n")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let plan = root.appendingPathComponent("Specs/002-thing/plan.md")
+    let text = try String(contentsOf: plan, encoding: .utf8)
+    try text.replacingOccurrences(of: "updated: 2026-08-31", with: "updated: 2026-08-31\nadrs: [0001]")
+        .appending("\nThe run never bypasses Tor — ADR 0002's rule.\n")
+        .write(to: plan, atomically: true, encoding: .utf8)
+    let report = Indexer(development: root).run(check: false)
+    #expect(report.warnings.contains { $0.contains("ADR 0002") && $0.contains("absent from plan.md's adrs:") })
+    #expect(!report.warnings.contains { $0.contains("ADR 0001") })
+}
+
+@Test func anADRListTailCitesEveryNumberInIt() throws {
+    // "ADRs 0001 and 0002" names two records; a pattern that stops at the
+    // first digit group silently drops the tail.
+    let root = try makeCoverageTree(spec: coveredSpec, tasks: "- [ ] T001 Do it (verifies FR-001)\n")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let plan = root.appendingPathComponent("Specs/002-thing/plan.md")
+    let text = try String(contentsOf: plan, encoding: .utf8)
+    try text.replacingOccurrences(of: "updated: 2026-08-31", with: "updated: 2026-08-31\nadrs: [0001]")
+        .appending("\nTiming per ADRs 0001 and 0002.\n")
+        .write(to: plan, atomically: true, encoding: .utf8)
+    let report = Indexer(development: root).run(check: false)
+    #expect(report.warnings.contains { $0.contains("ADR 0002") && $0.contains("absent from plan.md's adrs:") })
+    #expect(!report.warnings.contains { $0.contains("ADR 0001") })
+}
+
+@Test func aPlanOnlyFeatureStillGetsVerificationScrutiny() throws {
+    // With no tasks.md nothing can carry a `verifies` cite — but a plan-cited
+    // requirement with no scenario still has no verification path (the error
+    // tier), and scenario-only still warns. Gating both on `tasks != nil`
+    // made plan-only features invisible to the check.
+    let root = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("planonly-\(UUID().uuidString)")
+    let fm = FileManager.default
+    try fm.createDirectory(at: root.appendingPathComponent("Specs/002-thing"), withIntermediateDirectories: true)
+    try fm.createDirectory(at: root.appendingPathComponent("ADRs"), withIntermediateDirectories: true)
+    try """
+    ---
+    feature: 002
+    title: A thing
+    phase: null
+    status: Planned
+    updated: 2026-08-31
+    ---
+    # A thing
+    FR-001 FR-002 SC-001
+    """.write(to: root.appendingPathComponent("Specs/002-thing/plan.md"), atomically: true, encoding: .utf8)
+    try """
+    # Spec
+
+    ### Acceptance scenarios
+
+    1. **Given** x, **when** y, **then** z — covers FR-002.
+
+    - **FR-001** First.
+    - **FR-002** Second.
+    - **SC-001** An outcome.
+    """.write(to: root.appendingPathComponent("Specs/002-thing/spec.md"), atomically: true, encoding: .utf8)
+    for p in ["Specs/README.md", "ADRs/README.md"] {
+        try "\(beginMarker)\n\(endMarker)\n".write(to: root.appendingPathComponent(p), atomically: true, encoding: .utf8)
+    }
+    defer { try? fm.removeItem(at: root) }
+
+    let report = Indexer(development: root).run(check: false)
+    #expect(report.errors.contains { $0.contains("FR-001") && $0.contains("no verification path") })
+    #expect(report.warnings.contains { $0.contains("FR-002") && $0.contains("scenario") })
+}

@@ -92,7 +92,8 @@ import Testing
 
 private func makeTree(status: String = "Implemented", feature: String = "002",
                       adrStatus: String = "Accepted", adrNumber: String = "1",
-                      omitADRDate: Bool = false) throws -> URL {
+                      omitADRDate: Bool = false, planExtra: String = "",
+                      siblings: [String: String] = [:]) throws -> URL {
     let root = URL(fileURLWithPath: NSTemporaryDirectory())
         .appendingPathComponent("plan-index-\(UUID().uuidString)")
     let fm = FileManager.default
@@ -108,7 +109,12 @@ private func makeTree(status: String = "Implemented", feature: String = "002",
     updated: 2026-08-31
     ---
     # A thing
+    \(planExtra)
     """.write(to: root.appendingPathComponent("Specs/002-thing/plan.md"), atomically: true, encoding: .utf8)
+    for (name, text) in siblings {
+        try text.write(to: root.appendingPathComponent("Specs/002-thing/\(name)"),
+                       atomically: true, encoding: .utf8)
+    }
     try "---\nfeature: NNN\ntitle: skeleton\nphase: null\nstatus: Planned\nupdated: YYYY-MM-DD\n---\n"
         .write(to: root.appendingPathComponent("Specs/_template/plan.md"), atomically: true, encoding: .utf8)
     let dateLine = omitADRDate ? "" : "date: 2026-05-07\n"
@@ -206,6 +212,241 @@ private func makeTree(status: String = "Implemented", feature: String = "002",
     let out = Tables.adrTable([ADRRow(number: "0002", title: "A choice", status: "Superseded",
                                       date: "2026-05-07", file: "0002-a-choice.md")])
     #expect(out.contains("| 0002 | [A choice](0002-a-choice.md) | Superseded | 2026-05-07 |"))
+}
+
+// MARK: - Sibling checks
+
+private let siblingSpec = """
+# Spec — a thing
+
+### Acceptance scenarios
+
+1. **Given** x, **when** y, **then** z — covers FR-001, FR-002.
+
+- **FR-001** First requirement.
+- **FR-002** Second requirement.
+- **SC-001** A measurable outcome.
+"""
+
+private let siblingTasks = """
+# Tasks
+
+- [ ] T001 Do the first thing (FR-001)
+- [ ] T002 Do the second thing (FR-002)
+"""
+
+@Test func siblingsWithoutFrontmatterAndFullCoveragePass() throws {
+    let root = try makeTree(planExtra: "Verifies SC-001.",
+                            siblings: ["spec.md": siblingSpec, "tasks.md": siblingTasks])
+    defer { try? FileManager.default.removeItem(at: root) }
+    let report = Indexer(development: root).run(check: false)
+    #expect(report.errors.isEmpty)
+}
+
+@Test func aSiblingWithFrontmatterIsRejected() throws {
+    let root = try makeTree(siblings: ["spec.md": "---\nstatus: Planned\n---\n# Spec\n"])
+    defer { try? FileManager.default.removeItem(at: root) }
+    let report = Indexer(development: root).run(check: false)
+    #expect(report.errors.contains { $0.contains("sibling files carry no frontmatter") })
+}
+
+@Test func aRequirementNoTaskCitesIsRejected() throws {
+    let root = try makeTree(planExtra: "SC-001",
+                            siblings: ["spec.md": siblingSpec,
+                                       "tasks.md": "- [ ] T001 Only the first (FR-001)\n"])
+    defer { try? FileManager.default.removeItem(at: root) }
+    let report = Indexer(development: root).run(check: false)
+    #expect(report.errors.contains { $0.contains("FR-002 is defined in spec.md but never cited") })
+}
+
+@Test func aCitedRequirementTheSpecDoesNotDefineIsRejected() throws {
+    let root = try makeTree(planExtra: "SC-001",
+                            siblings: ["spec.md": siblingSpec,
+                                       "tasks.md": "- [ ] T001 (FR-001, FR-099)\n- [ ] T002 (FR-002)\n"])
+    defer { try? FileManager.default.removeItem(at: root) }
+    let report = Indexer(development: root).run(check: false)
+    #expect(report.errors.contains { $0.contains("FR-099 is cited but spec.md defines no such requirement") })
+}
+
+@Test func anOutcomeThePlanNeverVerifiesIsRejected() throws {
+    let root = try makeTree(siblings: ["spec.md": siblingSpec, "tasks.md": siblingTasks])
+    defer { try? FileManager.default.removeItem(at: root) }
+    let report = Indexer(development: root).run(check: false)
+    #expect(report.errors.contains { $0.contains("SC-001 is defined in spec.md but never cited") })
+}
+
+@Test func aSpecWithoutTasksChecksRequirementsAgainstThePlan() throws {
+    let root = try makeTree(planExtra: "FR-001, FR-002, SC-001",
+                            siblings: ["spec.md": siblingSpec])
+    defer { try? FileManager.default.removeItem(at: root) }
+    let report = Indexer(development: root).run(check: false)
+    #expect(report.errors.isEmpty)
+}
+
+@Test func aSpecWithoutTasksStillRequiresCoverageInThePlan() throws {
+    let root = try makeTree(planExtra: "SC-001", siblings: ["spec.md": siblingSpec])
+    defer { try? FileManager.default.removeItem(at: root) }
+    let report = Indexer(development: root).run(check: false)
+    #expect(report.errors.contains { $0.contains("FR-002 is defined in spec.md but never cited") })
+}
+
+@Test func anUnreadableSiblingReportsTheSystemsReason() throws {
+    let root = try makeTree(siblings: ["research.md": "# R\n"])
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("Specs/002-thing/research.md")
+    try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: file.path)
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.path) }
+    let report = Indexer(development: root).run(check: false)
+    #expect(report.errors.contains { $0.contains("research.md") })
+}
+
+@Test func frontmatterAfterCRLFIsStillFrontmatter() throws {
+    let root = try makeTree(siblings: ["research.md": "\r\n---\nstatus: Planned\n---\n# R\n"])
+    defer { try? FileManager.default.removeItem(at: root) }
+    let report = Indexer(development: root).run(check: false)
+    #expect(report.errors.contains { $0.contains("sibling files carry no frontmatter") })
+}
+
+@Test func anOutcomeThePlanCitesButTheSpecDoesNotDefineIsRejected() throws {
+    let root = try makeTree(planExtra: "SC-001 and SC-099",
+                            siblings: ["spec.md": siblingSpec, "tasks.md": siblingTasks])
+    defer { try? FileManager.default.removeItem(at: root) }
+    let report = Indexer(development: root).run(check: false)
+    #expect(report.errors.contains { $0.contains("SC-099 is cited but spec.md defines no such outcome") })
+}
+
+@Test func frontmatterAfterALeadingBlankLineIsStillFrontmatter() throws {
+    let root = try makeTree(siblings: ["research.md": "\n---\nstatus: Planned\n---\n# R\n"])
+    defer { try? FileManager.default.removeItem(at: root) }
+    let report = Indexer(development: root).run(check: false)
+    #expect(report.errors.contains { $0.contains("sibling files carry no frontmatter") })
+}
+
+@Test func aPlainTextCrossReferenceIsNotTreatedAsADefinition() throws {
+    // The spec mentions FR-002 of another feature in prose; only the bold
+    // **FR-NNN** form defines one, so tasks.md owes no citation for it.
+    let spec = "# Spec\n\n- **FR-001** The only requirement.\n\nSee also 003's FR-002.\n- **SC-001** An outcome.\n"
+    let root = try makeTree(planExtra: "SC-001",
+                            siblings: ["spec.md": spec,
+                                       "tasks.md": "- [ ] T001 (verifies FR-001)\n"])
+    defer { try? FileManager.default.removeItem(at: root) }
+    let report = Indexer(development: root).run(check: false)
+    #expect(report.errors.isEmpty)
+}
+
+@Test func aQualifiedCiteToAnotherFeatureIsNotDangling() throws {
+    // `003/FR-004` and `003's FR-004` point at the other feature's spec; a bare
+    // FR-004 in the same file would still be dangling — only qualified forms
+    // are exempt.
+    let root = try makeTree(planExtra: "SC-001 and 003/FR-004",
+                            siblings: ["spec.md": siblingSpec,
+                                       "tasks.md": siblingTasks
+                                        + "- [ ] T003 See 003's FR-009 (FR-001)\n"])
+    defer { try? FileManager.default.removeItem(at: root) }
+    let report = Indexer(development: root).run(check: false)
+    #expect(report.errors.isEmpty)
+}
+
+@Test func anAdrThePlanListsButDoesNotExistIsRejected() throws {
+    let root = try makeTree(planExtra: "")
+    defer { try? FileManager.default.removeItem(at: root) }
+    // The fixture writes no adrs: field; add one naming a record that is not there.
+    let plan = root.appendingPathComponent("Specs/002-thing/plan.md")
+    let text = try String(contentsOf: plan, encoding: .utf8)
+    try text.replacingOccurrences(of: "updated: 2026-08-31", with: "updated: 2026-08-31\nadrs: [0001, 0007]")
+        .write(to: plan, atomically: true, encoding: .utf8)
+    let report = Indexer(development: root).run(check: false)
+    #expect(report.errors.contains { $0.contains("adrs lists 0007 but no such record exists") })
+    #expect(!report.errors.contains { $0.contains("adrs lists 0001") })
+}
+
+@Test func researchCitingAnUndefinedRequirementIsRejected() throws {
+    let root = try makeTree(planExtra: "SC-001",
+                            siblings: ["spec.md": siblingSpec, "tasks.md": siblingTasks,
+                                       "research.md": "# R\n\nEvidence for FR-042.\n"])
+    defer { try? FileManager.default.removeItem(at: root) }
+    let report = Indexer(development: root).run(check: false)
+    #expect(report.errors.contains { $0.contains("FR-042 is cited but spec.md defines no such requirement") })
+}
+
+@Test func tasksCitingARequirementWithNoSpecToDefineItIsRejected() throws {
+    let root = try makeTree(siblings: ["tasks.md": "- [ ] T001 (FR-001)\n"])
+    defer { try? FileManager.default.removeItem(at: root) }
+    let report = Indexer(development: root).run(check: false)
+    #expect(report.errors.contains { $0.contains("FR-001 is cited but spec.md defines no such requirement") })
+}
+
+@Test func anUnreadableTasksFileDoesNotCascadeIntoCoverageErrors() throws {
+    let root = try makeTree(planExtra: "SC-001",
+                            siblings: ["spec.md": siblingSpec, "tasks.md": siblingTasks])
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("Specs/002-thing/tasks.md")
+    try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: file.path)
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.path) }
+    let report = Indexer(development: root).run(check: false)
+    #expect(report.errors.contains { $0.contains("tasks.md") && !$0.contains("never cited") })
+    #expect(!report.errors.contains { $0.contains("never cited") })
+}
+
+@Test func aTemplateMarkerInANumberedFolderIsRejected() throws {
+    let root = try makeTree(siblings: ["research.md": "<!--\nDelete this comment before committing.\n-->\n# R\n"])
+    defer { try? FileManager.default.removeItem(at: root) }
+    let report = Indexer(development: root).run(check: false)
+    #expect(report.errors.contains { $0.contains("\"Delete this comment\" marker was not removed") })
+}
+
+@Test func coverageMapsRequirementsToTasksTestsAndScenarios() throws {
+    let spec = """
+    # Spec
+
+    ### Acceptance scenarios
+
+    1. **Given** x, **when** y, **then** z — covers FR-001
+
+    - **FR-001** First.
+    - **FR-002** Second.
+    - **SC-001** An outcome.
+    """
+    let tasks = """
+    - [ ] T001 Build it (FR-001)
+      continuation line
+    - [ ] T002 [P] Tests for it — `Sources/XTests/FooTests.swift` (verifies FR-001, FR-002)
+    """
+    let root = try makeTree(planExtra: "SC-001",
+                            siblings: ["spec.md": spec, "tasks.md": tasks])
+    defer { try? FileManager.default.removeItem(at: root) }
+    let report = Indexer(development: root).run(check: false)
+    let text = report.coverage.joined(separator: "\n")
+    #expect(text.contains("2/2 requirements cited, 2/2 test-verified, 1/1 outcomes verified"))
+    #expect(text.contains("FR-001 → T001, T002 · tests: T002 · scenario: 1"))
+    #expect(text.contains("FR-002 → T002 · tests: T002 · scenario: —"))
+    #expect(text.contains("SC-001 → plan.md ✓"))
+}
+
+@Test func aRequirementVerifiedOnlyByAScenarioWarns() throws {
+    // A scenario is a verification path — demonstrated on-device — so this is a
+    // warning, not an error; but the gap in automated coverage is still said
+    // plainly rather than folded into a citation count.
+    let root = try makeTree(planExtra: "SC-001",
+                            siblings: ["spec.md": siblingSpec,
+                                       "tasks.md": "- [ ] T001 (FR-001)\n- [ ] T002 (FR-002)\n"])
+    defer { try? FileManager.default.removeItem(at: root) }
+    let report = Indexer(development: root).run(check: false)
+    #expect(report.warnings.contains { $0.contains("FR-001") && $0.contains("no `verifies` cite") })
+    #expect(report.warnings.contains { $0.contains("FR-002") && $0.contains("no `verifies` cite") })
+    #expect(report.errors.isEmpty)
+}
+
+@Test func aRequirementWithNoVerificationPathIsAnError() throws {
+    // Neither a `verifies` cite nor an acceptance scenario — the requirement is
+    // named but nothing anywhere checks it, which is a failure, not a warning.
+    let spec = "# Spec\n\n- **FR-001** Cited but unverifiable.\n- **SC-001** An outcome.\n"
+    let root = try makeTree(planExtra: "SC-001",
+                            siblings: ["spec.md": spec,
+                                       "tasks.md": "- [ ] T001 Do it (FR-001)\n"])
+    defer { try? FileManager.default.removeItem(at: root) }
+    let report = Indexer(development: root).run(check: false)
+    #expect(report.errors.contains { $0.contains("FR-001") && $0.contains("no verification path") })
 }
 
 // MARK: - Nesting
