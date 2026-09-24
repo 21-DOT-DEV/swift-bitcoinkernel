@@ -7,7 +7,7 @@ library's API reference lives in the DocC catalogs under `Sources/*/`.
 |---|---|---|
 | [`constitution.md`](constitution.md) | The development charter | How we build: principles, MUST/SHOULD/MAY, governance |
 | [`Roadmap/`](Roadmap/README.md) | Phase plan and phase files | What we build and in what order |
-| [`Specs/`](Specs/README.md) | One `plan.md` per feature | How a single feature gets built |
+| [`Specs/`](Specs/README.md) | One folder per feature — `plan.md` required, `spec.md`/`tasks.md`/`research.md` siblings added by role | How a single feature gets built |
 | [`ADRs/`](ADRs/README.md) | Architecture decision records | Why a durable choice was made, and what it replaced |
 
 ## What goes where

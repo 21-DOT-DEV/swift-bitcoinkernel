@@ -1,9 +1,24 @@
 # Specs
 
-One numbered folder per feature (`NNN-slug/`) holding a single `plan.md`. The
-number is a stable global counter, independent of roadmap re-phasing; a plan's
-roadmap phase lives in its frontmatter, not its path. Features that are tooling
-or demo-app work carry no phase.
+One numbered folder per feature (`NNN-slug/`). `plan.md` is the required,
+indexed artifact — it alone feeds the generated table below. A feature adds
+siblings beside the plan by role, not size: `spec.md` for the user-facing WHAT
+(scenarios, `FR-NNN` requirements, `SC-NNN` outcomes), `tasks.md` when the work
+has real ordering, `research.md` when decisions rest on evidence from outside
+this repository. Siblings carry no frontmatter — status lives in `plan.md`
+alone — and the checker enforces the citation contract both ways: every
+`FR-NNN` the spec defines must be cited in `tasks.md` (or `plan.md` when there
+is no tasks file), every `SC-NNN` in `plan.md`, and no file may cite an ID the
+spec never defines — cite another feature's requirement qualified
+(`003/FR-004`) so the rule knows it is foreign. The same run prints a coverage
+map per spec-bearing feature — each requirement → its citing tasks → the test
+tasks → the scenarios that exercise it — so a requirement named only where it
+is never tested is visible rather than silent. The
+[`_template/plan.md`](_template/plan.md) comment describes when each earns its
+place; [`004-sync-watch/`](004-sync-watch/) is a worked example of the full
+split. The number is a stable global counter, independent of roadmap
+re-phasing; a plan's roadmap phase lives in its frontmatter, not its path.
+Features that are tooling or demo-app work carry no phase.
 
 Start from [`_template/plan.md`](_template/plan.md).
 
@@ -46,4 +61,5 @@ disagree. Do not hand-edit it.
 | 001 | App icons for the demo apps | — | In Progress | [plan.md](001-app-icons/plan.md) |
 | 002 | Keep Screen Awake toggle in both demo apps | — | Implemented | [plan.md](002-keep-screen-awake/plan.md) |
 | 003 | Action that runs the node unattended from a Shortcuts automation | — | In Progress | [plan.md](003-node-automation-action/plan.md) |
+| 004 | The long-running action watches the node sync toward the tip | — | Planned | [plan.md](004-sync-watch/plan.md) |
 <!-- END GENERATED INDEX -->

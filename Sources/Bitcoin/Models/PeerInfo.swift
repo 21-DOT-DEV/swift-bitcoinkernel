@@ -75,7 +75,14 @@ public struct PeerInfo: Codable, Sendable, Equatable {
     /// The current height of header pre-synchronization with this peer, or `-1` if no
     /// low-work sync is in progress.
     public let presyncedHeaders: Int?
-    /// The last header we have in common with this peer.
+    /// The best height this peer has announced that we already hold — upstream's
+    /// `nSyncHeight` (`pindexBestKnownBlock`, which only ever points into our own
+    /// block index), so it does not normally exceed our `headers` — it can when
+    /// the peer announced a higher-height, lower-work branch whose headers we
+    /// hold, since `headers` reports the most-work header rather than the
+    /// highest. `-1` until the peer has announced anything we hold. (Upstream's
+    /// help text "the last header we have in common" is imprecise: the index
+    /// entry can be a held header whose block has not yet arrived.)
     public let syncedHeaders: Int
     /// The last block we have in common with this peer.
     public let syncedBlocks: Int

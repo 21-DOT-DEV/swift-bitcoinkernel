@@ -39,6 +39,19 @@ read by the system before the action runs and cannot be decided at run time, and
 because foregrounding exercises the wrong path for an unattended automation, which
 by definition has no screen.
 
+## Correction, 2026-09-23
+
+As first written the record could only intend the pin: no mechanism existed to
+enforce it. iOS 27's `allowedExecutionTargets` (`ExecutionTargets.main`) lets an
+intent declare it must run in the app process, so an extension target appearing
+later cannot silently route a run — and a second daemon against the folder's
+exclusive lock — into a sandbox that cannot hold it. The declaration is not
+wired yet; spec 004's T020 lands it on both intents. Two other details had also
+drifted: background execution is now `supportedModes = .background` on iOS 26+,
+with the deprecated `openAppWhenRun` carried only for the iOS 18–25 runtimes (it
+goes when the floor reaches iOS 26), and the iOS 27 long-running action holds
+the same floor. The decision itself is unchanged.
+
 ## Consequences
 
 No shared container and no data migration are needed while the action runs in the

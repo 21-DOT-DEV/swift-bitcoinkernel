@@ -1,8 +1,16 @@
 # Architecture Decision Records
 
-One file per durable decision, named `NNNN-<slug>.md`. Records are append-only:
-a decision that no longer holds is marked `Superseded` and points at the record
-that replaced it, rather than being edited or deleted.
+One file per durable decision, named `NNNN-<slug>.md`. A decision that no
+longer holds is marked `Superseded` and points at the record that replaced it,
+rather than being edited or deleted. Two kinds of fix are allowed and they are
+not the same: cosmetic edits — typos, formatting, a stale pointer — go in
+place; a factual correction — the record said something that was wrong — is
+appended as a dated `## Correction` section naming what was wrong (see 0006),
+so the record shows when the drift was noticed rather than reading as if it
+had always known. The decision text itself is never edited.
+
+Cite source by symbol name or document section, not `file:line` — line numbers
+churn under edits; a symbol survives them.
 
 A choice belongs here when it stays true after the feature that prompted it has
 shipped and the surrounding code has moved on. Feature-local choices that die

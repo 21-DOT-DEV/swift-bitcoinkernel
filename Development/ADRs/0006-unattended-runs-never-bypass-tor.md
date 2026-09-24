@@ -14,9 +14,10 @@ superseded_by: null
 NodeApp can route through Tor, the anonymity network that hides which computer is
 talking to Bitcoin peers. It is off by default and, when on, must be **fully
 established** before it is usable. Establishing it from cold takes **30–60 seconds**
-(`Projects/AGENTS.md:93`); where recent network-directory data is already cached on
-the device it takes **5–10 seconds**, down from about 40 seconds without it
-(`Projects/Sources/Shared/TorViewModel.swift:400`). A
+(`Projects/AGENTS.md`, "Manual Tor integration testing"); where recent
+network-directory data is already cached on the device it takes **5–10 seconds**,
+down from about 40 seconds without it
+(`TorViewModel.cacheDirectory`'s doc comment). A
 background-triggered action gets roughly 30 seconds in total, so a cold start cannot
 finish inside one window however the wait is written. An unattended run will
 therefore sometimes find the privacy network unavailable within its window.
