@@ -3,7 +3,7 @@ feature: 004
 title: The long-running action watches the node sync toward the tip
 phase: null
 status: Planned
-updated: 2026-09-24
+updated: 2026-10-02
 adrs: [0005, 0006, 0008, 0009]
 ---
 
@@ -74,12 +74,12 @@ seam.
   user-facing terms; decisions-as-pure-functions keeps the TDD seam.
 - **Principle VI** (CI): unit tests on every decision function — and the
   meter's honesty invariants — run on both platforms: `Progress` is
-  Foundation, so T019 drops `ProgressMeter`'s iOS-27 fence rather than
+  Foundation, so T031 drops `ProgressMeter`'s iOS-27 fence rather than
   leaving the bar-honesty tests compiled out on macOS; the device-only
   verification lives in one gated session.
 - **Principle VII** (open source): not a package-API feature — the public
-  artifacts are this Specs set and the ADR updates at T025, which land with
-  the code.
+  artifacts are this Specs set and the ADR updates at T040, which land with
+  the closing device pass, not the code.
 
 No violations; nothing to justify in complexity tracking.
 
@@ -109,8 +109,8 @@ computes it — along with `headers` and `tipTime`; the age is judged against a
 wall-clock `now` the run supplies, injectable beside the duration clock. A run
 that declined, got no answer, or found the node finished — flag clear, no gap,
 tip fresh — returns exactly as today.
-`SyncNodeIntent` passes nothing, so its behaviour is byte-identical; the
-routine stays one.
+`SyncNodeIntent` passes nothing — same path, same pre-existing report fields
+(the two new ones read `notMeasured` and zero); the routine stays one.
 
 ### 3.2 The bound is time; the target is blocks
 
@@ -223,7 +223,7 @@ give-up, so an abandoned call parks ≈0 s; over HTTP the `CookieTransport`
 ceiling sits at 60 s, and the 30 s orphan is *cancelled* —
 `withHardTimeout`'s `work.cancel()` is the one signal `URLSession`
 observes. Orphan lifetime and cancellability are inversely coupled, selected
-per call by a C function — which is why T012 logs the serving transport per
+per call by a C function — which is why T019 logs the serving transport per
 poll: `bitcoin_rpc_ready()` itself is package-internal, so the run reads a
 `bridgeReady` flag `NodeViewModel` records from its bootstrap outcome, and a
 `noProgress` verdict on device cannot attribute its timings without it (an ~11 s
@@ -235,7 +235,7 @@ documents, so the sync budget is a real bound rather than soft by a whole
 pass. The leashes' resolution is the pass cadence: "120 seconds" resolves to
 ~24 passes — a floor, tripped on the first boundary at or after the deadline —
 stated so the constant is not over-trusted. Sleeps carry a
-policy, set while T015 threads the clock through the loops: of the ~540 timed
+policy, set while T018 threads the clock through the loops: of the ~540 timed
 wakeups a watch schedules, only `withHardTimeout`'s ~180 deadline races keep
 `tolerance: nil` — "late answers are timeouts" is load-bearing — while the
 cadence and heartbeat sleeps take ~1 s, letting the system coalesce them with
@@ -292,9 +292,9 @@ compression the first-answer ramp writes ~10 distinct notches across the wait
 rather than ~90, so ~38 of the meter's 50 heartbeat units are spent before the
 watch begins — ~60 s of numeric coverage against a 900 s watch — while
 `heartbeatCoverageExceedsWait`, which ticks a fresh meter dry, keeps passing.
-The re-pointed guard (T019) simulates the compressed ramp and asserts coverage
+The re-pointed guard (T032) simulates the compressed ramp and asserts coverage
 across `waitForFirstAnswer + syncBudget`, written to fail on the pre-004
-layout — the phase's red-first — whichever branch the experiment takes
+layout — the meter work's red-first — whichever branch the experiment takes
 ([research §4](./research.md)).
 
 The card's words need the same invariants the numbers have. The meter gains
@@ -361,7 +361,7 @@ connect time, so a tip crossing 24 h mid-session keeps the confirmations
 earlier-connecting peers already recorded, while a chain stale the whole
 time gathers none — the flag-admitted quiet chain keeps its `noProgress`.
 The leash assumes two confirmations complete well inside ~240 s — unmeasured
-over Tor on a locked device with a stale address book; T024 times it and
+over Tor on a locked device with a stale address book; T039 times it and
 carries the contingent fix.
 
 A live copy of Core's leave-IBD test (`chainwork` ≥ the network minimum, tip
@@ -445,8 +445,9 @@ separate, additive field:
 ```
 
 `NodeSyncResult` is an `AppEnum` over the FR-005 case set — explicit raw
-strings, a completeness test,
-append-only per the slice-6 pattern. `nodeStopped` names exactly what it means;
+strings, a completeness test, append-only like `NodeRunOutcome` before it —
+`AppEnum` raw values persist by string, so cases may be added but never
+renamed or renumbered ([research §6](./research.md)). `nodeStopped` names exactly what it means;
 "the run was stopped" cannot occur (a run-stop throws `CancellationError` and
 produces no report). A sixth case, `notMeasured`, is what the field reads when
 the run has no sync answer — declined before the weigh-in, no answer before
@@ -490,7 +491,7 @@ A Tor that readies does not jump to start — the run *re-decides*: node state,
 device conditions, and the step itself are re-read, because ninety seconds is
 long enough for the person to have started the node or the network to have gone
 metered. Settings are deliberately *not* in that list — they were snapshotted
-once at entry (T001, widened from `tor_enabled` alone to every key
+once at entry (T002, widened from `tor_enabled` alone to every key
 `buildArguments` consults), so a mid-grace change applies to the next run
 rather than re-scoping this one mid-flight — `bitcoin_network` included, whose
 flip would otherwise start a chain the regtest gate never weighed and leave
@@ -517,8 +518,8 @@ says is unchanged.
 
 ## Verification
 
-All on a physical device, screen locked, per ADR 0008 — executed as the gated
-Phase 6 in [tasks.md](./tasks.md):
+All on a physical device, screen locked, per ADR 0008 — executed as the
+device-check group (T038–T040) in [tasks.md](./tasks.md):
 
 - [ ] Node behind on signet: the watch runs, the bar visibly climbs from where
      start-up left it (not pinned near full), the detail line reads "block X of
@@ -538,7 +539,7 @@ Phase 6 in [tasks.md](./tasks.md):
 - [ ] First experiment, before the meter redesign: does a text-only write
      (`localizedAdditionalDescription`) satisfy the system's liveness check —
      `BGContinuedProcessingTask`'s expiration? Text-only, numeric-only, and
-     both on a locked device — Phase 4's size depends on the answer.
+     both on a locked device — T032's size depends on the answer.
 - [ ] Node stopped from the app's own UI mid-watch: the run ends on the normal
      measured report — earned outcome, last good reading, `syncResult` =
      `nodeStopped` — never a blanked `noAnswer` or a false `noProgress`.
@@ -557,7 +558,7 @@ Phase 6 in [tasks.md](./tasks.md):
      the warm restart: the first answer shows flag clear and no gap, yet the
      tip-age leg still enters the watch, and when the fetched gap closes the
      run ends `caughtUp` rather than an early `notMeasured` return. The device
-     pass needs the phone left idle for hours beforehand — its own T024 item.
+     pass needs the phone left idle for hours beforehand — its own T039 item.
 - [ ] The warm restart on a quiet signet — headers never advance because
      nothing new exists: at least two outbound block-serving peers report
      `synced_headers == headers` and the run ends `caughtUp`, not
@@ -593,7 +594,7 @@ Phase 6 in [tasks.md](./tasks.md):
      inheriting the background task's QoS; observe memory and energy on a
      locked run.
 - [ ] The serving transport is logged per poll — a `noProgress` or slow verdict
-     attributes to a 30 s or a 60 s ceiling; the timings feeding T025's ADR
+     attributes to a 30 s or a 60 s ceiling; the timings feeding T040's ADR
      0008 re-measure are meaningless without it.
 - [ ] ADR 0008 timings and ADR 0009 survival re-measured and the records
      updated.
@@ -631,10 +632,10 @@ Phase 6 in [tasks.md](./tasks.md):
   condition, covered by tests on the decision functions.
 - **The feature certifies the foundations it stands on.** The leash and
   budget constants rest on ADRs 0008 and 0009, both still `Proposed` — and
-  T025's locked-device re-measure is what moves them to `Accepted`. A
+  T040's locked-device re-measure is what moves them to `Accepted`. A
   measurement that disagrees reopens the constants, not just the records;
-  the slicing table marks the dependent slices provisional for exactly this
-  reason.
+  the tasks resting on these numbers are marked `provisional on T040` for
+  exactly this reason.
 - **A dead node could pile up abandoned questions.** It cannot — for a reason
   that splits cleanly per transport. The poll loop is sequential (ask, answer
   or timeout, sleep to the next tick), so nothing overlaps unless a call is
@@ -642,7 +643,7 @@ Phase 6 in [tasks.md](./tasks.md):
   orphan parks ≈0 s; over HTTP — the expected locked-device path — the 30 s
   orphan is *cancelled*, `URLSession` being the one transport
   `withHardTimeout`'s `work.cancel()` reaches. Neither path accumulates;
-  T016's re-derived comment records both halves.
+  T029's re-derived comment records both halves.
 
 ## Deferred work
 
@@ -692,5 +693,5 @@ Every decision — the fraction, stall, ending choice, wording — lives in
 `NodeAutomation` as plain values, unit-tested on every platform in CI.
 `NodeRun` orchestrates: it polls, it measures, it writes the card. Anything
 touching the system's patience, the card, or suspension is verifiable only on a
-locked device — the gated Phase 6 session, which also re-measures ADRs 0008 and
-0009.
+locked device — the gated device-check session, which also re-measures ADRs
+0008 and 0009.

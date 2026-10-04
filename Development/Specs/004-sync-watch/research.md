@@ -182,7 +182,7 @@ is dead peers, a lost network, a wedged validation thread.
   `BGContinuedProcessingTask` — `performBackgroundTask(options:operation:)`
   hands the work to it — and `IntentCancellationReason.timeout` states plainly
   that a run that stops reporting progress is cancelled at roughly thirty
-  seconds. That expiration behavior is the T023 experiment's concrete target.
+  seconds. That expiration behavior is the T038 experiment's concrete target.
   The *total* run ceiling is unpublished — the run must bound itself
   (~21 minutes worst case: preflight + private-network grace + first-answer
   wait + watch budget).
@@ -241,7 +241,7 @@ is dead peers, a lost network, a wedged validation thread.
   than ~90, so ticks fire ~38 times during it — ~38 of the meter's 50 units
   gone before the watch begins, ~60 s of numeric coverage for a 900 s watch.
   `heartbeatCoverageExceedsWait` ticks a fresh meter dry — it models the
-  pre-band layout and passes either way, so the re-point (T019) simulates the
+  pre-band layout and passes either way, so the re-point (T032) simulates the
   compressed ramp and asserts across `waitForFirstAnswer + syncBudget`, red on
   the old model today. The intent's own comment predicted the `questionBudget`
   growth `watchQuestionBudget` is; the re-derived guard names it.
@@ -249,7 +249,7 @@ is dead peers, a lost network, a wedged validation thread.
   unattended path `NodeAutomation.startArguments` throws
   `privateNetworkNotReady` before `buildArguments` runs, so `tor_enabled`
   true with a nil proxy never reaches the silent omit the builder's doc
-  describes. ADR 0006's floor is enforced; T001's snapshot widens the same
+  describes. ADR 0006's floor is enforced; T002's snapshot widens the same
   guarantee from the Tor flag to every settings key.
 
 ## 5. Conditions-policy evidence
@@ -287,7 +287,7 @@ is dead peers, a lost network, a wedged validation thread.
 
 - **`blocksSinceLastCheck` keeps run-boundary discipline.** `lastKnown` is
   written once at report time, never per-poll — and only on the path that
-  actually returns `.result(value:)`. T028 moves the write out of
+  actually returns `.result(value:)`. T005 moves the write out of
   `measuredReport`: today it precedes the last `answerIsStillWanted` guard,
   so a run cancelled or node-stopped in that window advances the baseline
   while reporting nothing — and the `.timeout` discard would silently drop a
@@ -309,12 +309,12 @@ is dead peers, a lost network, a wedged validation thread.
   `String` yields no extractable key, so the sentence cannot be translated at
   all; it must be built from a `LocalizedStringResource` template
   interpolating the report's values. That is a bug fix on the already-shipped
-  short action (T027), and it fixes the shape T009's summary sentences are
+  short action (T004), and it fixes the shape T015's summary sentences are
   written in — which is why it lands ahead of them. The report's `summary`
   stays `String` — an existing `@Property` other fields share; re-typing would
   break automations. Open item: `AppShortcut` phrases may require a dedicated
   `AppShortcuts.xcstrings` rather than the general catalog — verify while
-  wiring (T022); if so the phrase-localization follow-up (003) needs its own
+  wiring (T035); if so the phrase-localization follow-up (003) needs its own
   file.
 - **`syncResult` is non-optional with an explicit `notMeasured` case.** The
   open question was whether `Optional<some AppEnum>` satisfies

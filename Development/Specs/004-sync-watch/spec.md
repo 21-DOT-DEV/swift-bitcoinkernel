@@ -218,9 +218,10 @@ what a number can falsify. The plan's Verification checklist cites each one.
 - **SC-004** The worst-case run self-bounds at ≈21 minutes, and a fresh
   progress write lands every ~5 s throughout — the system never needs to kill
   the run for silence.
-- **SC-005** An unbudgeted run (the short action) emits report fields and
-  progress writes identical to the pre-feature behavior — verifiable as a
-  test assertion on the unbudgeted path, not a judgement call.
+- **SC-005** An unbudgeted run (the short action) emits its pre-existing
+  report fields and progress writes identical to the pre-feature behavior —
+  the two new fields read `notMeasured` and zero — verifiable as a test
+  assertion on the unbudgeted path, not a judgement call.
 
 ## Edge cases
 
@@ -279,7 +280,7 @@ what a number can falsify. The plan's Verification checklist cites each one.
   design enforces (a second process could never start against the locked
   chain folder). It is platform enforcement of a standing decision, not
   feature behavior, so it is recorded here rather than as a requirement.
-- The Tor-toggle start-hole fix (T001) is a separate bugfix landing ahead of
+- The Tor-toggle start-hole fix (T002) is a separate bugfix landing ahead of
   this feature — the watch widens its exposure but does not create it; it
   carries no requirement here because it is not feature behavior.
 - Verification happens on signet — the chain whose miner stalls exercise the
