@@ -72,8 +72,27 @@ enum NodeRun {
         waitForFirstAnswer: Duration,
         onProgress: @MainActor (Double) -> Void = { _ in }
     ) async -> NodeRunReport {
-        let privacyEnabled = UserDefaults.standard.bool(forKey: "tor_enabled")
-        log.notice("run: entered, privacy network enabled = \(privacyEnabled, privacy: .public)")
+        // Every setting the run is allowed to see is read once, here, before the
+        // first suspension point: a run spans tens of seconds, and a toggle
+        // landing in that window must not rewrite what it launches — a changed
+        // `bitcoin_network` would start a chain the launch decision below never
+        // covered, and a changed `tor_enabled` would decide privacy on intent
+        // the person has already reversed. Screens keep reading live; a run
+        // sees this snapshot.
+        //
+        // One deliberate exception: the privacy *floor* is re-read at the
+        // launch boundary in `start` — the only read of a live setting this
+        // file makes. A toggle flipped *on* mid-run must never be answered
+        // with a direct connection (that direction leaks the person's
+        // address), while a toggle flipped *off* after the snapshot required
+        // privacy still requires it — a decline is recoverable and a leak is
+        // not. See `start` and ADR 0006.
+        let settings = DaemonConfig.Snapshot(reading: .standard)
+        // The step decision weighs the snapshot's privacy setting; `start`
+        // tightens it to snapshot-or-live at the launch boundary — the two
+        // deliberately differ, so this local keeps the narrower name.
+        let snapshotPrivacy = settings.torEnabled
+        log.notice("run: entered, snapshot says privacy network enabled = \(snapshotPrivacy, privacy: .public)")
 
         // A cancelled task still runs until it checks — a run called off before
         // it began would otherwise launch the node (or the private network) on
@@ -90,7 +109,7 @@ enum NodeRun {
 
         let step = NodeAutomation.step(
             nodeState: session.node.nodeState,
-            privacyEnabled: privacyEnabled,
+            privacyEnabled: snapshotPrivacy,
             privacyReady: session.tor.isReady
         )
 
@@ -125,17 +144,34 @@ enum NodeRun {
                 session: session, within: waitForFirstAnswer, onProgress: onProgress)
 
         case .waitForPrivateNetwork:
+            // The step was decided before the device-condition read, which can
+            // suspend for seconds — long enough for an in-flight bootstrap to
+            // finish. A network that is ready now means there is nothing to
+            // wait for, and declining "not ready" would be a lie at report
+            // time; take the start path and let its own checks run.
+            if session.tor.isReady {
+                return await start(
+                    session: session, settings: settings,
+                    waitForFirstAnswer: waitForFirstAnswer, onProgress: onProgress)
+            }
             // Spend the run establishing the private network rather than starting on a
             // direct connection, which would expose the person's home network address
-            // after they asked it not to.
-            log.notice("run: private network not ready — starting it, not starting the node")
-            session.tor.start()
+            // after they asked it not to. Which sentence the person gets — and the
+            // log — depends on the live setting: still on means the network is
+            // genuinely coming up; switched off mid-run means nothing is being
+            // established, and saying so would be a lie in both places.
+            let stillEnabled = session.startTorIfStillEnabled()
+            if stillEnabled {
+                log.notice("run: private network not ready — starting it, not starting the node")
+            } else {
+                log.notice("run: private network was turned off mid-run — not starting the node")
+            }
             return declined(
-                reason: NodeAutomation.StartRefusal.privateNetworkNotReady.message)
+                reason: NodeAutomation.StartRefusal(stillEnabled: stillEnabled).message)
 
         case .startNode:
             return await start(
-                session: session, privacyEnabled: privacyEnabled,
+                session: session, settings: settings,
                 waitForFirstAnswer: waitForFirstAnswer, onProgress: onProgress)
         }
     }
@@ -144,30 +180,61 @@ enum NodeRun {
 
     private static func start(
         session: NodeSession,
-        privacyEnabled: Bool,
+        settings: DaemonConfig.Snapshot,
         waitForFirstAnswer: Duration,
         onProgress: @MainActor (Double) -> Void
     ) async -> NodeRunReport {
-        let argumentsOrRefusal = Result {
-            try NodeAutomation.startArguments(
-                privacyEnabled: privacyEnabled,
-                proxyAddress: session.tor.proxyAddress,
-                build: { DaemonConfig.buildArguments(torProxy: $0) })
-        }
-        guard case let .success(arguments) = argumentsOrRefusal else {
-            // The guard exists because the shared argument builder simply omits the
-            // proxy when no address is present, which unattended would start the node
-            // on a direct connection. It is live rather than vestigial: the
-            // device-condition read suspends on the first network report, and the
-            // private network can drop in that window — after the step decision has
-            // already committed to starting. (While that read could not suspend,
-            // the guard genuinely was unreachable.) If reached, nudge the network
-            // back up (a no-op while a retry is already pending) and decline with
-            // the same sentence the deliberate wait-for-it path uses.
-            log.error("run: refused to start without the private network")
-            session.tor.start()
-            return declined(
-                reason: NodeAutomation.StartRefusal.privateNetworkNotReady.message)
+        // Privacy fails closed at the launch boundary — the one place this file
+        // re-reads a live setting beside the snapshot. If the person turned Tor
+        // *on* after the run entered (snapshot says off, live says on), starting
+        // on a direct connection now would leak their home network address
+        // moments after they asked for privacy. Turned *off* mid-flight, the
+        // run declines instead: the preference write lands a step before the
+        // screen tears the network down, so a still-reporting endpoint cannot
+        // be trusted — `startArguments` declines the split before the proxy
+        // floor is even checked. The decision itself lives in `NodeAutomation`
+        // and is tested (ADR 0006).
+        let liveEnabled = UserDefaults.standard.bool(forKey: "tor_enabled")
+        let privacyEnabled = NodeAutomation.requiresPrivateNetwork(
+            snapshotEnabled: settings.torEnabled,
+            liveEnabled: liveEnabled)
+        // `buildArguments` gates `-proxy=` on the snapshot's own tor flag, so it
+        // is fed the effective one — a live-on tightening must actually put the
+        // proxy in the arguments, not just pass the check below.
+        var effectiveSettings = settings
+        effectiveSettings.torEnabled = privacyEnabled
+        let arguments: [String]
+        do {
+            arguments = try NodeAutomation.startArguments(
+                snapshotEnabled: settings.torEnabled,
+                liveEnabled: liveEnabled,
+                // The address is offered only while the network is actually
+                // usable: a Tor on its way down keeps reporting its old endpoint
+                // until teardown finishes, so `proxyAddress` alone would bind
+                // the node to a proxy that dies seconds after launch — and with
+                // `-proxy=` set the daemon has no direct fallback, which makes a
+                // dead launch reported as started strictly worse than a decline.
+                proxyAddress: session.tor.isReady ? session.tor.proxyAddress : nil,
+                build: {
+                    DaemonConfig.buildArguments(settings: effectiveSettings, torProxy: $0)
+                })
+        } catch let refusal {
+            // The refusal exists because the shared argument builder simply omits
+            // the proxy when no address is present, which unattended would start
+            // the node on a direct connection. It is live rather than vestigial:
+            // the device-condition read suspends on the first network report, and
+            // the private network can drop — or be switched off — in that window,
+            // after the step decision has already committed to starting. (While
+            // that read could not suspend, the check genuinely was unreachable.)
+            // `throws(StartRefusal)` lets the compiler prove this is the only
+            // branch — report the verdict the builder rendered rather than
+            // re-derive it from a second read — and re-arm the network only for
+            // the not-ready answer, whose sentence promises it is being
+            // established; a turned-off refusal promises nothing, and nudges
+            // nothing.
+            log.error("run: refused to start — \(String(describing: refusal), privacy: .public)")
+            if refusal == .privateNetworkNotReady { session.startTorIfStillEnabled() }
+            return declined(reason: refusal.message)
         }
 
         // The height recorded before this run, so the report can say what arrived since

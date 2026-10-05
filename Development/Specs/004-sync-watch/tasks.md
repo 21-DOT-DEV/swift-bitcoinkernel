@@ -44,7 +44,7 @@ not a source of commits to replay.
   `Sources/NodeApp/NodeAutomation.swift`, `DaemonConfig.swift`,
   `Sources/NodeAppTests/{DaemonConfigTests,NodeAutomationTests}.swift` ·
   ref `LONG-PHASE-0`
-- [ ] T002 Capture the `DaemonConfig.Snapshot` T001 provides, once at
+- [x] T002 Capture the `DaemonConfig.Snapshot` T001 provides, once at
   `NodeRun.perform` entry, and launch from it alone — so the ~90 s grace
   can't widen a millisecond race into a 90-second one, and a mid-grace
   chain flip can't start a chain the run's launch decision never covered;
@@ -53,8 +53,21 @@ not a source of commits to replay.
   gates `-proxy=` on that flag, so a live-on flip that skips the
   write-back launches direct); Tor checks fail closed via
   `NodeSession.startTorIfStillEnabled()` and a start failure no longer
-  resurrects a just-disabled Tor (~200) · `Sources/NodeApp/NodeRun.swift`,
-  `NodeSession.swift` · needs T001 · ref `LONG-PHASE-0`
+  resurrects a just-disabled Tor. Landed with three refinements past the
+  reference: the refusal gate is fed a readiness-filtered proxy
+  (`isReady ? proxyAddress : nil`), because a Tor mid-teardown still
+  reports its old endpoint and `-proxy=` has no direct fallback — a dead
+  launch reported as started is worse than a decline — and
+  `waitForPrivateNetwork` re-checks readiness at dispatch, so a network
+  that came up during the device-condition read takes the start path
+  rather than a false `privateNetworkNotReady` — and a snapshot-on /
+  live-off split declines `privateNetworkTurnedOff` inside
+  `startArguments`, since the off-write lands a step before the screen
+  tears the network down, so a still-reporting endpoint can't be trusted
+  (~200) ·
+  `Sources/NodeApp/{NodeRun,NodeSession,NodeAutomation}.swift`,
+  `Sources/NodeAppTests/NodeAutomationTests.swift` · needs T001 ·
+  ref `LONG-PHASE-0`
 - [ ] T003 [P] Stop tests writing the app's real `UserDefaults` — the test
   isolation fix the reference branch discovered mid-flight (~100) ·
   `Sources/NodeAppTests/` · ref `LONG-PHASE-0`
