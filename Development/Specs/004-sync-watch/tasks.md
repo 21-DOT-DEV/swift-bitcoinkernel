@@ -30,19 +30,31 @@ All of this ran once on `LONG-PHASE-0` (~1,800 changed lines in one branch).
 It is re-implemented fresh at reviewable grain; the branch is the reference,
 not a source of commits to replay.
 
-- [ ] T001 [P] Move the launch-time decisions into `NodeAutomation` as pure
+- [x] T001 [P] Move the launch-time decisions into `NodeAutomation` as pure
   functions — privacy gating, argument build, the Tor-resurrection check —
   ahead of the snapshot changing how they're called; a refactor with no
-  behavior change (~150) · `Sources/NodeApp/NodeAutomation.swift`,
-  `DaemonConfig.swift` · ref `LONG-PHASE-0`
-- [ ] T002 Snapshot every key `buildArguments` consults, once at entry —
-  `bitcoin_network`, `node_type`, `tor_enabled`,
-  `private_broadcast_enabled`, `listen_enabled`, `rpc_auth`, the resource
-  figures — so the ~90 s grace can't widen a millisecond race into a
-  90-second one, and a mid-grace chain flip can't start a network the run
-  never weighed; Tor checks fail closed and a start failure no longer
+  behavior change. Landed as: `DaemonConfig.Snapshot` (every key the builder
+  consults) + `buildArguments(settings:torProxy:)`, with the live-read
+  `buildArguments(torProxy:)` delegating through it; `requiresPrivateNetwork`,
+  `privateNetworkTurnedOff`, and `StartRefusal.init(stillEnabled:)` staged
+  tested-but-unwired — the Tor-resurrection check's *decisions* live here;
+  the check itself (`NodeSession.startTorIfStillEnabled()` and its two call
+  sites) lands with T002's wiring — the settings→args mapping stays in
+  `DaemonConfig`, which the screens share (~270) ·
+  `Sources/NodeApp/NodeAutomation.swift`, `DaemonConfig.swift`,
+  `Sources/NodeAppTests/{DaemonConfigTests,NodeAutomationTests}.swift` ·
+  ref `LONG-PHASE-0`
+- [ ] T002 Capture the `DaemonConfig.Snapshot` T001 provides, once at
+  `NodeRun.perform` entry, and launch from it alone — so the ~90 s grace
+  can't widen a millisecond race into a 90-second one, and a mid-grace
+  chain flip can't start a chain the run's launch decision never covered;
+  write `requiresPrivateNetwork`'s combined answer back into the
+  snapshot's `torEnabled` before building arguments (`buildArguments`
+  gates `-proxy=` on that flag, so a live-on flip that skips the
+  write-back launches direct); Tor checks fail closed via
+  `NodeSession.startTorIfStillEnabled()` and a start failure no longer
   resurrects a just-disabled Tor (~200) · `Sources/NodeApp/NodeRun.swift`,
-  `NodeSession.swift`, `DaemonConfig.swift` · needs T001 · ref `LONG-PHASE-0`
+  `NodeSession.swift` · needs T001 · ref `LONG-PHASE-0`
 - [ ] T003 [P] Stop tests writing the app's real `UserDefaults` — the test
   isolation fix the reference branch discovered mid-flight (~100) ·
   `Sources/NodeAppTests/` · ref `LONG-PHASE-0`

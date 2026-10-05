@@ -20,6 +20,48 @@ private let configLogger = Logger(subsystem: "dev.21.NodeApp", category: "Daemon
 /// to produce validated CLI argument lists.
 enum DaemonConfig {
 
+    /// The settings a single run is allowed to see, frozen at the moment the
+    /// run begins.
+    ///
+    /// An unattended run spans tens of seconds and suspends several times along
+    /// the way; a settings toggle landing in that window must not rewrite what
+    /// the run launches. A changed `bitcoin_network` would start a chain the
+    /// run's launch decision never covered — the toggle was aimed at the next
+    /// start, not at redirecting a launch already in flight — and a changed
+    /// `tor_enabled` would resurrect the private network the person just
+    /// switched off. The on-screen paths read these keys live — a person
+    /// expects their toggle to act immediately — so a run is what captures
+    /// this, once, and passes it in.
+    struct Snapshot: Equatable {
+        var network: BitcoinNetwork
+        var nodeType: NodeType
+        var pruneSizeMB: Double
+        var torEnabled: Bool
+        var privateBroadcastEnabled: Bool
+        var maxMempoolMB: Double
+        var maxConnections: Double
+        /// `nil` means the key was never set — distinct from `true`, because
+        /// only an explicit `false` earns a `-listen=0`.
+        var listenEnabled: Bool?
+        var rpcAuth: String
+
+        init(reading defaults: UserDefaults = .standard) {
+            network = BitcoinNetwork(
+                rawValue: defaults.string(forKey: "bitcoin_network") ?? ""
+            ) ?? .mainnet
+            nodeType = NodeType(
+                rawValue: defaults.string(forKey: "node_type") ?? ""
+            ) ?? .pruned
+            pruneSizeMB = defaults.double(forKey: "prune_size_mb")
+            torEnabled = defaults.bool(forKey: "tor_enabled")
+            privateBroadcastEnabled = defaults.bool(forKey: "private_broadcast_enabled")
+            maxMempoolMB = defaults.double(forKey: "max_mempool_mb")
+            maxConnections = defaults.double(forKey: "max_connections")
+            listenEnabled = defaults.object(forKey: "listen_enabled") as? Bool
+            rpcAuth = defaults.string(forKey: "rpc_auth") ?? ""
+        }
+    }
+
     /// Build daemon arguments from current configuration stored in UserDefaults.
     ///
     /// - Parameter torProxy: The SOCKS proxy address in `"host:port"` format,
@@ -27,6 +69,14 @@ enum DaemonConfig {
     ///   When `nil` and Tor is enabled, the proxy argument is omitted
     ///   (Tor not yet bootstrapped).
     static func buildArguments(torProxy: String? = nil) -> [String] {
+        buildArguments(
+            settings: Snapshot(reading: UserDefaults.standard), torProxy: torProxy)
+    }
+
+    /// Build daemon arguments from a settings snapshot — the form an unattended
+    /// run uses, so nothing it launches can be re-scoped by a toggle landing
+    /// after the run began.
+    static func buildArguments(settings: Snapshot, torProxy: String? = nil) -> [String] {
         // Not fatal here — a caller with a screen in front of it will see the daemon
         // fail on its own — but never silent either. A failure means there is nowhere
         // to write, and the error carries which of the many reasons it was. An
@@ -39,23 +89,19 @@ enum DaemonConfig {
                 "Data directory could not be prepared: \(error.localizedDescription, privacy: .public)"
             )
         }
-        let defaults = UserDefaults.standard
-        let network = BitcoinNetwork(
-            rawValue: defaults.string(forKey: "bitcoin_network") ?? ""
-        ) ?? .mainnet
 
-        return switch network {
-        case .mainnet: configure(.mainnet(), defaults: defaults, torProxy: torProxy)
-        case .testnet: configure(.testnet(), defaults: defaults, torProxy: torProxy)
-        case .signet:  configure(.signet(), defaults: defaults, torProxy: torProxy)
-        case .regtest: configure(.regtest(), defaults: defaults, torProxy: torProxy)
+        return switch settings.network {
+        case .mainnet: configure(.mainnet(), settings: settings, torProxy: torProxy)
+        case .testnet: configure(.testnet(), settings: settings, torProxy: torProxy)
+        case .signet:  configure(.signet(), settings: settings, torProxy: torProxy)
+        case .regtest: configure(.regtest(), settings: settings, torProxy: torProxy)
         }
     }
 
     // MARK: - Private
 
     private static func configure<N>(
-        _ base: BitcoinConfig<N>, defaults: UserDefaults, torProxy: String?
+        _ base: BitcoinConfig<N>, settings: Snapshot, torProxy: String?
     ) -> [String] {
         var config = base
             .server()
@@ -66,12 +112,9 @@ enum DaemonConfig {
             .dataDir(dataDirectory.path(percentEncoded: false))
 
         // Node type
-        let nodeType = NodeType(
-            rawValue: defaults.string(forKey: "node_type") ?? ""
-        ) ?? .pruned
-        switch nodeType {
+        switch settings.nodeType {
         case .pruned:
-            let mb = defaults.double(forKey: "prune_size_mb")
+            let mb = settings.pruneSizeMB
             config = config.prune(.size(mb: UInt(mb > 0 ? mb : 550)))
         case .archival:
             break
@@ -80,32 +123,30 @@ enum DaemonConfig {
         }
 
         // Privacy — proxy comes from TorViewModel's live SOCKS endpoint
-        let torEnabled = defaults.bool(forKey: "tor_enabled")
-        if torEnabled, let proxy = torProxy {
+        if settings.torEnabled, let proxy = torProxy {
             config = config.proxy(proxy)
         }
 
         // -privatebroadcast requires Tor/I2P reachability per Bitcoin Core docs.
         // Gate on both the user preference AND a live proxy so a stale persisted
         // pref can't leak when Tor has been toggled off.
-        if torEnabled, torProxy != nil, defaults.bool(forKey: "private_broadcast_enabled") {
+        if settings.torEnabled, torProxy != nil, settings.privateBroadcastEnabled {
             config = config.privateBroadcast()
         }
 
         // Resources
-        let mempool = defaults.double(forKey: "max_mempool_mb")
+        let mempool = settings.maxMempoolMB
         config = config.maxMempool(UInt(mempool > 0 ? mempool : 300))
 
-        let conns = defaults.double(forKey: "max_connections")
+        let conns = settings.maxConnections
         config = config.maxConnections(UInt(conns > 0 ? conns : 125))
 
-        if let listen = defaults.object(forKey: "listen_enabled") as? Bool, !listen {
+        if let listen = settings.listenEnabled, !listen {
             config = config.listen(false)
         }
 
         // RPC authentication
-        let rpcAuth = defaults.string(forKey: "rpc_auth") ?? ""
-        if let auth = RPCAuth(rawString: rpcAuth) {
+        if let auth = RPCAuth(rawString: settings.rpcAuth) {
             config = config.rpcAuth(auth)
         }
 
