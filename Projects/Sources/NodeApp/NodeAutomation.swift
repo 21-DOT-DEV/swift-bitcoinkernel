@@ -160,10 +160,56 @@ enum NodeAutomation {
         title: "Run cut short",
         detail: "The system ended the run early. The node itself was not stopped.")
 
-    /// Raised when a run is asked to start while the privacy network is on but no
-    /// proxy address exists.
+    /// Whether the launch-time privacy floor is engaged, given the preference
+    /// as the run's snapshot froze it and as it reads right now.
+    ///
+    /// The answer is the OR of the two — privacy fails closed in both
+    /// directions. A person who turns Tor *on* while a run is in flight has
+    /// just asked for privacy; launching direct then would leak their address
+    /// moments after the ask. And a snapshot that required privacy still
+    /// requires it if the toggle was since switched *off* — a mid-flight flip
+    /// never demotes a private launch into a direct one. The worst case of
+    /// either direction is a decline, never a leak (ADR 0006). One of two
+    /// decisions in the file that weigh a live preference beside the
+    /// snapshot — `StartRefusal(stillEnabled:)` reads the same flag to pick
+    /// its sentence. The answer must also be written back into the
+    /// snapshot's `torEnabled` before `buildArguments(settings:)` runs —
+    /// the builder adds `-proxy=` only from that flag, so a live-on flip
+    /// that skips this step passes the check and still launches direct.
+    /// Everything else the run launches from the snapshot alone.
+    ///
+    /// Staged ahead of the snapshot's wiring: nothing calls this until the run
+    /// captures its settings at entry (T002), at which point the snapshot half
+    /// comes from `DaemonConfig.Snapshot`. The live half is a re-read of the
+    /// `tor_enabled` flag — one of two live reads of that flag the wired run
+    /// is allowed, the other being the refusal picker's `stillEnabled`.
+    /// Every other key stays frozen in the snapshot.
+    static func requiresPrivateNetwork(
+        snapshotEnabled: Bool, liveEnabled: Bool
+    ) -> Bool {
+        snapshotEnabled || liveEnabled
+    }
+
+    /// Why a launch was refused for want of the private network: it was on but
+    /// not answering yet, or it had been switched off while the run was in
+    /// flight — two different sentences, because the first promises it is being
+    /// established and the second must not.
     enum StartRefusal: Error, Equatable {
         case privateNetworkNotReady
+        /// The person switched the network off while the run was in flight —
+        /// nothing is being established, so the not-ready sentence would be a lie.
+        case privateNetworkTurnedOff
+
+        /// Which refusal applies when the network is unavailable depends on
+        /// the live setting alone: still on means it is genuinely coming up,
+        /// switched off means nothing is being established — and "being
+        /// established now" would then be a false sentence.
+        ///
+        /// Staged with `privateNetworkTurnedOff`: nothing selects between the
+        /// two until the Tor checks go live in T002.
+        init(stillEnabled: Bool) {
+            self = stillEnabled ? .privateNetworkNotReady : .privateNetworkTurnedOff
+        }
 
         /// The single sentence a person sees, kept beside the case so the
         /// wording cannot drift between the paths that decline for this reason —
@@ -173,6 +219,8 @@ enum NodeAutomation {
             switch self {
             case .privateNetworkNotReady:
                 return "The private network was not ready, so the node did not start. It is being established now; try again shortly."
+            case .privateNetworkTurnedOff:
+                return "The private network was turned off, so the node did not start."
             }
         }
     }

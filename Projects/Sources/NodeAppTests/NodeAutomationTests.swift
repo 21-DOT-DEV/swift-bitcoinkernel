@@ -171,6 +171,39 @@ struct NodeAutomationTests {
         #expect(args == ["-proxy=127.0.0.1:9050"])
     }
 
+    // MARK: - requiresPrivateNetwork(...)
+
+    @Test("privacy is required when either the snapshot or the live setting says so")
+    func privacyRequiredFailsClosed() {
+        // The launch boundary's one live read: a toggle flipped *on* mid-run
+        // engages the floor even though the run's snapshot never saw it, and a
+        // snapshot that required privacy keeps it if the toggle was flipped
+        // *off* — a decline is recoverable, a leak is not (ADR 0006).
+        #expect(NodeAutomation.requiresPrivateNetwork(
+            snapshotEnabled: true, liveEnabled: true))
+        #expect(NodeAutomation.requiresPrivateNetwork(
+            snapshotEnabled: true, liveEnabled: false))
+        #expect(NodeAutomation.requiresPrivateNetwork(
+            snapshotEnabled: false, liveEnabled: true))
+        #expect(NodeAutomation.requiresPrivateNetwork(
+            snapshotEnabled: false, liveEnabled: false) == false)
+    }
+
+    @Test("the refusal picks its case from the live setting, not the snapshot")
+    func startRefusalPicksByLiveSetting() {
+        // Still on → the network is genuinely on its way up; off → nothing is
+        // being established, and the message must not claim it is.
+        #expect(
+            NodeAutomation.StartRefusal(stillEnabled: true) == .privateNetworkNotReady)
+        #expect(
+            NodeAutomation.StartRefusal(stillEnabled: false) == .privateNetworkTurnedOff)
+        // The switched-off sentence must not claim the network "is being
+        // established" — nothing is.
+        #expect(
+            NodeAutomation.StartRefusal.privateNetworkTurnedOff.message
+                .contains("being established") == false)
+    }
+
     @Test("the private-network refusal carries the sentence both declining paths share")
     func startRefusalMessage() {
         // Two paths decline for this reason — the deliberate wait-for-it step and
