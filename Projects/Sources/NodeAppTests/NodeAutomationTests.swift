@@ -96,7 +96,8 @@ struct NodeAutomationTests {
     @Test("arguments pass through when the privacy network is off")
     func argumentsWithoutPrivacy() throws {
         let args = try NodeAutomation.startArguments(
-            privacyEnabled: false, proxyAddress: nil, build: { _ in ["-noproxy"] })
+            snapshotEnabled: false, liveEnabled: false,
+            proxyAddress: nil, build: { _ in ["-noproxy"] })
         #expect(args == ["-noproxy"])
     }
 
@@ -104,7 +105,7 @@ struct NodeAutomationTests {
     func argumentsWithPrivacyReady() throws {
         var seenProxy: String? = "unset"
         let args = try NodeAutomation.startArguments(
-            privacyEnabled: true, proxyAddress: "127.0.0.1:9050",
+            snapshotEnabled: true, liveEnabled: true, proxyAddress: "127.0.0.1:9050",
             build: { proxy in
                 seenProxy = proxy
                 return ["-proxy=\(proxy ?? "")"]
@@ -118,7 +119,7 @@ struct NodeAutomationTests {
         var builderRan = false
         #expect(throws: NodeAutomation.StartRefusal.privateNetworkNotReady) {
             _ = try NodeAutomation.startArguments(
-                privacyEnabled: true, proxyAddress: nil,
+                snapshotEnabled: true, liveEnabled: true, proxyAddress: nil,
                 build: { _ in
                     builderRan = true
                     return ["-should-not-build"]
@@ -132,7 +133,7 @@ struct NodeAutomationTests {
         var builderRan = false
         #expect(throws: NodeAutomation.StartRefusal.privateNetworkNotReady) {
             _ = try NodeAutomation.startArguments(
-                privacyEnabled: true, proxyAddress: "",
+                snapshotEnabled: true, liveEnabled: true, proxyAddress: "",
                 build: { _ in
                     builderRan = true
                     return ["-should-not-build"]
@@ -145,7 +146,7 @@ struct NodeAutomationTests {
     func refusesBlankProxy() {
         #expect(throws: NodeAutomation.StartRefusal.privateNetworkNotReady) {
             _ = try NodeAutomation.startArguments(
-                privacyEnabled: true, proxyAddress: "   ",
+                snapshotEnabled: true, liveEnabled: true, proxyAddress: "   ",
                 build: { _ in ["-should-not-build"] })
         }
     }
@@ -153,8 +154,8 @@ struct NodeAutomationTests {
     @Test("an empty proxy is passed through only when the privacy network is off")
     func emptyProxyAllowedWithoutPrivacy() throws {
         let args = try NodeAutomation.startArguments(
-            privacyEnabled: false, proxyAddress: "",
-            build: { _ in ["-noproxy"] })
+            snapshotEnabled: false, liveEnabled: false,
+            proxyAddress: "", build: { _ in ["-noproxy"] })
         #expect(args == ["-noproxy"])
     }
 
@@ -162,13 +163,58 @@ struct NodeAutomationTests {
     func trimsProxyBeforeBuilding() throws {
         var seenProxy: String? = "unset"
         let args = try NodeAutomation.startArguments(
-            privacyEnabled: true, proxyAddress: "  127.0.0.1:9050  ",
+            snapshotEnabled: true, liveEnabled: true,
+            proxyAddress: "  127.0.0.1:9050  ",
             build: { proxy in
                 seenProxy = proxy
                 return ["-proxy=\(proxy ?? "")"]
             })
         #expect(seenProxy == "127.0.0.1:9050")
         #expect(args == ["-proxy=127.0.0.1:9050"])
+    }
+
+    @Test("a launch that began private declines when the setting was turned off mid-flight, even with a live proxy")
+    func turnedOffMidFlightRefuses() {
+        var builderRan = false
+        #expect(throws: NodeAutomation.StartRefusal.privateNetworkTurnedOff) {
+            _ = try NodeAutomation.startArguments(
+                snapshotEnabled: true, liveEnabled: false,
+                proxyAddress: "127.0.0.1:9050",
+                build: { _ in
+                    builderRan = true
+                    return ["-should-not-build"]
+                })
+        }
+        #expect(builderRan == false)
+    }
+
+    @Test("the turned-off refusal outranks a missing proxy")
+    func turnedOffOutranksMissingProxy() {
+        #expect(throws: NodeAutomation.StartRefusal.privateNetworkTurnedOff) {
+            _ = try NodeAutomation.startArguments(
+                snapshotEnabled: true, liveEnabled: false,
+                proxyAddress: nil,
+                build: { _ in ["-should-not-build"] })
+        }
+    }
+
+    @Test("a setting switched on mid-flight still builds with the proxy it now requires")
+    func liveOnFlipBuildsPrivate() throws {
+        let args = try NodeAutomation.startArguments(
+            snapshotEnabled: false, liveEnabled: true,
+            proxyAddress: "127.0.0.1:9050",
+            build: { ["-proxy=\($0 ?? "")"] })
+        #expect(args == ["-proxy=127.0.0.1:9050"])
+    }
+
+    @Test("a setting switched on mid-flight refuses when no proxy is usable")
+    func liveOnFlipRefusesWithoutProxy() {
+        #expect(throws: NodeAutomation.StartRefusal.privateNetworkNotReady) {
+            _ = try NodeAutomation.startArguments(
+                snapshotEnabled: false, liveEnabled: true,
+                proxyAddress: nil,
+                build: { _ in ["-should-not-build"] })
+        }
     }
 
     // MARK: - requiresPrivateNetwork(...)

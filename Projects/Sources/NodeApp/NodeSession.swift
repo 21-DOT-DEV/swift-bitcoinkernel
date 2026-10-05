@@ -46,5 +46,28 @@ final class NodeSession {
         url: InternalRPC.url, cookieFile: InternalRPC.cookieFileURL
     )
 
+    /// Starts the private network only if its setting is still on right now.
+    ///
+    /// A run reaches a nudge tens of seconds after it began — the deliberate
+    /// wait-for-it path and the launch boundary's not-ready refusal both ask
+    /// for it — long enough for the person to have toggled the setting off.
+    /// Starting it then would resurrect the very network they just switched
+    /// off, so this checks the live preference rather than the run's own
+    /// snapshot: the snapshot governs what the run *launches*; whether the
+    /// network starts now is the person's current business.
+    ///
+    /// - Returns: whether the setting is still on. The wait-for-it path uses
+    ///   it to word the decline honestly — "being established now" is only
+    ///   true while the network is actually wanted; switched off mid-run is a
+    ///   different message, because nothing is being established at all. The
+    ///   launch boundary asks only for the nudge, and only when its refusal
+    ///   was the not-ready one.
+    @discardableResult
+    func startTorIfStillEnabled() -> Bool {
+        let stillEnabled = UserDefaults.standard.bool(forKey: "tor_enabled")
+        if stillEnabled { tor.start() }
+        return stillEnabled
+    }
+
     private init() {}
 }

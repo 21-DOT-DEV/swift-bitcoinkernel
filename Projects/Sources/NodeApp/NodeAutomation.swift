@@ -166,24 +166,26 @@ enum NodeAutomation {
     /// The answer is the OR of the two — privacy fails closed in both
     /// directions. A person who turns Tor *on* while a run is in flight has
     /// just asked for privacy; launching direct then would leak their address
-    /// moments after the ask. And a snapshot that required privacy still
-    /// requires it if the toggle was since switched *off* — a mid-flight flip
-    /// never demotes a private launch into a direct one. The worst case of
-    /// either direction is a decline, never a leak (ADR 0006). One of two
-    /// decisions in the file that weigh a live preference beside the
-    /// snapshot — `StartRefusal(stillEnabled:)` reads the same flag to pick
-    /// its sentence. The answer must also be written back into the
-    /// snapshot's `torEnabled` before `buildArguments(settings:)` runs —
-    /// the builder adds `-proxy=` only from that flag, so a live-on flip
-    /// that skips this step passes the check and still launches direct.
-    /// Everything else the run launches from the snapshot alone.
+    /// moments after the ask. And a snapshot that required privacy keeps the
+    /// run private-or-nothing if the toggle was since switched *off* —
+    /// `startArguments` turns that split into a decline rather than a private
+    /// launch onto a network whose teardown the toggle just ordered, and a
+    /// mid-flight flip is never answered with a direct connection. The worst
+    /// case of either direction is a decline, never a leak (ADR 0006).
+    /// `StartRefusal(stillEnabled:)` is fed the same live flag to pick its
+    /// sentence — the read itself lives in `NodeSession`. The answer must
+    /// also be written back into the snapshot's `torEnabled` before
+    /// `buildArguments(settings:)` runs — the builder adds `-proxy=` only from
+    /// that flag, so a live-on flip that skips this step passes the check and
+    /// still launches direct. Everything else the run launches from the
+    /// snapshot alone.
     ///
-    /// Staged ahead of the snapshot's wiring: nothing calls this until the run
-    /// captures its settings at entry (T002), at which point the snapshot half
-    /// comes from `DaemonConfig.Snapshot`. The live half is a re-read of the
-    /// `tor_enabled` flag — one of two live reads of that flag the wired run
-    /// is allowed, the other being the refusal picker's `stillEnabled`.
-    /// Every other key stays frozen in the snapshot.
+    /// The run feeds it the snapshot's `torEnabled` and a live re-read of the
+    /// `tor_enabled` flag — one of two live reads of that flag the run is
+    /// allowed, the other being `NodeSession.startTorIfStillEnabled()`'s.
+    /// `startArguments` weighs the same pair to decline the turned-off split —
+    /// a second decision on the same read, not a third read. Every other key
+    /// stays frozen in the snapshot.
     static func requiresPrivateNetwork(
         snapshotEnabled: Bool, liveEnabled: Bool
     ) -> Bool {
@@ -203,10 +205,11 @@ enum NodeAutomation {
         /// Which refusal applies when the network is unavailable depends on
         /// the live setting alone: still on means it is genuinely coming up,
         /// switched off means nothing is being established — and "being
-        /// established now" would then be a false sentence.
-        ///
-        /// Staged with `privateNetworkTurnedOff`: nothing selects between the
-        /// two until the Tor checks go live in T002.
+        /// established now" would then be a false sentence. The deliberate
+        /// wait-for-it path feeds it the live flag from
+        /// `startTorIfStillEnabled()`; the launch boundary reports the case
+        /// `startArguments` threw instead — it already holds the
+        /// snapshot/live split, so it skips the picker.
         init(stillEnabled: Bool) {
             self = stillEnabled ? .privateNetworkNotReady : .privateNetworkTurnedOff
         }
@@ -225,29 +228,47 @@ enum NodeAutomation {
         }
     }
 
-    /// Builds the daemon's launch arguments, refusing outright when the privacy
-    /// setting is on and no *usable* proxy address exists — treating `nil`, an empty
-    /// string, and a whitespace-only string all as "not ready".
+    /// Builds the daemon's launch arguments, refusing outright when the launch
+    /// boundary's privacy rules say no — either the setting was switched off
+    /// mid-flight, or privacy is required and no *usable* proxy address exists
+    /// (`nil`, an empty string, and a whitespace-only string all read as
+    /// "not ready").
     ///
-    /// The shared argument builder adds the proxy only when the address is non-`nil`,
-    /// so a non-`nil` empty string slips past as if it were a real proxy and starts
-    /// the node with a blank proxy setting — that is, on a direct connection, sending
-    /// the person's home network address to peers after they asked it not to. Refusing
-    /// only `nil` would leave that hole open, so this is a privacy floor: anything that
-    /// is not a real address is refused. (The policy is ADR 0006, and takes effect
-    /// when the background action wires this in.)
+    /// The off-flip is checked first: a snapshot that required privacy whose
+    /// setting now reads off means the network it would bind to is the one the
+    /// screen was just told to tear down — the preference write lands a step
+    /// before `stop()` runs, so a still-reporting endpoint in that instant is
+    /// already dying. Declining there costs a run; launching binds the node to
+    /// a proxy that dies seconds after the report says "started".
+    ///
+    /// The shared argument builder adds the proxy only when the address is
+    /// non-`nil`, so a non-`nil` empty string slips past as if it were a real
+    /// proxy and starts the node with a blank proxy setting — that is, on a
+    /// direct connection, sending the person's home network address to peers
+    /// after they asked it not to. Refusing only `nil` would leave that hole
+    /// open, so this is a privacy floor: anything that is not a real address is
+    /// refused while either the snapshot or the live setting requires privacy.
+    /// (The policy is ADR 0006.)
     ///
     /// The value forwarded to the builder is the trimmed one, so surrounding
     /// whitespace never reaches the daemon as part of a `-proxy=` argument.
     ///
     /// - Parameter build: the shared argument builder, taking a proxy address.
+    /// - Throws: the `StartRefusal` that applies, so the run can report the
+    ///   verdict it was actually given rather than re-derive it.
     static func startArguments(
-        privacyEnabled: Bool,
+        snapshotEnabled: Bool,
+        liveEnabled: Bool,
         proxyAddress: String?,
         build: (String?) -> [String]
-    ) throws -> [String] {
+    ) throws(StartRefusal) -> [String] {
+        if snapshotEnabled && !liveEnabled {
+            throw StartRefusal.privateNetworkTurnedOff
+        }
         let trimmedProxy = proxyAddress?.trimmingCharacters(in: .whitespacesAndNewlines)
         let hasUsableProxy = !(trimmedProxy?.isEmpty ?? true)
+        let privacyEnabled = requiresPrivateNetwork(
+            snapshotEnabled: snapshotEnabled, liveEnabled: liveEnabled)
         if privacyEnabled && !hasUsableProxy { throw StartRefusal.privateNetworkNotReady }
         return build(trimmedProxy)
     }

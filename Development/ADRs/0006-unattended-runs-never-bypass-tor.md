@@ -48,6 +48,29 @@ The same edit narrowed the decision to the durable part — never connect withou
 private network — and moved the question of what the run does with its remaining
 time into the plan, where it belongs. The policy itself is unchanged.
 
+## Correction, 2026-10-04
+
+As implemented for feature 004, the launch-time check reads the preference a
+second time and holds if **either** it or the run's entry snapshot says the
+setting is on. The first draft read "when the privacy setting is on" as a
+single point-in-time read; review found the asymmetric failure — a toggle
+flipped *on* while a run was in flight would launch on a direct connection
+moments after the person asked for privacy. Requiring privacy when either read
+says on keeps the worst case a decline in both directions: on-then-off never
+turns a private launch into a direct one either. The decline itself now says
+which of the two happened ("being established" versus "turned off"), so a
+decline is always a true sentence. The same review sharpened what "not
+established" means at the boundary: a network on its way down still
+reports its old endpoint until teardown finishes, and a node launched
+onto a dead proxy can never connect — so the check reads the network's
+readiness rather than the presence of an address, treating a stopping
+network exactly like one that never started. A further review then found
+one instant readiness alone cannot see: the preference write lands a step
+before the network is told to stop, so a snapshot that required privacy
+meeting a live read of off now declines outright — rather than launch
+onto an endpoint whose teardown has already been ordered. The policy is
+unchanged; its enforcement is fail-closed.
+
 ## Consequences
 
 On a poor network, run after run may accomplish nothing but a message. That is the
