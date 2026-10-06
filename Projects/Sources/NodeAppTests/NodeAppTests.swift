@@ -61,28 +61,25 @@ struct BitcoinNetworkTests {
 
 // MARK: - DaemonConfig.buildArguments() Tests
 
-@Suite("buildArguments", .serialized)
+@Suite("buildArguments")
 struct BuildArgumentsTests {
 
-    /// Reset all configuration keys to nil before each test so tests are isolated.
-    private func resetDefaults() {
-        let keys = [
-            "bitcoin_network", "node_type", "prune_size_mb",
-            "tor_enabled", "private_broadcast_enabled",
-            "max_mempool_mb", "max_connections",
-            "listen_enabled", "rpc_auth"
-        ]
-        for key in keys {
-            UserDefaults.standard.removeObject(forKey: key)
-        }
+    /// The argument build against a handed-in store — the snapshot entry
+    /// point an unattended run uses, so no test here needs the live
+    /// `.standard` read: that would read the person's real settings and make
+    /// the assertions depend on them.
+    private func buildArguments(
+        from defaults: UserDefaults, torProxy: String? = nil
+    ) -> [String] {
+        DaemonConfig.buildArguments(
+            settings: .init(reading: defaults), torProxy: torProxy)
     }
 
     // MARK: Fixed Arguments
 
     @Test("Always includes server and RPC binding arguments")
     func fixedArguments() {
-        resetDefaults()
-        let args = DaemonConfig.buildArguments()
+        let args = buildArguments(from: makeVolatileDefaults())
         #expect(args.contains("-server=1"))
         #expect(args.contains("-rpcbind=127.0.0.1"))
         #expect(args.contains("-rpcallowip=127.0.0.1"))
@@ -94,8 +91,7 @@ struct BuildArgumentsTests {
 
     @Test("Defaults to mainnet (no network argument)")
     func defaultMainnet() {
-        resetDefaults()
-        let args = DaemonConfig.buildArguments()
+        let args = buildArguments(from: makeVolatileDefaults())
         #expect(!args.contains("-testnet"))
         #expect(!args.contains("-signet"))
         #expect(!args.contains("-regtest"))
@@ -103,25 +99,25 @@ struct BuildArgumentsTests {
 
     @Test("Testnet adds -testnet argument")
     func testnet() {
-        resetDefaults()
-        UserDefaults.standard.set("Testnet", forKey: "bitcoin_network")
-        let args = DaemonConfig.buildArguments()
+        let defaults = makeVolatileDefaults()
+        defaults.set("Testnet", forKey: "bitcoin_network")
+        let args = buildArguments(from: defaults)
         #expect(args.contains("-testnet"))
     }
 
     @Test("Signet adds -signet argument")
     func signet() {
-        resetDefaults()
-        UserDefaults.standard.set("Signet", forKey: "bitcoin_network")
-        let args = DaemonConfig.buildArguments()
+        let defaults = makeVolatileDefaults()
+        defaults.set("Signet", forKey: "bitcoin_network")
+        let args = buildArguments(from: defaults)
         #expect(args.contains("-signet"))
     }
 
     @Test("Regtest adds -regtest argument")
     func regtest() {
-        resetDefaults()
-        UserDefaults.standard.set("Regtest", forKey: "bitcoin_network")
-        let args = DaemonConfig.buildArguments()
+        let defaults = makeVolatileDefaults()
+        defaults.set("Regtest", forKey: "bitcoin_network")
+        let args = buildArguments(from: defaults)
         #expect(args.contains("-regtest"))
     }
 
@@ -129,34 +125,33 @@ struct BuildArgumentsTests {
 
     @Test("Default pruned node uses 550 MB prune size")
     func defaultPruned() {
-        resetDefaults()
-        let args = DaemonConfig.buildArguments()
+        let args = buildArguments(from: makeVolatileDefaults())
         #expect(args.contains("-prune=550"))
     }
 
     @Test("Custom prune size is reflected")
     func customPruneSize() {
-        resetDefaults()
-        UserDefaults.standard.set("Pruned", forKey: "node_type")
-        UserDefaults.standard.set(1000.0, forKey: "prune_size_mb")
-        let args = DaemonConfig.buildArguments()
+        let defaults = makeVolatileDefaults()
+        defaults.set("Pruned", forKey: "node_type")
+        defaults.set(1000.0, forKey: "prune_size_mb")
+        let args = buildArguments(from: defaults)
         #expect(args.contains("-prune=1000"))
     }
 
     @Test("Archival node adds no prune or filter arguments")
     func archival() {
-        resetDefaults()
-        UserDefaults.standard.set("Archival", forKey: "node_type")
-        let args = DaemonConfig.buildArguments()
+        let defaults = makeVolatileDefaults()
+        defaults.set("Archival", forKey: "node_type")
+        let args = buildArguments(from: defaults)
         #expect(!args.contains(where: { $0.hasPrefix("-prune=") }))
         #expect(!args.contains("-blockfilterindex=1"))
     }
 
     @Test("Compact filters node adds blockfilterindex and peerblockfilters")
     func compactFilters() {
-        resetDefaults()
-        UserDefaults.standard.set("Compact Block Filters", forKey: "node_type")
-        let args = DaemonConfig.buildArguments()
+        let defaults = makeVolatileDefaults()
+        defaults.set("Compact Block Filters", forKey: "node_type")
+        let args = buildArguments(from: defaults)
         #expect(args.contains("-blockfilterindex=1"))
         #expect(args.contains("-peerblockfilters=1"))
         #expect(!args.contains(where: { $0.hasPrefix("-prune=") }))
@@ -166,47 +161,45 @@ struct BuildArgumentsTests {
 
     @Test("Tor disabled by default")
     func torDefault() {
-        resetDefaults()
-        let args = DaemonConfig.buildArguments()
+        let args = buildArguments(from: makeVolatileDefaults())
         #expect(!args.contains(where: { $0.hasPrefix("-proxy=") }))
     }
 
     @Test("Tor enabled with proxy adds dynamic proxy argument")
     func torEnabledWithProxy() {
-        resetDefaults()
-        UserDefaults.standard.set(true, forKey: "tor_enabled")
-        let args = DaemonConfig.buildArguments(torProxy: "127.0.0.1:43210")
+        let defaults = makeVolatileDefaults()
+        defaults.set(true, forKey: "tor_enabled")
+        let args = buildArguments(from: defaults, torProxy: "127.0.0.1:43210")
         #expect(args.contains("-proxy=127.0.0.1:43210"))
     }
 
     @Test("Tor enabled without proxy omits proxy argument")
     func torEnabledNoProxy() {
-        resetDefaults()
-        UserDefaults.standard.set(true, forKey: "tor_enabled")
-        let args = DaemonConfig.buildArguments()
+        let defaults = makeVolatileDefaults()
+        defaults.set(true, forKey: "tor_enabled")
+        let args = buildArguments(from: defaults)
         #expect(!args.contains(where: { $0.hasPrefix("-proxy=") }))
     }
 
     @Test("Tor disabled ignores torProxy parameter")
     func torDisabledIgnoresProxy() {
-        resetDefaults()
-        let args = DaemonConfig.buildArguments(torProxy: "127.0.0.1:9999")
+        let args = buildArguments(
+            from: makeVolatileDefaults(), torProxy: "127.0.0.1:9999")
         #expect(!args.contains(where: { $0.hasPrefix("-proxy=") }))
     }
 
     @Test("Private broadcast disabled by default")
     func privateBroadcastDefault() {
-        resetDefaults()
-        let args = DaemonConfig.buildArguments()
+        let args = buildArguments(from: makeVolatileDefaults())
         #expect(!args.contains(where: { $0.hasPrefix("-privatebroadcast=") }))
     }
 
     @Test("Private broadcast enabled with live Tor adds -privatebroadcast")
     func privateBroadcastEnabled() {
-        resetDefaults()
-        UserDefaults.standard.set(true, forKey: "tor_enabled")
-        UserDefaults.standard.set(true, forKey: "private_broadcast_enabled")
-        let args = DaemonConfig.buildArguments(torProxy: "127.0.0.1:9050")
+        let defaults = makeVolatileDefaults()
+        defaults.set(true, forKey: "tor_enabled")
+        defaults.set(true, forKey: "private_broadcast_enabled")
+        let args = buildArguments(from: defaults, torProxy: "127.0.0.1:9050")
         #expect(args.contains("-privatebroadcast=1"))
     }
 
@@ -215,27 +208,27 @@ struct BuildArgumentsTests {
 
     @Test("Private broadcast omitted when tor_enabled is false even if pref set")
     func privateBroadcastRequiresTor() {
-        resetDefaults()
-        UserDefaults.standard.set(false, forKey: "tor_enabled")
-        UserDefaults.standard.set(true, forKey: "private_broadcast_enabled")
-        let args = DaemonConfig.buildArguments(torProxy: "127.0.0.1:9050")
+        let defaults = makeVolatileDefaults()
+        defaults.set(false, forKey: "tor_enabled")
+        defaults.set(true, forKey: "private_broadcast_enabled")
+        let args = buildArguments(from: defaults, torProxy: "127.0.0.1:9050")
         #expect(!args.contains(where: { $0.hasPrefix("-privatebroadcast") }))
     }
 
     @Test("Private broadcast omitted when torProxy is nil (Tor not ready)")
     func privateBroadcastRequiresLiveProxy() {
-        resetDefaults()
-        UserDefaults.standard.set(true, forKey: "tor_enabled")
-        UserDefaults.standard.set(true, forKey: "private_broadcast_enabled")
-        let args = DaemonConfig.buildArguments(torProxy: nil)
+        let defaults = makeVolatileDefaults()
+        defaults.set(true, forKey: "tor_enabled")
+        defaults.set(true, forKey: "private_broadcast_enabled")
+        let args = buildArguments(from: defaults, torProxy: nil)
         #expect(!args.contains(where: { $0.hasPrefix("-privatebroadcast") }))
     }
 
     @Test("tor_enabled with nil torProxy omits -proxy= (defensive)")
     func noProxyArgWhenTorNotReady() {
-        resetDefaults()
-        UserDefaults.standard.set(true, forKey: "tor_enabled")
-        let args = DaemonConfig.buildArguments(torProxy: nil)
+        let defaults = makeVolatileDefaults()
+        defaults.set(true, forKey: "tor_enabled")
+        let args = buildArguments(from: defaults, torProxy: nil)
         #expect(!args.contains(where: { $0.hasPrefix("-proxy=") }))
     }
 
@@ -243,31 +236,29 @@ struct BuildArgumentsTests {
 
     @Test("Default mempool size is 300 MB")
     func defaultMempool() {
-        resetDefaults()
-        let args = DaemonConfig.buildArguments()
+        let args = buildArguments(from: makeVolatileDefaults())
         #expect(args.contains("-maxmempool=300"))
     }
 
     @Test("Custom mempool size is reflected")
     func customMempool() {
-        resetDefaults()
-        UserDefaults.standard.set(500.0, forKey: "max_mempool_mb")
-        let args = DaemonConfig.buildArguments()
+        let defaults = makeVolatileDefaults()
+        defaults.set(500.0, forKey: "max_mempool_mb")
+        let args = buildArguments(from: defaults)
         #expect(args.contains("-maxmempool=500"))
     }
 
     @Test("Default max connections is 125")
     func defaultConnections() {
-        resetDefaults()
-        let args = DaemonConfig.buildArguments()
+        let args = buildArguments(from: makeVolatileDefaults())
         #expect(args.contains("-maxconnections=125"))
     }
 
     @Test("Custom max connections is reflected")
     func customConnections() {
-        resetDefaults()
-        UserDefaults.standard.set(50.0, forKey: "max_connections")
-        let args = DaemonConfig.buildArguments()
+        let defaults = makeVolatileDefaults()
+        defaults.set(50.0, forKey: "max_connections")
+        let args = buildArguments(from: defaults)
         #expect(args.contains("-maxconnections=50"))
     }
 
@@ -275,24 +266,23 @@ struct BuildArgumentsTests {
 
     @Test("Listen enabled by default (no -listen=0)")
     func listenDefaultEnabled() {
-        resetDefaults()
-        let args = DaemonConfig.buildArguments()
+        let args = buildArguments(from: makeVolatileDefaults())
         #expect(!args.contains("-listen=0"))
     }
 
     @Test("Listen explicitly disabled adds -listen=0")
     func listenDisabled() {
-        resetDefaults()
-        UserDefaults.standard.set(false, forKey: "listen_enabled")
-        let args = DaemonConfig.buildArguments()
+        let defaults = makeVolatileDefaults()
+        defaults.set(false, forKey: "listen_enabled")
+        let args = buildArguments(from: defaults)
         #expect(args.contains("-listen=0"))
     }
 
     @Test("Listen explicitly enabled does not add -listen=0")
     func listenExplicitlyEnabled() {
-        resetDefaults()
-        UserDefaults.standard.set(true, forKey: "listen_enabled")
-        let args = DaemonConfig.buildArguments()
+        let defaults = makeVolatileDefaults()
+        defaults.set(true, forKey: "listen_enabled")
+        let args = buildArguments(from: defaults)
         #expect(!args.contains("-listen=0"))
     }
 
@@ -300,17 +290,16 @@ struct BuildArgumentsTests {
 
     @Test("No rpcauth when user rpc_auth is empty (cookie auth only)")
     func noRpcAuthByDefault() {
-        resetDefaults()
-        let args = DaemonConfig.buildArguments()
+        let args = buildArguments(from: makeVolatileDefaults())
         let rpcAuthArgs = args.filter { $0.hasPrefix("-rpcauth=") }
         #expect(rpcAuthArgs.count == 0)
     }
 
     @Test("User rpc_auth adds -rpcauth argument")
     func userRpcAuth() {
-        resetDefaults()
-        UserDefaults.standard.set("user:salt\(String("$"))hash", forKey: "rpc_auth")
-        let args = DaemonConfig.buildArguments()
+        let defaults = makeVolatileDefaults()
+        defaults.set("user:salt\(String("$"))hash", forKey: "rpc_auth")
+        let args = buildArguments(from: defaults)
         let rpcAuthArgs = args.filter { $0.hasPrefix("-rpcauth=") }
         #expect(rpcAuthArgs.count == 1)
     }

@@ -68,9 +68,22 @@ not a source of commits to replay.
   `Sources/NodeApp/{NodeRun,NodeSession,NodeAutomation}.swift`,
   `Sources/NodeAppTests/NodeAutomationTests.swift` · needs T001 ·
   ref `LONG-PHASE-0`
-- [ ] T003 [P] Stop tests writing the app's real `UserDefaults` — the test
-  isolation fix the reference branch discovered mid-flight (~100) ·
-  `Sources/NodeAppTests/` · ref `LONG-PHASE-0`
+- [x] T003 [P] Stop tests writing the app's real `UserDefaults` — the test
+  isolation fix the reference branch discovered mid-flight. Landed as: a
+  shared `makeVolatileDefaults()` in `Sources/SharedTests/VolatileDefaults.swift`
+  (a scratch store named after the calling test — module, file, function, plus
+  an optional `distinguisher` parameterized cases pass their argument through —
+  `Foundation`-only, so it needs no `NODEAPP_TESTS`/`KERNELAPP_TESTS`
+  discriminator); `BuildArgumentsTests` rewritten in place onto
+  `DaemonConfig.Snapshot(reading:)`, its `.serialized` marker and the
+  `resetDefaults()` that deleted real keys both gone; `DaemonConfigTests` moved
+  onto the same helper, and `KernelAppSettingsTests` dropped its private copy
+  for it. The last-known store seams (`persistLastKnown(in:)`, `lastKnown(in:)`,
+  `persistLastKnown(from:to:)`) deliberately ride T005, landing with the tests
+  that consume them (~140) · `Sources/SharedTests/VolatileDefaults.swift`,
+  `Sources/NodeAppTests/{NodeAppTests,DaemonConfigTests}.swift`,
+  `Sources/KernelAppTests/KernelAppSettingsTests.swift`,
+  `Projects/AGENTS.md` · ref `LONG-PHASE-0`
 - [ ] T004 [P] `IntentDialog` built from `LocalizedStringResource` templates
   interpolating the report's values — `IntentDialog(stringLiteral:
   report.summary)` ships a runtime `String` with no extractable key; the same
@@ -87,8 +100,13 @@ not a source of commits to replay.
   write runs before the last `answerIsStillWanted` guard, so a run cancelled
   or node-stopped in that window advances a baseline it never reported; the
   report carries the last-known height+chain and each intent persists it only
-  on the path that returns `.result(value:)` (~80) ·
-  `Sources/NodeApp/NodeRun.swift`, `SyncNodeIntent.swift`,
+  on the path that returns `.result(value:)`. Lands the store seam T003
+  deferred: `NodeViewModel.persistLastKnown(height:chain:in:)` and
+  `lastKnown(in:)` take a `UserDefaults` defaulting to `.standard`, and the
+  report-level persist takes `to:` — so the last-known tests hand a scratch
+  store instead of writing the app's real settings (~100) ·
+  `Sources/NodeApp/NodeRun.swift`, `NodeViewModel.swift`,
+  `SyncNodeIntent.swift`,
   `SyncNodeLongRunningIntent.swift` · ref `LONG-PHASE-0`
 
 **Checkpoint:** a settings toggle landing mid-run cannot re-scope what this

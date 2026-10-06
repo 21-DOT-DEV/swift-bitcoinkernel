@@ -12,25 +12,15 @@ import Testing
 import Foundation
 @testable import NodeApp
 
-// Argument-level behaviour is already pinned by `BuildArgumentsTests` through the
-// live-read entry point; this suite covers what is new — the snapshot mapping
-// itself, and that a handed-in snapshot is what the builder consults.
+// Argument-level behaviour is pinned by `BuildArgumentsTests`; this suite
+// covers the snapshot mapping itself — that a handed-in store, not the app's
+// real settings, is what the builder consults.
 @Suite("DaemonConfig.Snapshot")
 struct DaemonConfigTests {
 
-    /// A scratch defaults suite, so no test reads or leaves the app's real
-    /// settings. Named per test because suites run in parallel and a shared one
-    /// would race.
-    private func suite(_ name: String) -> UserDefaults {
-        let defaults = UserDefaults(suiteName: name)!
-        defaults.removePersistentDomain(forName: name)
-        return defaults
-    }
-
     @Test("the snapshot freezes every setting the argument builder consults")
     func snapshotReadsAllKeys() {
-        let defaults = suite("DaemonConfigTests.snapshotReadsAllKeys")
-        defer { defaults.removePersistentDomain(forName: "DaemonConfigTests.snapshotReadsAllKeys") }
+        let defaults = makeVolatileDefaults()
 
         defaults.set("Signet", forKey: "bitcoin_network")
         defaults.set("Archival", forKey: "node_type")
@@ -56,8 +46,7 @@ struct DaemonConfigTests {
 
     @Test("keys that were never set read as the app's fallbacks")
     func snapshotFallbacks() {
-        let defaults = suite("DaemonConfigTests.snapshotFallbacks")
-        defer { defaults.removePersistentDomain(forName: "DaemonConfigTests.snapshotFallbacks") }
+        let defaults = makeVolatileDefaults()
 
         let snapshot = DaemonConfig.Snapshot(reading: defaults)
         #expect(snapshot.network == .mainnet)
@@ -73,8 +62,7 @@ struct DaemonConfigTests {
 
     @Test("arguments come from the snapshot handed in, not the store")
     func argumentsFromSnapshot() {
-        let defaults = suite("DaemonConfigTests.argumentsFromSnapshot")
-        defer { defaults.removePersistentDomain(forName: "DaemonConfigTests.argumentsFromSnapshot") }
+        let defaults = makeVolatileDefaults()
 
         // A snapshot whose values no live read could currently produce must
         // still be the one consulted — this is the whole point of passing it in.
