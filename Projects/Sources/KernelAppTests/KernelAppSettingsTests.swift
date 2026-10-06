@@ -13,19 +13,6 @@ import Foundation
 import Testing
 @testable import KernelApp
 
-// MARK: - Test helpers
-
-/// Returns a fresh ``UserDefaults`` instance with a unique suite name so
-/// each test has an isolated backing store that doesn't leak into the
-/// shared domain.
-@MainActor
-private func makeVolatileDefaults(function: String = #function) -> UserDefaults {
-    let suiteName = "dev.21.KernelAppTests.\(UUID().uuidString).\(function)"
-    let defaults = UserDefaults(suiteName: suiteName)!
-    defaults.removePersistentDomain(forName: suiteName)
-    return defaults
-}
-
 // MARK: - KernelAppSettingsTests
 
 @Suite("KernelAppSettings")
