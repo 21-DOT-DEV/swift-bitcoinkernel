@@ -1,0 +1,456 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "%@ ms" : {
+
+    },
+    "%@ sat/vB" : {
+
+    },
+    "%@…" : {
+
+    },
+    "%lld" : {
+
+    },
+    "%lld MB" : {
+
+    },
+    "%lld new blocks since the last check." : {
+      "comment" : "Second sentence of a run's report, appended to the status sentence. The number is how many blocks arrived since the last run that reported a height — plural forms apply to it.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%#@blocks@"
+          },
+          "substitutions" : {
+            "blocks" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "zero" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "No new blocks since the last check."
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg new block since the last check."
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg new blocks since the last check."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld%%" : {
+
+    },
+    "A node was already running on %@ at block %lld, %lld behind." : {
+      "comment" : "Dialog sentence when a background run found the node already running and still catching up. %1$@ is the chain's display name (e.g. Mainnet), %2$lld the block height, %3$lld how many headers are still ahead.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "A node was already running on %1$@ at block %2$lld, %3$lld behind."
+          }
+        }
+      }
+    },
+    "A node was already running on %@ at block %lld." : {
+      "comment" : "Dialog sentence when a background run found the node already running and caught up. %1$@ is the chain's display name (e.g. Mainnet), %2$lld the block height.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "A node was already running on %1$@ at block %2$lld."
+          }
+        }
+      }
+    },
+    "Accept Inbound Connections" : {
+
+    },
+    "Already running" : {
+
+    },
+    "Apply & Restart" : {
+
+    },
+    "Best block" : {
+
+    },
+    "Block data" : {
+
+    },
+    "Block height" : {
+
+    },
+    "Blocks / Headers" : {
+
+    },
+    "Blocks behind" : {
+
+    },
+    "Blocks since last check" : {
+
+    },
+    "Chain" : {
+
+    },
+    "Chain Tip" : {
+
+    },
+    "Commands" : {
+
+    },
+    "Configuration" : {
+
+    },
+    "Connected" : {
+
+    },
+    "Connecting…" : {
+
+    },
+    "Connections" : {
+
+    },
+    "Copy" : {
+
+    },
+    "Dashboard" : {
+
+    },
+    "debug.log" : {
+
+    },
+    "Declined" : {
+
+    },
+    "Did not answer" : {
+
+    },
+    "Did not come up in time" : {
+
+    },
+    "Direction" : {
+
+    },
+    "Display" : {
+
+    },
+    "Enables BIP 157/158 compact block filters for light client support." : {
+
+    },
+    "Execute" : {
+
+    },
+    "Executing…" : {
+
+    },
+    "Format: username:salt$hash. Generated with rpcauth.py." : {
+
+    },
+    "Headers ahead" : {
+
+    },
+    "Height" : {
+
+    },
+    "Initial block download" : {
+
+    },
+    "Keep Bitcoin Node Syncing" : {
+
+    },
+    "Keep Node Syncing" : {
+
+    },
+    "Keep Screen Awake" : {
+
+    },
+    "Last validated block %lld on %@. Start the node to resume." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Last validated block %1$lld on %2$@. Start the node to resume."
+          }
+        }
+      }
+    },
+    "Level" : {
+
+    },
+    "Logs" : {
+
+    },
+    "Low Data Mode is on for this network, so the node did not start." : {
+
+    },
+    "Low Power Mode is on, so the node did not start." : {
+
+    },
+    "Max Connections" : {
+
+    },
+    "Max Mempool" : {
+
+    },
+    "May be slow during initial sync — can temporarily pause block processing" : {
+
+    },
+    "Memory" : {
+
+    },
+    "Mempool" : {
+
+    },
+    "Min relay fee" : {
+
+    },
+    "Mode" : {
+
+    },
+    "Network" : {
+
+    },
+    "No log output" : {
+
+    },
+    "Node Not Running" : {
+
+    },
+    "Node Run Outcome" : {
+
+    },
+    "Node Run Report" : {
+
+    },
+    "Node running on %@ at block %lld, %lld behind." : {
+      "comment" : "Dialog sentence when a background run started the node and it is still catching up. %1$@ is the chain's display name (e.g. Mainnet), %2$lld the block height, %3$lld how many headers are still ahead.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Node running on %1$@ at block %2$lld, %3$lld behind."
+          }
+        }
+      }
+    },
+    "Node running on %@ at block %lld." : {
+      "comment" : "Dialog sentence when a background run started the node and it is caught up. %1$@ is the chain's display name (e.g. Mainnet), %2$lld the block height.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Node running on %1$@ at block %2$lld."
+          }
+        }
+      }
+    },
+    "Node Type" : {
+
+    },
+    "Only %@ of free space is left, which is too little to sync safely, so the node did not start." : {
+      "comment" : "Refusal dialog when the disk has too little room to start a node. %@ is the free space, formatted by the platform (e.g. '400 MB')."
+    },
+    "Outcome" : {
+
+    },
+    "Peers" : {
+
+    },
+    "Privacy" : {
+
+    },
+    "Private Broadcast" : {
+
+    },
+    "Prune Size" : {
+
+    },
+    "Prune target" : {
+
+    },
+    "Reduces disk usage by pruning old block data. Minimum 550 MB." : {
+
+    },
+    "Resources" : {
+
+    },
+    "Response" : {
+
+    },
+    "Restarts the node in place to apply configuration changes." : {
+
+    },
+    "Retry" : {
+
+    },
+    "Route connections through Tor for enhanced privacy. Private broadcast sends transactions without revealing your IP." : {
+
+    },
+    "RPC Authentication" : {
+
+    },
+    "rpcauth string" : {
+
+    },
+    "run.report.rendered-summary" : {
+      "comment" : "Fallback for a report built by the AppIntents machinery: the summary arrives already rendered and passes through verbatim — there is nothing to translate.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%@"
+          }
+        }
+      }
+    },
+    "run.summary.with-gain" : {
+      "comment" : "Joins the run's status sentence to its blocks-gained sentence. The space is the sentence separator — adjust or replace for languages that join sentences differently.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ %2$@"
+          }
+        }
+      }
+    },
+    "Search commands" : {
+
+    },
+    "Select the Bitcoin network to connect to. Restart required." : {
+
+    },
+    "SOCKS Proxy" : {
+
+    },
+    "Start Node" : {
+
+    },
+    "Start the node to execute commands" : {
+
+    },
+    "Start the node to generate `debug.log`." : {
+
+    },
+    "Start the node to watch its chain tip, peers, mempool, and storage." : {
+
+    },
+    "Started" : {
+
+    },
+    "Starts the Bitcoin node and keeps it syncing past the usual background time limit, showing progress you can stop at any time. Runs without opening the app." : {
+
+    },
+    "Starts the Bitcoin node and reports the result within the short time a background action is allowed — a node still coming up when time runs out is left running. Runs without opening the app. On iOS 27, Keep Bitcoin Node Syncing runs for longer." : {
+
+    },
+    "Stop Node" : {
+
+    },
+    "Stops the screen from locking while the app is open. Uses more battery." : {
+
+    },
+    "Storage" : {
+
+    },
+    "Stores the complete blockchain. Requires significant disk space." : {
+
+    },
+    "Summary" : {
+
+    },
+    "Sync" : {
+
+    },
+    "Sync Bitcoin Node" : {
+
+    },
+    "Synced to tip" : {
+
+    },
+    "The current network is metered — cellular, or a link shared from another phone — and syncing can use gigabytes, so the node did not start." : {
+
+    },
+    "The device is too warm to sync right now, so the node did not start." : {
+
+    },
+    "The node did not answer, so nothing was measured." : {
+      "comment" : "Dialog sentence when a background run could not get a usable answer from the node — including an answer discarded because the run was stopped or the node shut down mid-question."
+    },
+    "The node did not start." : {
+      "comment" : "Fallback refusal sentence for a background run when no specific reason was recorded."
+    },
+    "The node had not come up yet, so nothing was measured." : {
+      "comment" : "Dialog sentence when a background run ended while the node was still starting. Deliberately does not say who started it."
+    },
+    "The node's files are not readable until the phone is unlocked once after a restart, so the node did not start." : {
+
+    },
+    "The private network was not ready, so the node did not start. It is being established now; try again shortly." : {
+      "comment" : "Refusal dialog when a background run needed Tor but it was still starting. The 'being established' clause is only shown while the Tor setting is still on."
+    },
+    "The private network was turned off, so the node did not start." : {
+      "comment" : "Refusal dialog when the person switched Tor off while a background run was in flight — nothing is being established, unlike the not-ready refusal."
+    },
+    "There is nowhere to write the blockchain data, so the node did not start." : {
+
+    },
+    "Tip age" : {
+
+    },
+    "Tor" : {
+
+    },
+    "Tor failed after %lld attempts" : {
+
+    },
+    "Tor session changed — restart the node for connections to work." : {
+
+    },
+    "Transactions" : {
+
+    },
+    "Transport" : {
+
+    },
+    "Updated" : {
+
+    },
+    "Verification" : {
+
+    },
+    "View peers" : {
+
+    },
+    "Virtual size" : {
+
+    },
+    "Waiting for RPC" : {
+
+    },
+    "Waiting for Tor to bootstrap" : {
+
+    }
+  },
+  "version" : "1.0"
+}

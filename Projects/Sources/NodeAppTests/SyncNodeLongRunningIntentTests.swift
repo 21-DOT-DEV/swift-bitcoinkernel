@@ -38,9 +38,12 @@ struct SyncNodeLongRunningIntentTests {
     }
 
     @available(iOS 27.0, *)
-    private func report(_ outcome: NodeRunOutcome, _ summary: String) -> NodeRunReport {
+    private func report(
+        _ outcome: NodeRunOutcome, _ dialogTemplate: LocalizedStringResource
+    ) -> NodeRunReport {
         NodeRunReport(
-            outcome: outcome, chain: "main", blockHeight: 42, summary: summary)
+            outcome: outcome, chain: "main", blockHeight: 42,
+            dialogTemplate: dialogTemplate)
     }
 
     @available(iOS 27.0, *)

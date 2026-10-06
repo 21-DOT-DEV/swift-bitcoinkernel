@@ -50,7 +50,7 @@ struct NodePreflightTests {
         // A failed backup mark no longer stops a run, so the only way to reach this
         // sentence is that there is nowhere to write. Saying otherwise would send the
         // person to look at a setting that is not the problem.
-        let text = NodePreflight.Refusal.chainFolderMissing.message
+        let text = String(localized: NodePreflight.Refusal.chainFolderMissing.message)
         #expect(text.contains("nowhere to write"))
         #expect(text.lowercased().contains("backup") == false)
     }
@@ -162,20 +162,24 @@ struct NodePreflightTests {
 
     @Test("every reason has wording")
     func messages() {
-        #expect(NodePreflight.Refusal.filesNotReadable.message.isEmpty == false)
-        #expect(NodePreflight.Refusal.chainFolderMissing.message.isEmpty == false)
-        #expect(NodePreflight.Refusal.meteredNetwork.message.isEmpty == false)
-        #expect(NodePreflight.Refusal.dataRestrictedNetwork.message.isEmpty == false)
-        #expect(NodePreflight.Refusal.overheating.message.isEmpty == false)
-        #expect(NodePreflight.Refusal.lowPowerMode.message.isEmpty == false)
-        #expect(NodePreflight.Refusal.notEnoughDisk(freeBytes: oneGB / 2).message.isEmpty == false)
+        // The messages are deferred templates the system's dialog resolves;
+        // `String(localized:)` is what that resolution looks like in a test.
+        #expect(String(localized: NodePreflight.Refusal.filesNotReadable.message).isEmpty == false)
+        #expect(String(localized: NodePreflight.Refusal.chainFolderMissing.message).isEmpty == false)
+        #expect(String(localized: NodePreflight.Refusal.meteredNetwork.message).isEmpty == false)
+        #expect(String(localized: NodePreflight.Refusal.dataRestrictedNetwork.message).isEmpty == false)
+        #expect(String(localized: NodePreflight.Refusal.overheating.message).isEmpty == false)
+        #expect(String(localized: NodePreflight.Refusal.lowPowerMode.message).isEmpty == false)
+        #expect(
+            String(localized: NodePreflight.Refusal.notEnoughDisk(freeBytes: oneGB / 2).message)
+                .isEmpty == false)
     }
 
     @Test("the metered-network wording covers a shared phone link, not just cellular")
     func meteredWordingCoversHotspot() {
         // The condition it reports also covers a link shared from another phone, so
         // naming only cellular would be false in that case.
-        let message = NodePreflight.Refusal.meteredNetwork.message
+        let message = String(localized: NodePreflight.Refusal.meteredNetwork.message)
         #expect(message.contains("metered"))
         #expect(message.contains("shared from another phone"))
     }
@@ -189,12 +193,14 @@ struct NodePreflightTests {
         // own output pins the fix without hardcoding wording that varies by language.
         for bytes: Int64 in [0, 1, oneGB / 2, oneGB - 1] {
             let expected = bytes.formatted(.byteCount(style: .file))
-            let message = NodePreflight.Refusal.notEnoughDisk(freeBytes: bytes).message
+            let message = String(
+                localized: NodePreflight.Refusal.notEnoughDisk(freeBytes: bytes).message)
             #expect(message.contains(expected))
         }
         // The specific case that used to lie: one byte under the floor must not be
         // reported as the round figure that would look like it met the floor.
-        let atThreshold = NodePreflight.Refusal.notEnoughDisk(freeBytes: oneGB - 1).message
+        let atThreshold = String(
+            localized: NodePreflight.Refusal.notEnoughDisk(freeBytes: oneGB - 1).message)
         #expect(atThreshold.contains("1.0 GB") == false)
     }
 }

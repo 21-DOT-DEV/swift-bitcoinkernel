@@ -57,6 +57,43 @@ struct NodeRunReportTests {
             #expect(NodeRunOutcome(outcome).plain == outcome)
         }
     }
+
+    @Test("the report's sentence is resolved from its template — one source, two renderings")
+    func summaryDerivesFromTemplate() {
+        // The actions hand `dialogText` to `IntentDialog` for the system's own
+        // rendering, while `summary` is the resolved `String` a following
+        // automation step compares against — both must read the same words.
+        let report = NodeRunReport(
+            outcome: .started, chain: "main", blockHeight: 900_000,
+            dialogTemplate: "Node running on Mainnet at block \(900_000).")
+        // The height is resolved through the device's locale, so the expected
+        // figure comes from formatted() — pinning "900,000" verbatim would fail
+        // on a simulator grouping digits differently.
+        #expect(report.summary == "Node running on Mainnet at block \(900_000.formatted()).")
+        #expect(report.dialogTemplate != nil)
+        #expect(String(localized: report.dialogText) == report.summary)
+    }
+
+    @Test("a report built by the AppIntents machinery still shows its sentence in the dialog")
+    func dialogTextFallsBackToSummary() {
+        // `init()` is the path the framework itself takes when a report crosses
+        // the process boundary, which drops `dialogTemplate`. The dialog must
+        // still show the sentence — the fallback wraps the already-resolved
+        // summary as an argument (a `%@` template), never as a lookup key.
+        var report = NodeRunReport()
+        report.outcome = .started
+        report.summary = "Low Power Mode is on, so the node did not start."
+        #expect(String(localized: report.dialogText) == report.summary)
+        // A sentence that passes verbatim can't tell the two mechanisms
+        // apart — a lookup that misses renders the key text itself, so a
+        // regression to `LocalizedStringResource(stringLiteral:)` would stay
+        // green. A summary equal to an existing catalog key discriminates:
+        // as an argument it renders verbatim, but as a key it hits
+        // `run.report.rendered-summary` (value `"%@"`) and comes back as the
+        // template, not the sentence.
+        report.summary = "run.report.rendered-summary"
+        #expect(String(localized: report.dialogText) == report.summary)
+    }
 }
 
 #endif

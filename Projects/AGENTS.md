@@ -81,6 +81,10 @@ let args = DaemonConfig.buildArguments(torProxy: torViewModel.proxyAddress)
 
 When `torProxy` is `nil` and `tor_enabled` is true, the `-proxy=` argument is omitted (Tor not yet bootstrapped — the daemon should start *without* a stale proxy and reconnect later). When `tor_enabled` is false, the `torProxy` parameter is ignored.
 
+### `Localizable.xcstrings` is Xcode-owned, commit it whole
+
+`Resources/NodeApp/Localizable.xcstrings` is the string catalog `IntentDialog` text and every other `Localizable` literal resolve through. Extraction is already on (`SWIFT_EMIT_LOC_STRINGS = YES` in `Shared.xcconfig`), so Xcode repopulates it from compiled code on every build — commit the fully populated file rather than hand-trimming it, and never reformat it with a generic JSON formatter (Xcode owns even the whitespace style). Dialog text must arrive as a `LocalizedStringResource` template — never `IntentDialog(stringLiteral:)` on a rendered `String`, which turns the sentence into its own lookup key; `NodeRunReport.dialogTemplate`/`dialogText` is the pattern (feature 004, T004).
+
 ### Manual Tor integration testing (network-gated)
 
 `TorIntegrationTests` is `.disabled` so CI never depends on the live Tor network. To run manually:

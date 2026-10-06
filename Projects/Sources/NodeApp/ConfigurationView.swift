@@ -39,6 +39,25 @@ enum BitcoinNetwork: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    /// The display name for a chain as the node reports it over RPC.
+    ///
+    /// `getblockchaininfo`'s `chain` field is a lowercase wire name —
+    /// "main", "test", "signet", "regtest" — which is not fit to put in a
+    /// sentence a person reads, so callers that show it map through here.
+    /// `nil` for a name without an exact counterpart — "testnet4" is *a*
+    /// testnet but is not the "Testnet" the settings picker offers, and a
+    /// newer network or a fork's name is best shown verbatim rather than
+    /// mislabeled or dropped.
+    init?(rpcChain: String) {
+        switch rpcChain {
+        case "main": self = .mainnet
+        case "test": self = .testnet
+        case "signet": self = .signet
+        case "regtest": self = .regtest
+        default: return nil
+        }
+    }
+
     var argument: String? {
         switch self {
         case .mainnet: nil

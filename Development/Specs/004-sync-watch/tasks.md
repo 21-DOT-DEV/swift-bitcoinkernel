@@ -84,18 +84,40 @@ not a source of commits to replay.
   `Sources/NodeAppTests/{NodeAppTests,DaemonConfigTests}.swift`,
   `Sources/KernelAppTests/KernelAppSettingsTests.swift`,
   `Projects/AGENTS.md` · ref `LONG-PHASE-0`
-- [ ] T004 [P] `IntentDialog` built from `LocalizedStringResource` templates
+- [x] T004 [P] `IntentDialog` built from `LocalizedStringResource` templates
   interpolating the report's values — `IntentDialog(stringLiteral:
   report.summary)` ships a runtime `String` with no extractable key; the same
   change removes the hand-rolled `block\(s)` ternary — plural variants belong
   to the catalog, and the catalog joins the NodeApp `resources:` list in
   `Projects/Project.swift` — the target enumerates resources by name, not by
   glob, so without the entry the file never compiles into the app
-  (re-run `tuist generate` after the edit) (~220, mostly generated catalog
-  rows) ·
+  (re-run `tuist generate` after the edit). Landed as the reference shaped
+  it, with the three decided points applied — the catalog commits the full
+  Xcode-populated file; the two clauses of a measured run join through a
+  named `run.summary.with-gain` key rather than minting a bare `"%@ %@"`,
+  the gain clause itself one key whose plural substitution's
+  `zero`/`one`/`other` categories render "No new blocks…"/singular/plural;
+  and chain wire names map to display names through
+  `BitcoinNetwork(rpcChain:)`, unknown names verbatim — plus the mechanical
+  rework underneath them: `NodeRunReport` keeps `summary` a resolved
+  `String` `@Property` while storing its template in a non-`@Property`
+  `dialogTemplate`, `dialogText` is what both actions hand to
+  `IntentDialog`, and `init()` reports (the AppIntents decode path) fall
+  back to a named `run.report.rendered-summary` key that passes the
+  rendered sentence through as a `%@` argument rather than a lookup key;
+  refusal sentences (`NodePreflight.Refusal`, `StartRefusal`) retyped to
+  `LocalizedStringResource`, and the free-space figure interpolates via
+  `format: .byteCount` so the resolver formats it, not the app. Extraction
+  was already on via `SWIFT_EMIT_LOC_STRINGS` in `Shared.xcconfig`; no
+  `merge=union` for the catalog — union splicing can silently corrupt
+  same-key edits, so merges stay text-explicit (~160 + catalog) ·
   `Sources/NodeApp/SyncNodeIntent.swift`,
   `SyncNodeLongRunningIntent.swift`, `NodeAutomation.swift`,
-  `Resources/NodeApp/`, `Projects/Project.swift` · ref `LONG-PHASE-0`
+  `NodePreflight.swift`, `NodeRun.swift`, `NodeRunReport.swift`,
+  `ConfigurationView.swift`,
+  `Sources/NodeAppTests/{NodeAutomationTests,NodePreflightTests,NodeRunReportTests,SyncNodeLongRunningIntentTests}.swift`,
+  `Resources/NodeApp/`, `Projects/Project.swift`,
+  `Projects/AGENTS.md` · ref `LONG-PHASE-0`
 - [ ] T005 [P] `persistLastKnown` moves out of `measuredReport` — today the
   write runs before the last `answerIsStillWanted` guard, so a run cancelled
   or node-stopped in that window advances a baseline it never reported; the
