@@ -33,8 +33,12 @@ struct WithHardTimeoutTests {
 
     /// A call that can never finish and ignores cancellation: the closest a
     /// test can get to the in-process RPC bridge this helper exists for.
+    /// The gate nobody opens keeps the wait parked — and, unlike the dropped
+    /// `CheckedContinuation` this replaced, a parked `Gate` wait is stored
+    /// rather than leaked, so nothing prints CONTINUATION MISUSE.
     private func neverAnswers() async -> Int {
-        await withCheckedContinuation { (_: CheckedContinuation<Int, Never>) in }
+        await Gate().waitIgnoringCancellation()
+        fatalError("unreachable")
     }
 
     @Test("a call that answers in time returns its value")

@@ -20,6 +20,10 @@ jobs:
     # not repointing `runner:` at macos-26 — that toolchain can no longer
     # build these sources.
     runs-on: ${{ matrix.runner }}
+    # GitHub's default is 6 hours; the slowest passing run to date was ~22
+    # minutes (including a 10-minute post-test diagnostics tail). A real hang
+    # now dies inside the hour instead of burning the full default.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -179,6 +183,12 @@ jobs:
       # lines and failures gate via the exit code. xcodebuild's legacy "Executed
       # 0 tests" summary counts only XCTest cases (we have none); it does NOT mean
       # tests were skipped.
+      #
+      # `-collect-test-diagnostics never` opts out of the post-run sysdiagnose
+      # pull from the simulator, which prints "Failure collecting diagnostics
+      # from simulator: Timed out after 600.0 seconds" and pads even fully green
+      # iOS runs by ten minutes. (Flag present in Xcode 27.0 — the runner pins
+      # Xcode_27.0 — verified via `xcodebuild -help`.)
       - name: Test ${{ matrix.app }} (${{ matrix.platform }})
         if: matrix.action == 'test'
         env:
@@ -199,6 +209,7 @@ jobs:
               -workspace "$WORKSPACE" -scheme "$SCHEME" \
               -destination "$DESTINATION" -derivedDataPath "$DERIVED_DATA" \
               -resultBundlePath "$RESULTS/$SCHEME-$PLATFORM-attempt-$attempt.xcresult" \
+              -collect-test-diagnostics never \
               CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO 2>&1 | tee "$LOG"
             rc=${PIPESTATUS[0]}
             set -e
@@ -225,8 +236,12 @@ jobs:
       # bundle is worth having. One bundle per attempt (the retry loop above
       # would otherwise collide — xcodebuild refuses an existing bundle path),
       # and one artifact name per matrix row so concurrent rows don't clash.
+      # `cancelled()` is named beside `failure()` because a cancelled job is
+      # neither — and `timeout-minutes` cancels rather than fails the job,
+      # so `failure()` alone would skip the upload on exactly the hang the
+      # bundle is meant to preserve.
       - name: Upload test results (${{ matrix.app }}, ${{ matrix.platform }})
-        if: failure() && matrix.action == 'test'
+        if: (failure() || cancelled()) && matrix.action == 'test'
         uses: actions/upload-artifact@v7
         with:
           name: xcresult-${{ matrix.app }}-${{ matrix.platform }}
