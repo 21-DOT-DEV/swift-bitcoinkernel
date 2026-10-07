@@ -217,8 +217,10 @@ enum NodeAutomation {
         /// The single sentence a person sees, kept beside the case so the
         /// wording cannot drift between the paths that decline for this reason —
         /// the one that waits for the network on purpose and the one that finds
-        /// it gone at the last moment.
-        var message: String {
+        /// it gone at the last moment. A template rather than a rendered string,
+        /// like `NodePreflight.Refusal.message`, so the system's dialog can
+        /// localize it.
+        var message: LocalizedStringResource {
             switch self {
             case .privateNetworkNotReady:
                 return "The private network was not ready, so the node did not start. It is being established now; try again shortly."
@@ -325,17 +327,20 @@ enum NodeAutomation {
     /// The single sentence a person reads or hears, derived from the same values the
     /// named fields carry so the two can never disagree.
     ///
-    /// The numbers go through `formatted()` — the locale-aware style the dashboard
-    /// already uses — so a height reads "900,000" rather than "900000" on a device set
-    /// to a language that groups digits.
+    /// A *template*, not a rendered string — the actions hand it to `IntentDialog`
+    /// unresolved, so the system's own rendering localizes the sentence the report
+    /// also carries. That is why the numbers go in as raw integers rather than
+    /// through `formatted()`: the resolver applies the locale's digit grouping at
+    /// display time, and pre-formatting them would both freeze the app's locale into
+    /// the dialog and cut the count loose from the catalog's plural variants.
     static func summary(
         outcome: Outcome,
         chain: String,
         height: Int,
         blocksBehind: Int?,
         blocksSinceLastCheck: Int?,
-        declinedReason: String?
-    ) -> String {
+        declinedReason: LocalizedStringResource?
+    ) -> LocalizedStringResource {
         switch outcome {
         case .declined:
             // The reason is the whole message: it is the only thing that tells the
@@ -350,19 +355,37 @@ enum NodeAutomation {
         case .noAnswer:
             return "The node did not answer, so nothing was measured."
         case .alreadyRunning, .started:
-            let verb = outcome == .started ? "Node running" : "A node was already running"
-            var sentence = "\(verb) on \(chain) at block \(height.formatted())"
-            if let blocksBehind, blocksBehind > 0 {
-                sentence += ", \(blocksBehind.formatted()) behind"
-            }
-            sentence += "."
-            if let gained = blocksSinceLastCheck {
-                sentence +=
-                    gained == 0
-                    ? " No new blocks since the last check."
-                    : " \(gained.formatted()) new block\(gained == 1 ? "" : "s") since the last check."
-            }
-            return sentence
+            // The node's wire name is not fit for a sentence a person reads —
+            // the display name the settings picker shows is. A name with no
+            // counterpart ("testnet4", a fork's) stays verbatim rather than
+            // mislabeled.
+            let chainName = BitcoinNetwork(rpcChain: chain)?.rawValue ?? chain
+            let headline: LocalizedStringResource =
+                if let blocksBehind, blocksBehind > 0 {
+                    outcome == .started
+                        ? "Node running on \(chainName) at block \(height), \(blocksBehind) behind."
+                        : "A node was already running on \(chainName) at block \(height), \(blocksBehind) behind."
+                } else {
+                    outcome == .started
+                        ? "Node running on \(chainName) at block \(height)."
+                        : "A node was already running on \(chainName) at block \(height)."
+                }
+            guard let gained = blocksSinceLastCheck else { return headline }
+            // One plural key covers all three counts — its catalog entry binds the
+            // number so "zero" renders "No new blocks…", "one" the singular, and
+            // "other" the plural — rather than a `block(s)` ternary only English
+            // would survive.
+            let gainedText: LocalizedStringResource =
+                "\(gained) new blocks since the last check."
+            // A dedicated key, not the bare "%@ %@" a plain interpolation would
+            // mint: a generic key is shared by any future pair of substituted
+            // strings anywhere in the app, and a translator could never give this
+            // join its own wording — including languages whose sentence join is
+            // not a space.
+            return LocalizedStringResource(
+                "run.summary.with-gain",
+                defaultValue: "\(headline) \(gainedText)",
+                comment: "Joins the run's status sentence to its blocks-gained sentence. The space is the sentence separator — adjust or replace for languages that join sentences differently.")
         }
     }
 }

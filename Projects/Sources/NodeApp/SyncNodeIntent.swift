@@ -114,7 +114,7 @@ struct SyncNodeIntent: AppIntent {
             throw CancellationError()
         }
         return .result(
-            value: report, dialog: IntentDialog(stringLiteral: report.summary))
+            value: report, dialog: IntentDialog(report.dialogText))
     }
 }
 

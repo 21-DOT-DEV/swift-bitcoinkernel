@@ -244,9 +244,10 @@ struct NodeAutomationTests {
         #expect(
             NodeAutomation.StartRefusal(stillEnabled: false) == .privateNetworkTurnedOff)
         // The switched-off sentence must not claim the network "is being
-        // established" — nothing is.
+        // established" — nothing is. The messages are deferred templates, so a
+        // test resolves them the way the system's dialog would.
         #expect(
-            NodeAutomation.StartRefusal.privateNetworkTurnedOff.message
+            String(localized: NodeAutomation.StartRefusal.privateNetworkTurnedOff.message)
                 .contains("being established") == false)
     }
 
@@ -256,7 +257,8 @@ struct NodeAutomationTests {
         // the start that finds it gone at the last moment — so the sentence lives
         // on the refusal itself. Pinned here because wording that drifted between
         // them would tell the person two different stories about the same thing.
-        let message = NodeAutomation.StartRefusal.privateNetworkNotReady.message
+        let message = String(
+            localized: NodeAutomation.StartRefusal.privateNetworkNotReady.message)
         #expect(message.contains("private network was not ready"))
         #expect(message.contains("being established"))
     }
@@ -298,17 +300,21 @@ struct NodeAutomationTests {
 
     @Test("a declined run reports its reason as the whole message")
     func summaryDeclined() {
-        let text = NodeAutomation.summary(
-            outcome: .declined, chain: "main", height: 5, blocksBehind: nil,
-            blocksSinceLastCheck: nil, declinedReason: "Low Power Mode is on.")
+        // The summaries are deferred templates — `String(localized:)` resolves
+        // one the way the system's dialog would.
+        let text = String(
+            localized: NodeAutomation.summary(
+                outcome: .declined, chain: "main", height: 5, blocksBehind: nil,
+                blocksSinceLastCheck: nil, declinedReason: "Low Power Mode is on."))
         #expect(text == "Low Power Mode is on.")
     }
 
     @Test("a run that found the node still coming up says nothing was measured")
     func summaryDidNotComeUp() {
-        let text = NodeAutomation.summary(
-            outcome: .didNotComeUp, chain: "main", height: 5, blocksBehind: nil,
-            blocksSinceLastCheck: nil, declinedReason: nil)
+        let text = String(
+            localized: NodeAutomation.summary(
+                outcome: .didNotComeUp, chain: "main", height: 5, blocksBehind: nil,
+                blocksSinceLastCheck: nil, declinedReason: nil))
         #expect(text.contains("had not come up"))
         #expect(text.contains("nothing was measured"))
         // It must not say who started the node — on this path it may already have
@@ -321,9 +327,10 @@ struct NodeAutomationTests {
         // Covers both ways a run ends here — a node that never answered, and an
         // answer discarded because the node was stopped or the run ended while the
         // question was in flight. Either way, nothing usable was measured.
-        let text = NodeAutomation.summary(
-            outcome: .noAnswer, chain: "main", height: 5, blocksBehind: nil,
-            blocksSinceLastCheck: nil, declinedReason: nil)
+        let text = String(
+            localized: NodeAutomation.summary(
+                outcome: .noAnswer, chain: "main", height: 5, blocksBehind: nil,
+                blocksSinceLastCheck: nil, declinedReason: nil))
         #expect(text.contains("did not answer"))
         #expect(text.contains("nothing was measured"))
         // It must not imply the node was started — on this path it may already have
@@ -333,34 +340,74 @@ struct NodeAutomationTests {
 
     @Test("a started run names the chain, the height, and what arrived since")
     func summaryStarted() {
-        let text = NodeAutomation.summary(
-            outcome: .started, chain: "main", height: 900_000, blocksBehind: 12,
-            blocksSinceLastCheck: 3, declinedReason: nil)
-        #expect(text.contains("main"))
-        // The height is formatted through the device's locale ("900,000" in en_US).
-        // Expecting it via formatted() keeps the test true in every locale while
-        // still failing if the code ever interpolates the raw number instead.
+        let text = String(
+            localized: NodeAutomation.summary(
+                outcome: .started, chain: "main", height: 900_000, blocksBehind: 12,
+                blocksSinceLastCheck: 3, declinedReason: nil))
+        // The node's "main" wire name is mapped to the display name before a
+        // person reads it.
+        #expect(text.contains("Mainnet"))
+        // The count interpolates as a raw Int (%lld), which the resolver renders
+        // with the locale's digit grouping — "900,000" in en_US — so asserting
+        // the grouped figure still fails if the code ever strings the number
+        // through a fixed-locale formatter instead.
         #expect(text.contains(900_000.formatted()))
         #expect(text.contains("12 behind"))
         #expect(text.contains("3 new blocks"))
     }
 
+    @Test("chain wire names map to display names; unknown ones pass through")
+    func summaryChainDisplayName() {
+        // Every wire name `getblockchaininfo` reports resolves to the name the
+        // settings picker shows — "main" is never put in front of a person.
+        for (wire, display) in [
+            ("main", "Mainnet"), ("test", "Testnet"),
+            ("signet", "Signet"), ("regtest", "Regtest"),
+        ] {
+            let text = String(
+                localized: NodeAutomation.summary(
+                    outcome: .started, chain: wire, height: 10, blocksBehind: nil,
+                    blocksSinceLastCheck: nil, declinedReason: nil))
+            #expect(text.contains("on \(display)"))
+        }
+        // A name the code does not recognise — a newer network, a fork — is
+        // shown verbatim rather than dropped or mislabeled.
+        let unknown = String(
+            localized: NodeAutomation.summary(
+                outcome: .started, chain: "scalenet", height: 10, blocksBehind: nil,
+                blocksSinceLastCheck: nil, declinedReason: nil))
+        #expect(unknown.contains("scalenet"))
+        // "testnet4" is the tempting mislabel: *a* testnet, but not the
+        // "Testnet" the settings picker offers — verbatim is honest.
+        let testnet4 = String(
+            localized: NodeAutomation.summary(
+                outcome: .started, chain: "testnet4", height: 10, blocksBehind: nil,
+                blocksSinceLastCheck: nil, declinedReason: nil))
+        #expect(testnet4.contains("testnet4"))
+        #expect(testnet4.contains("Testnet ") == false)
+    }
+
     @Test("being caught up omits the behind-count instead of saying zero behind")
     func summaryCaughtUp() {
-        let text = NodeAutomation.summary(
-            outcome: .started, chain: "main", height: 900_000, blocksBehind: 0,
-            blocksSinceLastCheck: nil, declinedReason: nil)
+        let text = String(
+            localized: NodeAutomation.summary(
+                outcome: .started, chain: "main", height: 900_000, blocksBehind: 0,
+                blocksSinceLastCheck: nil, declinedReason: nil))
         #expect(text.contains("behind") == false)
     }
 
     @Test("no new blocks is stated, and is not the same as not knowing")
     func summaryZeroVersusUnknownGain() {
-        let measuredZero = NodeAutomation.summary(
-            outcome: .started, chain: "main", height: 10, blocksBehind: nil,
-            blocksSinceLastCheck: 0, declinedReason: nil)
-        let notMeasured = NodeAutomation.summary(
-            outcome: .started, chain: "main", height: 10, blocksBehind: nil,
-            blocksSinceLastCheck: nil, declinedReason: nil)
+        let measuredZero = String(
+            localized: NodeAutomation.summary(
+                outcome: .started, chain: "main", height: 10, blocksBehind: nil,
+                blocksSinceLastCheck: 0, declinedReason: nil))
+        let notMeasured = String(
+            localized: NodeAutomation.summary(
+                outcome: .started, chain: "main", height: 10, blocksBehind: nil,
+                blocksSinceLastCheck: nil, declinedReason: nil))
+        // Zero rides the same catalog key as the counts — its `zero` plural
+        // variant is what renders "No new blocks…".
         #expect(measuredZero.contains("No new blocks"))
         #expect(notMeasured.contains("No new blocks") == false)
         #expect(measuredZero != notMeasured)
@@ -368,17 +415,19 @@ struct NodeAutomationTests {
 
     @Test("one new block reads as singular")
     func summarySingularBlock() {
-        let text = NodeAutomation.summary(
-            outcome: .started, chain: "main", height: 10, blocksBehind: nil,
-            blocksSinceLastCheck: 1, declinedReason: nil)
+        let text = String(
+            localized: NodeAutomation.summary(
+                outcome: .started, chain: "main", height: 10, blocksBehind: nil,
+                blocksSinceLastCheck: 1, declinedReason: nil))
         #expect(text.contains("1 new block since"))
     }
 
     @Test("an already-running node is reported as found, not started")
     func summaryAlreadyRunning() {
-        let text = NodeAutomation.summary(
-            outcome: .alreadyRunning, chain: "main", height: 7, blocksBehind: nil,
-            blocksSinceLastCheck: nil, declinedReason: nil)
+        let text = String(
+            localized: NodeAutomation.summary(
+                outcome: .alreadyRunning, chain: "main", height: 7, blocksBehind: nil,
+                blocksSinceLastCheck: nil, declinedReason: nil))
         #expect(text.contains("already running"))
     }
 

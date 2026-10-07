@@ -93,8 +93,11 @@ struct NodeRunReport: TransientAppEntity {
     static var typeDisplayRepresentation: TypeDisplayRepresentation { "Node Run Report" }
 
     @Property(title: "Outcome") var outcome: NodeRunOutcome
-    /// Which chain the height belongs to. A height means nothing without it — and
-    /// both are absent when nothing was measured.
+    /// Which chain the height belongs to, as the node reports it over RPC —
+    /// the wire identifier (`main`, `signet`, `regtest`), which is the honest
+    /// value for an automation to compare against; display-name mapping for a
+    /// person happens in the summary sentence. A height means nothing without
+    /// it — and both are absent when nothing was measured.
     @Property(title: "Chain") var chain: String?
     /// The height the node reported. Absent when nothing was measured — a run that
     /// declined or got no usable answer must not hand back the last recorded height
@@ -111,9 +114,33 @@ struct NodeRunReport: TransientAppEntity {
     @Property(title: "Connections") var connections: Int?
     /// The one sentence a person reads or hears.
     @Property(title: "Summary") var summary: String
+    /// The deferred-lookup template `summary` was resolved from — what the
+    /// actions hand to `IntentDialog` so the system's own rendering can
+    /// translate it. One template, two renderings: the report sentence and the
+    /// dialog can never disagree. Not a `@Property` — the automation-facing
+    /// contract keeps `summary` the resolved `String`. Absent only on a report
+    /// built through `init()`, which the AppIntents machinery alone uses.
+    var dialogTemplate: LocalizedStringResource?
+
+    /// The text the actions put in `IntentDialog` — the stored template when
+    /// the report carries one, else the already-resolved sentence passed
+    /// through as a `%@` argument, which is the only form `init()` can
+    /// produce. Never `LocalizedStringResource(stringLiteral:)`: that form
+    /// treats the rendered sentence as a catalog *key*, so a lookup either
+    /// misses (harmless but pointless) or collides with a real entry that
+    /// happens to share the text (the system's dialog would show a different
+    /// language than the report's own `summary`). The fallback gets a named
+    /// key so the catalog entry documents itself instead of minting a bare
+    /// `"%@"` a translator could mistake for real text.
+    var dialogText: LocalizedStringResource {
+        dialogTemplate ?? LocalizedStringResource(
+            "run.report.rendered-summary",
+            defaultValue: "\(summary)",
+            comment: "Fallback for a report built by the AppIntents machinery: the summary arrives already rendered and passes through verbatim — there is nothing to translate.")
+    }
 
     var displayRepresentation: DisplayRepresentation {
-        DisplayRepresentation(title: "\(summary)")
+        DisplayRepresentation(title: dialogText)
     }
 
     init() {}
@@ -125,7 +152,7 @@ struct NodeRunReport: TransientAppEntity {
         blocksBehind: Int? = nil,
         blocksSinceLastCheck: Int? = nil,
         connections: Int? = nil,
-        summary: String
+        dialogTemplate: LocalizedStringResource
     ) {
         self.init()
         self.outcome = outcome
@@ -134,7 +161,8 @@ struct NodeRunReport: TransientAppEntity {
         self.blocksBehind = blocksBehind
         self.blocksSinceLastCheck = blocksSinceLastCheck
         self.connections = connections
-        self.summary = summary
+        self.dialogTemplate = dialogTemplate
+        self.summary = String(localized: dialogTemplate)
     }
 }
 

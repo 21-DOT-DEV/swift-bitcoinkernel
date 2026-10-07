@@ -181,7 +181,7 @@ struct SyncNodeLongRunningIntent: LongRunningIntent, CancellableIntent {
             Self.log.notice("run: cancelled — reporting the run as cancelled, not as a result")
             throw CancellationError()
         }
-        return .result(value: report, dialog: IntentDialog(stringLiteral: report.summary))
+        return .result(value: report, dialog: IntentDialog(report.dialogText))
     }
 
     /// Runs the work with a heartbeat underneath it.

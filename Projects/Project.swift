@@ -46,7 +46,10 @@ let project = Project(
                 "Resources/NodeApp/Assets.xcassets/**",
                 "Resources/NodeApp/Preview Content/**",
                 "Resources/NodeApp/AppIcon.icon",
-                "Resources/NodeApp/PrivacyInfo.xcprivacy"
+                "Resources/NodeApp/PrivacyInfo.xcprivacy",
+                // The string catalog the actions' dialog text resolves through —
+                // Xcode populates it from the code on each build.
+                "Resources/NodeApp/Localizable.xcstrings"
             ],
             entitlements: "Resources/NodeApp/NodeApp.entitlements",
             dependencies: [

@@ -86,9 +86,14 @@ enum NodePreflight {
         /// The person asked the device to save battery.
         case lowPowerMode
 
-        /// The single sentence a person sees. Kept beside the case so adding a
+        /// The single sentence a person sees, kept beside the case so adding a
         /// reason cannot compile without wording.
-        var message: String {
+        ///
+        /// A template, not a rendered string: the actions hand it to
+        /// `IntentDialog` unresolved, so the system's own rendering localizes it
+        /// — the run's job is done in-process, but the sentence is read wherever
+        /// the action's result is surfaced.
+        var message: LocalizedStringResource {
             switch self {
             case .filesNotReadable:
                 return "The node's files are not readable until the phone is unlocked once after a restart, so the node did not start."
@@ -104,11 +109,11 @@ enum NodePreflight {
                 // formatting to one decimal place rounded *up*, so one byte under the
                 // floor printed as "1.0 GB is too little", contradicting itself. The
                 // file style matches the figure the device's own storage screen shows,
-                // which is the number a person would act on, and it comes out
-                // translated in other languages for free.
-                let free = freeBytes.formatted(.byteCount(style: .file))
+                // which is the number a person would act on. The number goes in as an
+                // argument with a format, so the platform renders it in the locale the
+                // dialog is resolved in rather than freezing the app's.
                 return
-                    "Only \(free) of free space is left, which is too little to sync safely, so the node did not start."
+                    "Only \(freeBytes, format: .byteCount(style: .file)) of free space is left, which is too little to sync safely, so the node did not start."
             case .meteredNetwork:
                 return "The current network is metered — cellular, or a link shared from another phone — and syncing can use gigabytes, so the node did not start."
             case .dataRestrictedNetwork:

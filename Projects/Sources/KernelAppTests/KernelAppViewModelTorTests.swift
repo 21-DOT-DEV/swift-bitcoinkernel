@@ -24,6 +24,14 @@ import Testing
 import Tor
 @testable import KernelApp
 
+/// `true` only when running on the iOS Simulator — gates the
+/// `.disabled(if:)` trait on `torReadyAutoKicksSync()` below.
+#if os(iOS) && targetEnvironment(simulator)
+private let isIOSSimulator = true
+#else
+private let isIOSSimulator = false
+#endif
+
 // MARK: - Parts builder
 
 @MainActor
@@ -156,7 +164,9 @@ struct KernelAppViewModelTorTests {
 
     // MARK: - Auto-kick on Tor ready
 
-    @Test("Tor becoming ready while waiting auto-kicks the sync with a SOCKS endpoint")
+    @Test("Tor becoming ready while waiting auto-kicks the sync with a SOCKS endpoint",
+          .disabled(if: isIOSSimulator,
+                    "Takes 39–184 s on the iOS simulator (0.06 s on macOS); suspected trigger of xcodebuild's 600 s diagnostics timeout — re-enable and root-cause during the Tor update"))
     func torReadyAutoKicksSync() async throws {
         let parts = makeTorParts()
         defer { try? FileManager.default.removeItem(at: parts.tmpDir) }

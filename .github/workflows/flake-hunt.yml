@@ -9,8 +9,9 @@ name: Flake Hunt
 # almost nothing about a failure that shows up once in thirty runs.
 #
 # The build/test split matters here: the bundle is compiled once, so each extra
-# iteration costs roughly one test pass (~20s for KernelApp's 101 tests) rather
-# than a full rebuild.
+# iteration costs roughly one test pass (~42s on iOS for KernelApp's 110-test
+# bundle — 109 run there now that the 39–184 s `torReadyAutoKicksSync` is
+# disabled) rather than a full rebuild.
 on:
   workflow_dispatch:
     inputs:

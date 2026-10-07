@@ -470,7 +470,7 @@ enum NodeRun {
             blocksBehind: reading.blocksBehind,
             blocksSinceLastCheck: gained,
             connections: connections,
-            summary: NodeAutomation.summary(
+            dialogTemplate: NodeAutomation.summary(
                 outcome: outcome, chain: reading.chain, height: reading.height,
                 blocksBehind: reading.blocksBehind, blocksSinceLastCheck: gained,
                 declinedReason: nil))
@@ -486,7 +486,7 @@ enum NodeRun {
             outcome: .didNotComeUp,
             chain: nil,
             blockHeight: nil,
-            summary: NodeAutomation.summary(
+            dialogTemplate: NodeAutomation.summary(
                 outcome: .didNotComeUp, chain: "unknown",
                 height: 0, blocksBehind: nil,
                 blocksSinceLastCheck: nil, declinedReason: nil))
@@ -506,7 +506,7 @@ enum NodeRun {
     static func noAnswerReport() -> NodeRunReport {
         return NodeRunReport(
             outcome: .noAnswer, chain: nil, blockHeight: nil,
-            summary: NodeAutomation.summary(
+            dialogTemplate: NodeAutomation.summary(
                 outcome: .noAnswer, chain: "unknown", height: 0,
                 blocksBehind: nil, blocksSinceLastCheck: nil,
                 declinedReason: nil))
@@ -542,12 +542,12 @@ enum NodeRun {
         }
     }
 
-    private static func declined(reason: String) -> NodeRunReport {
+    private static func declined(reason: LocalizedStringResource) -> NodeRunReport {
         return NodeRunReport(
             outcome: .declined,
             chain: nil,
             blockHeight: nil,
-            summary: NodeAutomation.summary(
+            dialogTemplate: NodeAutomation.summary(
                 outcome: .declined, chain: "unknown",
                 height: 0, blocksBehind: nil, blocksSinceLastCheck: nil,
                 declinedReason: reason))
