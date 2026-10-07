@@ -11,7 +11,6 @@
 import Testing
 import Clocks
 import Foundation
-import Synchronization
 
 // `withHardTimeout` lives in the shared source tree, which is compiled into
 // both the NodeApp and KernelApp modules. This suite runs in both test targets,
@@ -26,17 +25,11 @@ import Synchronization
 #error("SharedTests compile into both test bundles, which must define NODEAPP_TESTS or KERNELAPP_TESTS")
 #endif
 
-@Suite("withHardTimeout")
+// Every step a test takes is event-ordered through a `Gate` rather than a
+// yield count or a flag sample, so a broken helper hangs a wait — which the
+// `.timeLimit` then turns into a named timeout instead of a silent stall.
+@Suite("withHardTimeout", .timeLimit(.minutes(1)))
 struct WithHardTimeoutTests {
-
-    /// The helper spawns its work and timer as detached tasks, so there is a
-    /// scheduling gap between starting a call and the timer registering its
-    /// sleep with the `TestClock`. Advancing before that registration would
-    /// fire nothing and hang the test; a handful of yields closes the gap
-    /// (the same pattern `KernelAppViewModelTests` uses).
-    private func settle() async {
-        for _ in 1...10 { await Task.yield() }
-    }
 
     /// A call that can never finish and ignores cancellation: the closest a
     /// test can get to the in-process RPC bridge this helper exists for.
@@ -65,46 +58,63 @@ struct WithHardTimeoutTests {
     @Test("a call that never answers is abandoned when the clock runs out")
     func timeoutAbandons() async throws {
         let clock = TestClock()
+        let entered = Gate()
         let task = Task {
             try await withHardTimeout(.seconds(5), clock: clock) {
-                await self.neverAnswers()
+                entered.open()
+                return await self.neverAnswers()
             }
         }
-        await settle()
+        // `entered` is the deterministic version of what a yield count only
+        // hoped for: the detached work task is provably running, so the
+        // deadline was fixed on a `clock.now` that has not advanced yet.
+        try await entered.wait()
         await clock.advance(by: .seconds(5))
         await #expect(throws: HardTimeoutError.self) { try await task.value }
     }
 
     @Test("a call that answers after the deadline is still a timeout")
     func lateAnswerIsTimeout() async throws {
-        // The race the deadline check exists for: one advance makes the call's
-        // sleep and the timer's sleep due together. Whichever wakes first must
-        // not matter — the call finished past its budget.
+        // Constructed, not scheduled: the clock is advanced a second past the
+        // deadline first, *then* the call is allowed to answer — a finish
+        // stamped after the deadline is a timeout no matter which task wakes
+        // first.
         let clock = TestClock()
+        let entered = Gate()
+        let unblock = Gate()
         let task = Task {
             try await withHardTimeout(.seconds(5), clock: clock) { () -> Int in
-                // `try?` so the courtesy cancel can't end this call early.
-                try? await clock.sleep(for: .seconds(10))
+                entered.open()
+                // Parks through the courtesy cancel — it must be the test,
+                // not the timeout's cancel, that lets this call answer.
+                await unblock.waitIgnoringCancellation()
                 return 7
             }
         }
-        await settle()
-        await clock.advance(by: .seconds(10))
+        try await entered.wait()
+        await clock.advance(by: .seconds(6))
+        unblock.open()
         await #expect(throws: HardTimeoutError.self) { try await task.value }
     }
 
     @Test("a call that answers exactly at the deadline is late")
     func answerAtDeadlineIsLate() async throws {
         // Pins the strict `<`: within N seconds means before the deadline.
+        // Advancing exactly to it before unblocking stamps the finish *at*
+        // the deadline by construction.
         let clock = TestClock()
+        let entered = Gate()
+        let unblock = Gate()
         let task = Task {
             try await withHardTimeout(.seconds(5), clock: clock) { () -> Int in
-                try? await clock.sleep(for: .seconds(5))
+                entered.open()
+                await unblock.waitIgnoringCancellation()
                 return 7
             }
         }
-        await settle()
+        try await entered.wait()
         await clock.advance(by: .seconds(5))
+        unblock.open()
         await #expect(throws: HardTimeoutError.self) { try await task.value }
     }
 
@@ -114,14 +124,19 @@ struct WithHardTimeoutTests {
         // courtesy cancel must not surface that CancellationError to the
         // caller — the honest report is that the budget ran out.
         let clock = TestClock()
+        let entered = Gate()
         let task = Task {
             try await withHardTimeout(.seconds(5), clock: clock) { () -> Int in
-                try await clock.sleep(for: .seconds(10))
+                entered.open()
+                // A gate nobody opens: `wait()` ends when the helper's
+                // courtesy cancel lands, throwing CancellationError — exactly
+                // the answering-call shape being pinned.
+                try await Gate().wait()
                 return 7
             }
         }
-        await settle()
-        await clock.advance(by: .seconds(10))
+        try await entered.wait()
+        await clock.advance(by: .seconds(5))
         await #expect(throws: HardTimeoutError.self) { try await task.value }
     }
 
@@ -130,20 +145,25 @@ struct WithHardTimeoutTests {
         // The cancel is a courtesy — the in-process transport ignores it, but
         // the HTTP transport observes it, so the helper must still send it.
         let clock = TestClock()
-        let sawCancel = Mutex(false)
+        let entered = Gate()
+        let sawCancel = Gate()
         let task = Task {
             try await withHardTimeout(.seconds(5), clock: clock) {
                 await withTaskCancellationHandler {
-                    await self.neverAnswers()
+                    entered.open()
+                    return await self.neverAnswers()
                 } onCancel: {
-                    sawCancel.withLock { $0 = true }
+                    sawCancel.open()
                 }
             }
         }
-        await settle()
+        try await entered.wait()
         await clock.advance(by: .seconds(5))
         await #expect(throws: HardTimeoutError.self) { try await task.value }
-        #expect(sawCancel.withLock { $0 })
+        // The assertion is the event itself: suspend until the work task's
+        // cancellation handler opens the gate, whenever the executor gets to
+        // it — no flag to sample ahead of its writer.
+        try await sawCancel.wait()
     }
 
     @Test("cancelling the caller releases the wait and cancels the call")
@@ -151,50 +171,50 @@ struct WithHardTimeoutTests {
         // Without this, a cancelled caller would hang on a call that ignores
         // cancellation — the suspended continuation would never resume.
         let clock = TestClock()
-        let sawCancel = Mutex(false)
+        let sawCancel = Gate()
         let task = Task {
             try await withHardTimeout(.seconds(30), clock: clock) {
                 await withTaskCancellationHandler {
                     await self.neverAnswers()
                 } onCancel: {
-                    sawCancel.withLock { $0 = true }
+                    sawCancel.open()
                 }
             }
         }
-        await settle()
+        // No ordering setup is needed before cancelling: a cancel delivered
+        // before the detached work task even runs is sticky, and is delivered
+        // whenever the call's handler installs.
         task.cancel()
         await #expect(throws: CancellationError.self) { try await task.value }
-        #expect(sawCancel.withLock { $0 })
+        try await sawCancel.wait()
     }
 
     @Test("an abandoned call still finishes in the background; its result is dropped")
     func abandonedWorkCompletes() async throws {
         let clock = TestClock()
-        let finished = Mutex(false)
+        let entered = Gate()
+        let finishWhen = Gate()
+        let finished = Gate()
         let task = Task {
             try await withHardTimeout(.seconds(5), clock: clock) {
-                await withTaskCancellationHandler {
-                    // Cancellation-resistant work: `try?` swallows the cancel
-                    // sent at timeout, so this resumes only when its own (later)
-                    // sleep elapses — or when cancelled twice by the caller.
-                    try? await Task.sleep(for: .seconds(10), clock: clock)
-                } onCancel: {}
-                if Task.isCancelled {
-                    // The courtesy cancel landed; simulate work that ignores it
-                    // and runs to completion anyway.
-                    try? await Task.sleep(for: .seconds(10), clock: clock)
-                }
-                finished.withLock { $0 = true }
+                entered.open()
+                // Ignores the courtesy cancel outright — parks until the test
+                // opens it, which is the point of the scenario: a call whose
+                // caller has already gone away is still running.
+                await finishWhen.waitIgnoringCancellation()
+                finished.open()
                 return 0
             }
         }
-        await settle()
+        try await entered.wait()
         await clock.advance(by: .seconds(5))
         await #expect(throws: HardTimeoutError.self) { try await task.value }
-        // The helper has returned; the call has not finished. It does later,
-        // and nothing crashes when its result has nowhere to go.
-        await clock.advance(by: .seconds(10))
-        await settle()
-        #expect(finished.withLock { $0 })
+        // The helper has returned and the call has provably *not* — this is
+        // positive evidence, not a timing implication.
+        #expect(finished.isOpen == false)
+        finishWhen.open()
+        // The abandoned call now finishes, and nothing crashes when its
+        // result has nowhere to go.
+        try await finished.wait()
     }
 }

@@ -29,6 +29,12 @@
 //  callers; it is kept as the escape hatch for waits genuinely outside any
 //  clock's control (a real filesystem event, a third-party callback).
 //
+//  Between the two sits `Gate` (same directory): when the code under test
+//  can signal the moment the test waits for — an operation starting, a
+//  cancellation handler running, abandoned work finishing — awaiting a
+//  gate orders the step on the event itself, no clock involved. Prefer it
+//  over polling whenever the event has a place to call `open()`.
+//
 //  What it is NOT for: a stand-in for `Task.sleep(for:)` with a bigger
 //  number. If you find yourself widening a timeout to make CI pass, the
 //  wait belongs on a clock you control.
