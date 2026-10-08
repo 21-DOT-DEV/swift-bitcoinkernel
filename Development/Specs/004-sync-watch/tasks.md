@@ -118,18 +118,33 @@ not a source of commits to replay.
   `Sources/NodeAppTests/{NodeAutomationTests,NodePreflightTests,NodeRunReportTests,SyncNodeLongRunningIntentTests}.swift`,
   `Resources/NodeApp/`, `Projects/Project.swift`,
   `Projects/AGENTS.md` · ref `LONG-PHASE-0`
-- [ ] T005 [P] `persistLastKnown` moves out of `measuredReport` — today the
-  write runs before the last `answerIsStillWanted` guard, so a run cancelled
-  or node-stopped in that window advances a baseline it never reported; the
-  report carries the last-known height+chain and each intent persists it only
-  on the path that returns `.result(value:)`. Lands the store seam T003
-  deferred: `NodeViewModel.persistLastKnown(height:chain:in:)` and
-  `lastKnown(in:)` take a `UserDefaults` defaulting to `.standard`, and the
-  report-level persist takes `to:` — so the last-known tests hand a scratch
-  store instead of writing the app's real settings (~100) ·
+- [x] T005 [P] `persistLastKnown` moves out of `measuredReport` — the write
+  ran before the last `answerIsStillWanted` guard, so a run cancelled or
+  node-stopped in that window advanced a baseline it never reported; each
+  intent now persists the report's measured height+chain only on the path
+  that returns `.result(value:)`, after every cancellation check.
+  Landed as two baselines instead of the planned shared store:
+  `last_known_*` stays observational — the sync poll writes it every 30 s,
+  the dashboard reads it — while a run-owned `last_run_*` becomes the
+  "blocks since last check" baseline, moved only by a returned result;
+  without the split the poll's writes would collapse a retried run's delta
+  toward zero against its own abandoned attempt's observations
+  (`restartPerform` re-entry makes that concrete, not hypothetical).
+  `NodeRun.persistReportedTip(from:to:)` is the boundary write — a returned
+  report updates the run baseline unconditionally and `last_known_*` only
+  when it would not rewind a fresher same-chain observation the poll may
+  have written mid-question — and the run reads `lastRunBaseline()` =
+  `lastRun ?? lastKnown` so the first run after upgrade still measures
+  against the old baseline. The `lastKnown`
+  computed property is gone in favour of function-only
+  `lastKnown(in:)`/`lastRun(in:)` and
+  `persistLast{Known,Run}(height:chain:in:)`, each store defaulting to
+  `.standard`; a new `NodeRunTests` suite pins the contract against
+  `makeVolatileDefaults()` scratch stores (~130) ·
   `Sources/NodeApp/NodeRun.swift`, `NodeViewModel.swift`,
-  `SyncNodeIntent.swift`,
-  `SyncNodeLongRunningIntent.swift` · ref `LONG-PHASE-0`
+  `SyncNodeIntent.swift`, `SyncNodeLongRunningIntent.swift`,
+  `DashboardView.swift`, `NodeRunReport.swift`,
+  `Sources/NodeAppTests/NodeRunTests.swift` · ref `LONG-PHASE-0`
 
 **Checkpoint:** a settings toggle landing mid-run cannot re-scope what this
 run launches; dialog text is extractable; baselines advance only on reported
@@ -248,11 +263,15 @@ watch orchestration until the next group.
   node, Tor, and reader are fixed instances, so a test cannot conjure a
   never-ready Tor or a mid-watch-stopping node — a narrow protocol (or an
   internal-init session) exposing Tor readiness, node state, and the
-  `DashboardDataSource` reader lets the harness fake all three. Land
-  `NodeRunTests.swift` with the minimal `TestClock` harness the run tasks
-  below build on; the sleep policy lands here too — cadence and heartbeat
-  sleeps carry ~1 s tolerance so the system can coalesce them, only
-  `withHardTimeout`'s deadline race keeps `tolerance: nil` (~200) ·
+  `DashboardDataSource` reader lets the harness fake all three. Extend
+  `NodeRunTests.swift` (T005 landed it with the persistence suite) with
+  the minimal `TestClock` harness the run tasks below build on — including
+  the case T005's seam cannot reach: a run cancelled or stopped between the
+  last `answerIsStillWanted` check and the `.result` return persists
+  nothing; the sleep
+  policy lands here too — cadence and heartbeat sleeps carry ~1 s
+  tolerance so the system can coalesce them, only `withHardTimeout`'s
+  deadline race keeps `tolerance: nil` (~200) ·
   `Sources/NodeApp/NodeRun.swift`, `Sources/NodeApp/NodeSession.swift`,
   `Sources/NodeApp/SyncNodeLongRunningIntent.swift`,
   `Sources/NodeAppTests/NodeRunTests.swift`
@@ -325,10 +344,12 @@ watch orchestration until the next group.
   `Sources/NodeApp/NodeRun.swift`,
   `Sources/NodeAppTests/NodeRunTests.swift` · needs T022
 - [ ] T027 `previous` snapshot captured at attach on `reportExistingNode` —
-  before the weigh-in, not merely before the watch: the app's own sync poll
-  can overwrite `lastKnown` in those seconds too; a watched run's report is
+  before the weigh-in, not merely before the watch: the run-owned
+  `last_run_*` baseline cannot be moved by the poll, but a concurrent run's
+  returned result can — and on a first-ever run the `last_known_*` fallback
+  is poll-writable — so a watched run's report is
   built from the last good reading, not the first answer's — the test
-  overwrites `lastKnown` between attach and weigh-in and reads the surviving
+  overwrites `lastRun` between attach and weigh-in and reads the surviving
   baseline (FR-017; verifies FR-017) (~140) ·
   `Sources/NodeApp/NodeRun.swift`,
   `Sources/NodeAppTests/NodeRunTests.swift` · needs T022

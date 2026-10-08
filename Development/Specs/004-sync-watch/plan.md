@@ -460,8 +460,9 @@ branchable value beats a `nil` automations must test for.
 
 A watched run also gains `blocksGainedThisRun` — heights earned while this run
 watched — because `blocksSinceLastCheck` keeps its existing meaning (measured
-against the pre-run `lastKnown` snapshot) and a fifteen-minute watch would
-otherwise leave it answering two questions at once. `lastKnown` keeps
+against the pre-run baseline — run-owned `last_run_*`, falling back to
+`last_known_*` until the first result is returned) and a fifteen-minute watch
+would otherwise leave it answering two questions at once. `last_run_*` keeps
 run-boundary discipline — written once at report time, never per-poll
 ([research §6](./research.md)). A watched run builds its report from the last
 good reading — the last poll that returned data, which on a `noProgress` or

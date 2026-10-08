@@ -285,8 +285,9 @@ is dead peers, a lost network, a wedged validation thread.
 
 ## 6. Baseline and reporting semantics
 
-- **`blocksSinceLastCheck` keeps run-boundary discipline.** `lastKnown` is
-  written once at report time, never per-poll — and only on the path that
+- **`blocksSinceLastCheck` keeps run-boundary discipline.** The run's
+  baseline — `last_run_*`, split from the poll-writable `last_known_*` — is
+  written once at report time, never per-poll, and only on the path that
   actually returns `.result(value:)`. T005 moves the write out of
   `measuredReport`: today it precedes the last `answerIsStillWanted` guard,
   so a run cancelled or node-stopped in that window advances the baseline
@@ -299,9 +300,10 @@ is dead peers, a lost network, a wedged validation thread.
   re-runs `perform` from the top, up to ~21 minutes per attempt, with the node
   left running between attempts (spec edge cases). The `previous` snapshot is
   captured *before* the watch on
-  the `reportExistingNode` path — the app's own sync poll can overwrite
-  `lastKnown` during a fifteen-minute watch, reporting ~0 for a run that
-  watched real gains.
+  the `reportExistingNode` path — the baseline can still move mid-watch (the
+  poll writes the `last_known_*` fallback until any run returns, and a
+  concurrent run's returned result moves `last_run_*` thereafter) —
+  reporting ~0 for a run that watched real gains.
 - **Localization has two sinks, and the shipped one is a bug.** `Progress`'s
   `localized*` properties are plain `String`s resolved in the app's locale —
   card text uses `String(localized:)`. The dialog is worse off: both intents

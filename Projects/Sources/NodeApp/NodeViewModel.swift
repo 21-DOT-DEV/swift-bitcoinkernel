@@ -195,34 +195,96 @@ final class NodeViewModel {
 
     // MARK: - Resume state
 
-    /// A persisted snapshot of the node's last-seen tip, shown before Start so
-    /// the dashboard can frame a relaunch as resuming a known chain.
-    struct LastKnownState: Equatable {
+    /// A tip persisted to either baseline store — height, chain, and when it
+    /// was recorded. The type is deliberately store-neutral: `lastKnown` and
+    /// `lastRun` both hand one back, and the caller's accessor says which —
+    /// only the `last_known_*` store feeds the dashboard's pre-Start
+    /// "resuming a known chain" line.
+    struct PersistedTip: Equatable {
         let height: Int
         let chain: String
         let date: Date
     }
 
+    /// Two baselines with two different owners — deliberately not one shared
+    /// key set, because the two mean different things and a writer of one must
+    /// never reset the other.
+    ///
+    /// `last_known_*` is **observational**: the last tip anyone saw. The sync
+    /// poll writes it every 30 seconds while the node runs, and a run whose
+    /// result is returned writes it too — a reported reading is a real
+    /// observation. The dashboard's "last validated" line reads it.
+    ///
+    /// `last_run_*` is **transactional**: the last tip a run actually
+    /// *reported*. Only the `.result` path at the intent boundary writes it,
+    /// and only runs read it, as the `previous` a "blocks since last check"
+    /// is measured from. If the poll wrote it, that delta would collapse
+    /// toward zero whenever the app had been alive in the last half-minute —
+    /// and a cancelled run would advance a baseline it never reported.
     private static let lastHeightKey = "last_known_height"
     private static let lastChainKey = "last_known_chain"
     private static let lastDateKey = "last_known_date"
+    private static let lastRunHeightKey = "last_run_height"
+    private static let lastRunChainKey = "last_run_chain"
+    private static let lastRunDateKey = "last_run_date"
 
-    static func persistLastKnown(height: Int, chain: String) {
-        let defaults = UserDefaults.standard
-        defaults.set(height, forKey: lastHeightKey)
-        defaults.set(chain, forKey: lastChainKey)
-        defaults.set(Date(), forKey: lastDateKey)
+    /// The store is a parameter, defaulting to the app's real one, so tests can
+    /// hand a throwaway suite instead — a test writing `.standard` would
+    /// overwrite the person's real last-seen tip.
+    static func persistLastKnown(
+        height: Int, chain: String, in defaults: UserDefaults = .standard
+    ) {
+        persist(
+            height: height, chain: chain, in: defaults,
+            heightKey: lastHeightKey, chainKey: lastChainKey, dateKey: lastDateKey)
     }
 
-    /// The last persisted tip, or `nil` if the node has never reported one.
-    static var lastKnown: LastKnownState? {
-        let defaults = UserDefaults.standard
-        guard defaults.object(forKey: lastHeightKey) != nil,
-              let chain = defaults.string(forKey: lastChainKey),
-              let date = defaults.object(forKey: lastDateKey) as? Date
+    /// The observational baseline — the last tip anyone recorded, poll or
+    /// returned run — or `nil` if nothing has ever been recorded.
+    static func lastKnown(in defaults: UserDefaults = .standard) -> PersistedTip? {
+        read(
+            in: defaults,
+            heightKey: lastHeightKey, chainKey: lastChainKey, dateKey: lastDateKey)
+    }
+
+    /// The run-owned counterparts — see the note on the keys above. No caller
+    /// outside `NodeRun` has business writing these; the poll never touches
+    /// them.
+    static func persistLastRun(
+        height: Int, chain: String, in defaults: UserDefaults = .standard
+    ) {
+        persist(
+            height: height, chain: chain, in: defaults,
+            heightKey: lastRunHeightKey, chainKey: lastRunChainKey, dateKey: lastRunDateKey)
+    }
+
+    /// The run-owned baseline — the last tip a returned result reported — or
+    /// `nil` until the first result is returned after the split was introduced.
+    static func lastRun(in defaults: UserDefaults = .standard) -> PersistedTip? {
+        read(
+            in: defaults,
+            heightKey: lastRunHeightKey, chainKey: lastRunChainKey, dateKey: lastRunDateKey)
+    }
+
+    private static func persist(
+        height: Int, chain: String, in defaults: UserDefaults,
+        heightKey: String, chainKey: String, dateKey: String
+    ) {
+        defaults.set(height, forKey: heightKey)
+        defaults.set(chain, forKey: chainKey)
+        defaults.set(Date(), forKey: dateKey)
+    }
+
+    private static func read(
+        in defaults: UserDefaults,
+        heightKey: String, chainKey: String, dateKey: String
+    ) -> PersistedTip? {
+        guard defaults.object(forKey: heightKey) != nil,
+              let chain = defaults.string(forKey: chainKey),
+              let date = defaults.object(forKey: dateKey) as? Date
         else { return nil }
-        return LastKnownState(
-            height: defaults.integer(forKey: lastHeightKey), chain: chain, date: date
+        return PersistedTip(
+            height: defaults.integer(forKey: heightKey), chain: chain, date: date
         )
     }
 }
