@@ -470,7 +470,7 @@ enum NodeRun {
         session: NodeSession,
         onProgress: @MainActor (Double) -> Void
     ) async -> NodeRunReport {
-        let gained = NodeAutomation.blocksGained(from: previous, to: reading)
+        let blocksSinceLastCheck = NodeAutomation.blocksSince(previous: previous, to: reading)
         let connections = await connectionCount(session: session)
         // The peer-count question above is another bounded wait — the same window
         // every path in this file re-checks after. A node stopped in those last
@@ -482,11 +482,11 @@ enum NodeRun {
             chain: reading.chain,
             blockHeight: reading.height,
             blocksBehind: reading.blocksBehind,
-            blocksSinceLastCheck: gained,
+            blocksSinceLastCheck: blocksSinceLastCheck,
             connections: connections,
             dialogTemplate: NodeAutomation.summary(
                 outcome: outcome, chain: reading.chain, height: reading.height,
-                blocksBehind: reading.blocksBehind, blocksSinceLastCheck: gained,
+                blocksBehind: reading.blocksBehind, blocksSinceLastCheck: blocksSinceLastCheck,
                 declinedReason: nil))
     }
 
@@ -549,7 +549,7 @@ enum NodeRun {
     }
 
     /// The last tip a run actually reported, as a `LiveReading` so it can feed
-    /// the blocks-gained calculation. Reads the run-owned baseline — the
+    /// `blocksSince`. Reads the run-owned baseline — the
     /// observational `last_known_*` the sync poll writes is a different store,
     /// so a run's delta is never truncated by background polling.
     ///
@@ -562,7 +562,7 @@ enum NodeRun {
     /// exists and the fallback is never consulted again.
     ///
     /// A chain switch reads the same way: `last_run_*` still names the old
-    /// chain, `blocksGained` refuses the cross-chain subtraction, and the
+    /// chain, `blocksSince` refuses the cross-chain subtraction, and the
     /// first run on the new chain reports no delta rather than a nonsense
     /// one — then its returned result seeds the baseline going forward. The
     /// old single store behaved this way only by timing luck: it produced a

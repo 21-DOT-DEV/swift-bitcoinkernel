@@ -152,11 +152,19 @@ results. Every task lands standalone.
 
 ## Report vocabulary
 
-- [ ] T006 [P] Rename `NodeAutomation.blocksGained(from:to:)` to
+- [x] T006 [P] Rename `NodeAutomation.blocksGained(from:to:)` to
   `blocksSince(previous:to:)` — `measuredReport` stores its result in
   `blocksSinceLastCheck`, and the file must not hold two names meaning
-  different baselines before T007 adds the second (~40) ·
-  `Sources/NodeApp/NodeAutomation.swift` and its callers
+  different baselines before T007 adds the second. Landed as specced —
+  the spike never reached this rename, so there was nothing to revisit:
+  signature `blocksSince(previous:to:)` with internal names
+  `previous`/`current`, the doc comment now stating that "since" is the
+  caller's baseline choice (pre-run snapshot today, watch-entry reading
+  once the watch reuses it), `measuredReport`'s local renamed
+  `blocksSinceLastCheck` to trace the field it feeds, the two stale
+  `NodeRun` comment mentions updated, and the four covering tests renamed
+  with it (~50) · `Sources/NodeApp/NodeAutomation.swift`,
+  `NodeRun.swift`, `Sources/NodeAppTests/NodeAutomationTests.swift`
 - [ ] T007 `NodeSyncResult` `AppEnum` — the FR-005 case set including
   `notMeasured`, explicit raw strings — plus the `syncResult` and
   `blocksGainedThisRun` `@Property`s on `NodeRunReport`, non-optional. Tests
