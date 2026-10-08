@@ -30,12 +30,6 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "zero" : {
-                    "stringUnit" : {
-                      "state" : "translated",
-                      "value" : "No new blocks since the last check."
-                    }
-                  },
                   "one" : {
                     "stringUnit" : {
                       "state" : "translated",
@@ -46,6 +40,12 @@
                     "stringUnit" : {
                       "state" : "translated",
                       "value" : "%arg new blocks since the last check."
+                    }
+                  },
+                  "zero" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "No new blocks since the last check."
                     }
                   }
                 }
@@ -104,7 +104,13 @@
     "Blocks behind" : {
 
     },
+    "Blocks gained this run" : {
+
+    },
     "Blocks since last check" : {
+
+    },
+    "Caught up" : {
 
     },
     "Chain" : {
@@ -114,6 +120,9 @@
 
     },
     "Commands" : {
+
+    },
+    "Conditions changed" : {
 
     },
     "Configuration" : {
@@ -231,6 +240,9 @@
     "No log output" : {
 
     },
+    "No progress" : {
+
+    },
     "Node Not Running" : {
 
     },
@@ -262,7 +274,16 @@
         }
       }
     },
+    "Node stopped" : {
+
+    },
+    "Node Sync Result" : {
+
+    },
     "Node Type" : {
+
+    },
+    "Not measured" : {
 
     },
     "Only %@ of free space is left, which is too little to sync safely, so the node did not start." : {
@@ -364,6 +385,9 @@
     "Starts the Bitcoin node and reports the result within the short time a background action is allowed — a node still coming up when time runs out is left running. Runs without opening the app. On iOS 27, Keep Bitcoin Node Syncing runs for longer." : {
 
     },
+    "Still syncing" : {
+
+    },
     "Stop Node" : {
 
     },
@@ -383,6 +407,9 @@
 
     },
     "Sync Bitcoin Node" : {
+
+    },
+    "Sync result" : {
 
     },
     "Synced to tip" : {

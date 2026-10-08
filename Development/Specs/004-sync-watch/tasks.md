@@ -165,14 +165,36 @@ results. Every task lands standalone.
   `NodeRun` comment mentions updated, and the four covering tests renamed
   with it (~50) · `Sources/NodeApp/NodeAutomation.swift`,
   `NodeRun.swift`, `Sources/NodeAppTests/NodeAutomationTests.swift`
-- [ ] T007 `NodeSyncResult` `AppEnum` — the FR-005 case set including
-  `notMeasured`, explicit raw strings — plus the `syncResult` and
-  `blocksGainedThisRun` `@Property`s on `NodeRunReport`, non-optional. Tests
-  pin every case's display wording, the `notMeasured` rules, and that the two
+- [x] T007 `NodeSyncResult` `AppEnum` — the FR-005 case set including
+  `notMeasured`, explicit raw strings — plus `syncResult` (non-optional) and
+  `blocksGainedThisRun` (`Int?`) `@Property`s on `NodeRunReport`. Tests pin
+  every case's display wording, the `notMeasured` rules, and that the two
   baselines differ (`blocksSinceLastCheck` spans the pre-run gap,
-  `blocksGainedThisRun` only what this run watched) (FR-005, FR-016;
-  verifies FR-005, FR-016) (~200) · `Sources/NodeApp/NodeRunReport.swift`,
-  `Sources/NodeAppTests/NodeRunReportTests.swift` · needs T006
+  `blocksGainedThisRun` only what this run watched). Landed near-specced —
+  the spike never reached this vocabulary, so nothing was re-derived: six
+  cases with explicit strings and pinned wording, and the report contract
+  settled on two sharpenings the spec now carries: `blocksGainedThisRun` is
+  `Int?` — nil, not zero, says nobody watched, the same rule every other
+  number on the report follows (a `= 0` automation would otherwise fire on
+  every short run) — and both fields are required init arguments, not
+  defaults, so a producer cannot omit the sync answer and silently report
+  `notMeasured`. The four `NodeRun` producers pass `.notMeasured`/`nil`
+  explicitly — T011's gate and T022's watch bring real answers to the
+  budgeted paths; the short action keeps these permanently (SC-005's
+  report is unchanged; only its construction is explicit). The `NodeAutomation` twin and its mapping
+  deliberately wait for the first producer rather than pre-committing T013's
+  ending model. Two calls the spec left open were settled here and
+  FR-005/plan §3.7 corrected in place: an entry-gate decline on an
+  already-synced node reports `caughtUp`, and a `regtest` decline reports
+  `notMeasured`, so T011's gate answers *why* it declined, not just whether.
+  T007 pins the
+  vocabulary and the report contract; behavior re-verifies end-to-end at
+  T036 (FR-005, FR-016; verifies FR-005, FR-016) (~250 + catalog) ·
+  `Sources/NodeApp/NodeRunReport.swift`, `Sources/NodeApp/NodeRun.swift`,
+  `Sources/NodeAppTests/NodeRunReportTests.swift`,
+  `Sources/NodeAppTests/NodeRunTests.swift`,
+  `Sources/NodeAppTests/SyncNodeLongRunningIntentTests.swift`,
+  `Resources/NodeApp/Localizable.xcstrings` · needs T006
 
 **Checkpoint:** the report carries the second axis (`syncResult`) and
 `blocksGainedThisRun`; the tests were seen failing before the code they cover.
@@ -206,10 +228,15 @@ results. Every task lands standalone.
   `Sources/NodeApp/NodeAutomation.swift`,
   `Sources/NodeAppTests/NodeAutomationTests.swift` · needs T008 ·
   provisional on T039
-- [ ] T011 Watch-entry gate — enter only when the IBD flag is set, a header
+- [ ] T011 Watch-entry gate — enter when the IBD flag is set, a header
   gap is open, or the tip is older than `tipFreshnessThreshold` (~60 min)
-  against an injected wall-clock `now`; `regtest` never enters (FR-001,
-  FR-015; verifies FR-001, FR-015) (~150) ·
+  against an injected wall-clock `now`; `regtest` never enters. The gate
+  answers *why* it declined, not just whether: a decline on an
+  already-synced node reports `caughtUp`; a `regtest` decline reports
+  `notMeasured` (settled at T007). The freshness test is one function —
+  `tipIsFresh(tipTime:now:)` — that T012's proof reuses, so gate and proof
+  cannot disagree at the boundary; it is defined and boundary-tested here
+  (FR-001, FR-005, FR-015; verifies FR-001, FR-015) (~150) ·
   `Sources/NodeApp/NodeAutomation.swift`,
   `Sources/NodeAppTests/NodeAutomationTests.swift` · needs T008
 - [ ] T012 The `caughtUp` proof — flag cleared *and* `blocks == headers`
@@ -449,7 +476,7 @@ proof is T039's.
   → watch → named ending on the last good reading, the node left running,
   `blocksGainedThisRun` counting the earned heights; the unbudgeted path
   emits its pre-existing report fields and progress writes byte-identical
-  (the two new fields read `notMeasured` and 0) — the SC-005
+  (the two new fields read `notMeasured` and absent) — the SC-005
   assertion (verifies FR-005, FR-009, FR-013, FR-014, FR-016, FR-017,
   SC-005) (~160) · `Sources/NodeAppTests/NodeRunTests.swift` ·
   needs T021–T029, T034

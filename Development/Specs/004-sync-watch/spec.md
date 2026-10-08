@@ -80,7 +80,9 @@ result — verifiable end-to-end on a locked device without any other feature.
     not the first answer's — covers FR-017.
 16. **Given** a run that ends before the watch — declined or unanswered —
     **when** it reports, **then** `syncResult` is `notMeasured`, except the
-    weigh-in refusal which reports `conditionsChanged` — covers FR-005.
+    weigh-in refusal which reports `conditionsChanged`, and an entry-gate
+    decline on an already-synced node, which reports `caughtUp` —
+    covers FR-005.
 17. **Given** a silent stretch mid-watch, **when** heartbeat ticks write,
     **then** a fresh write lands every ~5 s and the bar never claims beyond
     the earned floor (+1 display band) — covers FR-004, FR-018.
@@ -127,9 +129,12 @@ result — verifiable end-to-end on a locked device without any other feature.
   branchable endings `caughtUp`, `stillSyncing`, `noProgress`, `nodeStopped`,
   `conditionsChanged` for a watched run, or `notMeasured` when the run has no
   sync answer to give: declined before the weigh-in, no answer before the
-  watch, every short-action run — except the entry-weigh-in refusal, which
-  reports `conditionsChanged`. A new field; no existing field changes
-  meaning.
+  watch, every short-action run, or a `regtest` chain, where the sync
+  question is ill-defined. Two paths still answer without the watch running:
+  the entry-weigh-in refusal reports `conditionsChanged`, and an entry-gate
+  decline on an already-synced node reports `caughtUp` — the same bar the
+  watch's proof applies, evaluated once at entry.
+  A new field; no existing field changes meaning.
 - **FR-006** `caughtUp` has one proof, and it is the node's own: the IBD flag
   cleared *and* `blocks == headers` (re-read each poll) *and* one of three
   ways to prove the run saw a real catch-up: headers advanced during the run,
@@ -184,7 +189,8 @@ result — verifiable end-to-end on a locked device without any other feature.
 - **FR-015** A `regtest` chain never enters the watch.
 - **FR-016** A watched run's report carries `blocksGainedThisRun` — heights earned
   while this run watched — alongside `blocksSinceLastCheck`, which keeps its
-  pre-run-snapshot meaning.
+  pre-run-snapshot meaning. `blocksGainedThisRun` is absent — not zero — when
+  nobody watched, the same rule every other number on the report follows.
 - **FR-017** A watched run's report is built from the last good reading, not
   the first answer's — on endings whose final poll produced nothing
   (`noProgress`, `nodeStopped`), that is the last reading that returned data.
@@ -220,7 +226,7 @@ what a number can falsify. The plan's Verification checklist cites each one.
   the run for silence.
 - **SC-005** An unbudgeted run (the short action) emits its pre-existing
   report fields and progress writes identical to the pre-feature behavior —
-  the two new fields read `notMeasured` and zero — verifiable as a test
+  the two new fields read `notMeasured` and absent — verifiable as a test
   assertion on the unbudgeted path, not a judgement call.
 
 ## Edge cases
