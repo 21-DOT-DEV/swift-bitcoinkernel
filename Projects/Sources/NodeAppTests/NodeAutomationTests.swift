@@ -271,31 +271,31 @@ struct NodeAutomationTests {
         NodeAutomation.LiveReading(chain: chain, height: height, blocksBehind: behind)
     }
 
-    @Test("blocks gained is the difference between two readings")
-    func blocksGained() {
+    @Test("blocks since a baseline is the difference between two readings")
+    func blocksSince() {
         #expect(
-            NodeAutomation.blocksGained(from: reading("main", 100), to: reading("main", 142)) == 42)
+            NodeAutomation.blocksSince(previous: reading("main", 100), to: reading("main", 142)) == 42)
     }
 
-    @Test("blocks gained is unknown when either reading is missing")
-    func blocksGainedMissing() {
-        #expect(NodeAutomation.blocksGained(from: nil, to: reading("main", 142)) == nil)
-        #expect(NodeAutomation.blocksGained(from: reading("main", 100), to: nil) == nil)
+    @Test("blocks since a baseline is unknown when either reading is missing")
+    func blocksSinceMissing() {
+        #expect(NodeAutomation.blocksSince(previous: nil, to: reading("main", 142)) == nil)
+        #expect(NodeAutomation.blocksSince(previous: reading("main", 100), to: nil) == nil)
     }
 
-    @Test("blocks gained is unknown across different chains, never a nonsense number")
-    func blocksGainedAcrossChains() {
+    @Test("blocks since a baseline is unknown across different chains, never a nonsense number")
+    func blocksSinceAcrossChains() {
         // Subtracting a test-chain height from a main-chain one would produce a
         // confident-looking lie.
         #expect(
-            NodeAutomation.blocksGained(from: reading("test", 10), to: reading("main", 900_000))
+            NodeAutomation.blocksSince(previous: reading("test", 10), to: reading("main", 900_000))
                 == nil)
     }
 
     @Test("a height that went backwards reports no gain rather than a negative one")
-    func blocksGainedNeverNegative() {
+    func blocksSinceNeverNegative() {
         #expect(
-            NodeAutomation.blocksGained(from: reading("main", 200), to: reading("main", 150)) == 0)
+            NodeAutomation.blocksSince(previous: reading("main", 200), to: reading("main", 150)) == 0)
     }
 
     @Test("a declined run reports its reason as the whole message")

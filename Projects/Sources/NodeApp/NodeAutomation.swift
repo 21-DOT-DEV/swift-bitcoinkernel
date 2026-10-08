@@ -293,16 +293,19 @@ enum NodeAutomation {
         return LiveReading(chain: info.chain, height: sync.blocks, blocksBehind: sync.headersAhead)
     }
 
-    /// Blocks gained between two readings, or `nil` when that cannot be known.
+    /// Blocks between two readings — "since" whichever baseline the caller
+    /// supplies — or `nil` when that cannot be known.
     ///
-    /// `nil` when either reading is missing, or when the two are of **different
-    /// chains** — subtracting a testnet height from a mainnet one would produce a
-    /// confident-looking nonsense number. Never negative: a height that went backwards
-    /// (a chain reorganisation, or a rebuilt index) is reported as no gain rather than
-    /// a negative one.
-    static func blocksGained(from start: LiveReading?, to end: LiveReading?) -> Int? {
-        guard let start, let end, start.chain == end.chain else { return nil }
-        return max(0, end.height - start.height)
+    /// The name promises no particular baseline: the run passes its pre-run
+    /// snapshot, which is what makes the report's figure "blocks since the
+    /// last check". `nil` when either reading is missing, or when the two are
+    /// of **different chains** — subtracting a testnet height from a mainnet
+    /// one would produce a confident-looking nonsense number. Never negative:
+    /// a height that went backwards (a chain reorganisation, or a rebuilt
+    /// index) is reported as no gain rather than a negative one.
+    static func blocksSince(previous: LiveReading?, to current: LiveReading?) -> Int? {
+        guard let previous, let current, previous.chain == current.chain else { return nil }
+        return max(0, current.height - previous.height)
     }
 
     /// How a run ended, as a plain value.
