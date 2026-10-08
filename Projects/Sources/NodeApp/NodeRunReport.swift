@@ -106,9 +106,11 @@ struct NodeRunReport: TransientAppEntity {
     /// Headers the node knows about but has not yet downloaded as full blocks. Without
     /// this a height reads as "caught up" when the node may be far behind.
     @Property(title: "Blocks behind") var blocksBehind: Int?
-    /// Blocks arrived since the last height this app recorded — which spans the minutes
-    /// the node kept running after an earlier run returned, not just this run. Absent
-    /// when no height has ever been recorded, or the chain changed.
+    /// Blocks arrived since the last height a run actually reported — before any
+    /// run has returned, the last tip anyone observed stands in — which spans
+    /// the minutes the node kept running after an earlier run returned, not just
+    /// this run, and never collapses because a background poll saw the node in
+    /// between. Absent when no baseline has been recorded, or the chain changed.
     @Property(title: "Blocks since last check") var blocksSinceLastCheck: Int?
     /// Peers the node had when it was read. Absent if it could not be asked.
     @Property(title: "Connections") var connections: Int?

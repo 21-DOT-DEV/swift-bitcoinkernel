@@ -240,8 +240,9 @@ enum NodeRun {
         // The height recorded before this run, so the report can say what arrived since
         // — which spans the minutes the node kept running after an earlier run ended.
         // Captured before the wait, not after: once the node reaches `.running` its
-        // own sync poll begins overwriting it.
-        let previous = lastKnownReading()
+        // own sync poll begins overwriting the observational store the baseline
+        // can still fall back to.
+        let previous = lastRunBaseline()
 
         // The last checkpoint before the side effect: the condition read and the
         // argument build suspend nowhere, but a run cancelled in that window would
@@ -305,8 +306,9 @@ enum NodeRun {
         onProgress: @MainActor (Double) -> Void
     ) async -> NodeRunReport {
         // Captured before the wait for the same reason `start` captures it: once
-        // the node reaches `.running` its own sync poll overwrites it.
-        let previous = lastKnownReading()
+        // the node reaches `.running` its own sync poll overwrites the
+        // observational fallback the baseline can read.
+        let previous = lastRunBaseline()
         guard
             let reading = await awaitFirstAnswer(
                 session: session, within: budget, onProgress: onProgress)
@@ -433,21 +435,34 @@ enum NodeRun {
         guard answerIsStillWanted(session: session) else { return noAnswerReport() }
         onProgress(0.6)
         return await measuredReport(
-            outcome: .alreadyRunning, previous: lastKnownReading(),
+            outcome: .alreadyRunning, previous: lastRunBaseline(),
             reading: NodeAutomation.reading(from: info),
             session: session, onProgress: onProgress)
     }
 
-    /// The report for a run holding a real reading: persists the tip, asks the
-    /// last question (the peer count, bounded like every other), and fills the
-    /// bar only once nothing is still outstanding.
+    /// The report for a run holding a real reading: asks the last question
+    /// (the peer count, bounded like every other), and fills the bar only once
+    /// nothing is still outstanding.
     ///
-    /// `previous` is captured by the caller before its wait rather than read here,
-    /// because once a node reaches `.running` its own sync poll starts persisting
-    /// newer heights — a snapshot taken after the wait could be one this run's
-    /// own node just wrote, shrinking the "blocks since last check" delta toward
-    /// zero. The delta itself is computed once and feeds both the named field and
-    /// the sentence, so the two can never report different numbers.
+    /// `previous` is captured by the caller before the wait it is about to
+    /// do: the starting paths read it before `awaitFirstAnswer`, and
+    /// `report` reads it just before this call — after the node question,
+    /// before the peer-count one. It reads the run-owned `last_run_*`
+    /// baseline — written only by a result that is actually returned — so the
+    /// node's own sync poll (which writes the observational `last_known_*`
+    /// every 30 seconds) can never collapse the delta toward zero just because
+    /// the app was alive recently. Until any run has returned, the
+    /// `last_known_*` fallback can already be seconds old, so a first-ever run
+    /// against an already-running node can still report ≈0 — the pre-split
+    /// behavior, self-correcting once a result lands. The delta itself is
+    /// computed once and feeds both the named field and the sentence, so the
+    /// two can never report different numbers.
+    ///
+    /// Nothing is persisted here: the reading becomes a recorded tip only when
+    /// the run's result is actually returned — a run cancelled or stopped
+    /// between the last question and that return reports nothing, so it must
+    /// not advance a baseline it never reported. The actions make that call
+    /// through `persistReportedTip(from:to:)` on their `.result` path.
     private static func measuredReport(
         outcome: NodeAutomation.Outcome,
         previous: NodeAutomation.LiveReading?,
@@ -455,7 +470,6 @@ enum NodeRun {
         session: NodeSession,
         onProgress: @MainActor (Double) -> Void
     ) async -> NodeRunReport {
-        NodeViewModel.persistLastKnown(height: reading.height, chain: reading.chain)
         let gained = NodeAutomation.blocksGained(from: previous, to: reading)
         let connections = await connectionCount(session: session)
         // The peer-count question above is another bounded wait — the same window
@@ -534,12 +548,64 @@ enum NodeRun {
             nodeIsStopped: session.node.nodeState.isStoppedOrStopping)
     }
 
-    /// The last tip anyone recorded, as a `LiveReading` so it can feed the
-    /// blocks-gained calculation.
-    private static func lastKnownReading() -> NodeAutomation.LiveReading? {
-        NodeViewModel.lastKnown.map {
+    /// The last tip a run actually reported, as a `LiveReading` so it can feed
+    /// the blocks-gained calculation. Reads the run-owned baseline — the
+    /// observational `last_known_*` the sync poll writes is a different store,
+    /// so a run's delta is never truncated by background polling.
+    ///
+    /// The observational store is the fallback for the one case where no run
+    /// baseline exists yet: the first run after the split was introduced (or
+    /// a fresh install's first-ever run before any poll wrote — `nil` either
+    /// way then). For it, `last_known_*` is still the last tip the person was
+    /// ever shown, and measuring against it preserves the delta rather than
+    /// dropping the sentence. Once any run returns a result, `last_run_*`
+    /// exists and the fallback is never consulted again.
+    ///
+    /// A chain switch reads the same way: `last_run_*` still names the old
+    /// chain, `blocksGained` refuses the cross-chain subtraction, and the
+    /// first run on the new chain reports no delta rather than a nonsense
+    /// one — then its returned result seeds the baseline going forward. The
+    /// old single store behaved this way only by timing luck: it produced a
+    /// figure only once a poll the person never saw had already overwritten
+    /// the old-chain tip.
+    private static func lastRunBaseline() -> NodeAutomation.LiveReading? {
+        (NodeViewModel.lastRun() ?? NodeViewModel.lastKnown()).map {
             NodeAutomation.LiveReading(chain: $0.chain, height: $0.height, blocksBehind: 0)
         }
+    }
+
+    /// Records the report's reading as both baselines it feeds: the run-owned
+    /// `last_run_*` the next run's "blocks since last check" is measured from,
+    /// and the observational `last_known_*` the dashboard's "last validated"
+    /// line reads — a returned report is a legitimate observation too, though
+    /// never a rewind: a same-chain `last_known_*` already ahead of the report
+    /// (the poll can answer mid-question) survives.
+    ///
+    /// Called by the actions, not by the run itself, and only on the path that
+    /// returns the report as a result. The report carries height and chain
+    /// only when a measurement actually happened — a declined, unanswered, or
+    /// discarded run has neither — so the guard is the whole contract: a run
+    /// that reported no measurement cannot advance either baseline. Not
+    /// private — both intents call it. `to` exists so tests can hand a
+    /// throwaway store rather than the app's real settings.
+    static func persistReportedTip(
+        from report: NodeRunReport, to defaults: UserDefaults = .standard
+    ) {
+        guard let height = report.blockHeight, let chain = report.chain else { return }
+        // `last_run_*` records exactly what this run reported — unconditional,
+        // a reorg's lower tip included.
+        NodeViewModel.persistLastRun(height: height, chain: chain, in: defaults)
+        // The observational store may already hold a newer reading — the poll
+        // can have written one while the run asked its last question. A
+        // returned run must not rewind "last validated" past that: skip the
+        // write when the stored tip is already ahead on the same chain. The
+        // poll's unguarded writes keep reorgs and fresh heights converging on
+        // their own cadence either way.
+        if let known = NodeViewModel.lastKnown(in: defaults),
+            known.chain == chain, known.height > height {
+            return
+        }
+        NodeViewModel.persistLastKnown(height: height, chain: chain, in: defaults)
     }
 
     private static func declined(reason: LocalizedStringResource) -> NodeRunReport {

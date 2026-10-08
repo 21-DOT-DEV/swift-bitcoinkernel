@@ -55,7 +55,7 @@ struct DashboardView: View {
             ContentUnavailableView {
                 Label("Node Not Running", systemImage: "gauge.medium")
             } description: {
-                if let last = NodeViewModel.lastKnown {
+                if let last = NodeViewModel.lastKnown() {
                     Text("Last validated block \(last.height) on \(last.chain). Start the node to resume.")
                 } else {
                     Text("Start the node to watch its chain tip, peers, mempool, and storage.")

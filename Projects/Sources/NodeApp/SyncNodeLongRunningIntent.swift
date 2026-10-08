@@ -181,6 +181,14 @@ struct SyncNodeLongRunningIntent: LongRunningIntent, CancellableIntent {
             Self.log.notice("run: cancelled — reporting the run as cancelled, not as a result")
             throw CancellationError()
         }
+        // Only now — the report is being returned — does its reading become a
+        // recorded tip. Persisting inside the run, before the last "still
+        // wanted?" check and this one, advanced the baseline for runs that
+        // ended up reporting nothing (a stop landing mid-question, or a
+        // timeout discarding the report wholesale), and the "blocks since
+        // last check" the next run reports would silently swallow a span
+        // nobody saw.
+        NodeRun.persistReportedTip(from: report)
         return .result(value: report, dialog: IntentDialog(report.dialogText))
     }
 
