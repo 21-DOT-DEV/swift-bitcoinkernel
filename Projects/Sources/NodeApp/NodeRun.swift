@@ -479,10 +479,16 @@ enum NodeRun {
         onProgress(1)
         return NodeRunReport(
             outcome: NodeRunOutcome(outcome),
+            // Until the watch exists, a measured run's sync answer is
+            // notMeasured and nothing is counted — on budgeted runs the gate
+            // and the watch bring their own (T011, T022); the short action
+            // keeps this answer permanently.
+            syncResult: .notMeasured,
             chain: reading.chain,
             blockHeight: reading.height,
             blocksBehind: reading.blocksBehind,
             blocksSinceLastCheck: blocksSinceLastCheck,
+            blocksGainedThisRun: nil,
             connections: connections,
             dialogTemplate: NodeAutomation.summary(
                 outcome: outcome, chain: reading.chain, height: reading.height,
@@ -498,8 +504,10 @@ enum NodeRun {
     private static func didNotComeUpReport() -> NodeRunReport {
         return NodeRunReport(
             outcome: .didNotComeUp,
+            syncResult: .notMeasured,
             chain: nil,
             blockHeight: nil,
+            blocksGainedThisRun: nil,
             dialogTemplate: NodeAutomation.summary(
                 outcome: .didNotComeUp, chain: "unknown",
                 height: 0, blocksBehind: nil,
@@ -519,7 +527,8 @@ enum NodeRun {
     /// own work ends without producing a report at all.
     static func noAnswerReport() -> NodeRunReport {
         return NodeRunReport(
-            outcome: .noAnswer, chain: nil, blockHeight: nil,
+            outcome: .noAnswer, syncResult: .notMeasured,
+            chain: nil, blockHeight: nil, blocksGainedThisRun: nil,
             dialogTemplate: NodeAutomation.summary(
                 outcome: .noAnswer, chain: "unknown", height: 0,
                 blocksBehind: nil, blocksSinceLastCheck: nil,
@@ -611,8 +620,13 @@ enum NodeRun {
     private static func declined(reason: LocalizedStringResource) -> NodeRunReport {
         return NodeRunReport(
             outcome: .declined,
+            // A decline today has no sync answer to give; T016's weigh-in
+            // refusal declines too but reports conditionsChanged — it will
+            // bring its own.
+            syncResult: .notMeasured,
             chain: nil,
             blockHeight: nil,
+            blocksGainedThisRun: nil,
             dialogTemplate: NodeAutomation.summary(
                 outcome: .declined, chain: "unknown",
                 height: 0, blocksBehind: nil, blocksSinceLastCheck: nil,

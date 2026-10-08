@@ -64,7 +64,8 @@ struct NodeRunReportTests {
         // rendering, while `summary` is the resolved `String` a following
         // automation step compares against — both must read the same words.
         let report = NodeRunReport(
-            outcome: .started, chain: "main", blockHeight: 900_000,
+            outcome: .started, syncResult: .notMeasured,
+            chain: "main", blockHeight: 900_000, blocksGainedThisRun: nil,
             dialogTemplate: "Node running on Mainnet at block \(900_000).")
         // The height is resolved through the device's locale, so the expected
         // figure comes from formatted() — pinning "900,000" verbatim would fail
@@ -93,6 +94,104 @@ struct NodeRunReportTests {
         // template, not the sentence.
         report.summary = "run.report.rendered-summary"
         #expect(String(localized: report.dialogText) == report.summary)
+    }
+
+    // MARK: - Sync result vocabulary
+
+    @Test("every sync result has display wording")
+    func everySyncResultHasDisplayWording() {
+        // `caseDisplayRepresentations` is a plain dictionary, so nothing checks
+        // it for completeness when the code builds — a missing entry is a crash
+        // at the moment that result is shown, not a build failure.
+        for result in NodeSyncResult.allCases {
+            #expect(NodeSyncResult.caseDisplayRepresentations[result] != nil)
+        }
+    }
+
+    @Test("the text stored behind each sync result is pinned")
+    func syncResultTextIsPinned() {
+        // A person's saved automation compares against these strings. Each is
+        // assigned explicitly so renaming a case cannot silently change it —
+        // and this test freezes the assignment. Cases may be appended (the raw
+        // values persist by string); renaming or renumbering is a breaking
+        // change to automations already built.
+        #expect(NodeSyncResult.caughtUp.rawValue == "caughtUp")
+        #expect(NodeSyncResult.stillSyncing.rawValue == "stillSyncing")
+        #expect(NodeSyncResult.noProgress.rawValue == "noProgress")
+        #expect(NodeSyncResult.nodeStopped.rawValue == "nodeStopped")
+        #expect(NodeSyncResult.conditionsChanged.rawValue == "conditionsChanged")
+        #expect(NodeSyncResult.notMeasured.rawValue == "notMeasured")
+    }
+
+    @Test("every sync result's displayed wording is pinned")
+    func syncResultWordingIsPinned() {
+        // What the Shortcuts picker shows for each case — a commitment beside
+        // the raw values, so the exact wording is frozen here too. A literal
+        // behind `DisplayRepresentation` resolves through the catalog in the
+        // development language, so `String(localized:)` reads back the wording
+        // a person sees.
+        let expected: [NodeSyncResult: String] = [
+            .caughtUp: "Caught up",
+            .stillSyncing: "Still syncing",
+            .noProgress: "No progress",
+            .nodeStopped: "Node stopped",
+            .conditionsChanged: "Conditions changed",
+            .notMeasured: "Not measured",
+        ]
+        for result in NodeSyncResult.allCases {
+            guard let expectedWording = expected[result] else {
+                Issue.record("a case with no pinned wording: \(result)")
+                continue
+            }
+            let title = NodeSyncResult.caseDisplayRepresentations[result]?.title
+            #expect(title != nil)
+            if let title {
+                #expect(String(localized: title) == expectedWording)
+            }
+        }
+    }
+
+    @MainActor
+    @Test("a run with no sync answer reports notMeasured and no gain count")
+    func unmeasuredSyncReportsNotMeasured() {
+        // The `notMeasured` rules (FR-005): a run that ended before the watch —
+        // declined, or never answered — has no sync verdict to give, and the
+        // count is absent rather than zero: `nil` is the field's own way of
+        // saying nobody watched — the same "absent means not measured" rule
+        // every other number on the report follows.
+        let declined = NodeRunReport(
+            outcome: .declined, syncResult: .notMeasured,
+            chain: nil, blockHeight: nil, blocksGainedThisRun: nil,
+            dialogTemplate: "The node did not start.")
+        #expect(declined.syncResult == .notMeasured)
+        #expect(declined.blocksGainedThisRun == nil)
+        // The same standing answer through a real producer path.
+        let noAnswer = NodeRun.noAnswerReport()
+        #expect(noAnswer.syncResult == .notMeasured)
+        #expect(noAnswer.blocksGainedThisRun == nil)
+        // Zero is a claim of its own — "watched, and nothing arrived" — which
+        // must never read the same as an unwatched run's absent count.
+        let watchedZero = NodeRunReport(
+            outcome: .alreadyRunning, syncResult: .noProgress,
+            chain: "signet", blockHeight: 910, blocksGainedThisRun: 0,
+            dialogTemplate: "A node was already running.")
+        #expect(watchedZero.blocksGainedThisRun == 0)
+    }
+
+    @Test("the two block counters measure different spans")
+    func blockCountersMeasureDifferentSpans() {
+        // FR-016: `blocksSinceLastCheck` spans the gap before this run — the
+        // pre-run baseline — while `blocksGainedThisRun` counts only what this
+        // run watched arrive. A watch that found the node mid-recovery reports
+        // both honestly: ten since the last check, three while watching.
+        let report = NodeRunReport(
+            outcome: .alreadyRunning, syncResult: .stillSyncing,
+            chain: "signet", blockHeight: 910,
+            blocksSinceLastCheck: 10, blocksGainedThisRun: 3,
+            dialogTemplate: "A node was already running.")
+        #expect(report.syncResult == .stillSyncing)
+        #expect(report.blocksSinceLastCheck == 10)
+        #expect(report.blocksGainedThisRun == 3)
     }
 }
 

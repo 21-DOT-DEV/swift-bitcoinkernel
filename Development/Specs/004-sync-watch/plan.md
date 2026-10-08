@@ -107,10 +107,10 @@ and the tip's own `time` field is the signal that covers it ([research
 §2](./research.md)). `LiveReading` gains the flag — `SyncSummary` already
 computes it — along with `headers` and `tipTime`; the age is judged against a
 wall-clock `now` the run supplies, injectable beside the duration clock. A run
-that declined, got no answer, or found the node finished — flag clear, no gap,
-tip fresh — returns exactly as today.
+that declined, got no answer, or found the node finished — flag clear,
+no gap, tip fresh — returns without entering the watch.
 `SyncNodeIntent` passes nothing — same path, same pre-existing report fields
-(the two new ones read `notMeasured` and zero); the routine stays one.
+(the two new ones read `notMeasured` and absent); the routine stays one.
 
 ### 3.2 The bound is time; the target is blocks
 
@@ -451,9 +451,14 @@ renamed or renumbered ([research §6](./research.md)). `nodeStopped` names exact
 "the run was stopped" cannot occur (a run-stop throws `CancellationError` and
 produces no report). A sixth case, `notMeasured`, is what the field reads when
 the run has no sync answer — declined before the weigh-in, no answer before
-the watch, every short-action run — except the entry-weigh-in refusal, which
-reports `conditionsChanged` since the weigh-in is already the conditions
-mechanism answering. Non-optional deliberately: whether `Optional<some
+the watch, every short-action run, or a `regtest` chain. Two paths answer
+without the watch running: the entry-weigh-in refusal, which reports
+`conditionsChanged` since the weigh-in is already the conditions mechanism
+answering, and an entry-gate decline on an already-synced node, which
+reports `caughtUp` — the same bar the watch's proof applies, evaluated once
+at entry — and `notMeasured` would claim "no answer" of a run that
+demonstrably got one.
+Non-optional deliberately: whether `Optional<some
 AppEnum>` satisfies `EntityProperty<Value>` is unverified ([research
 §6](./research.md)), a non-optional enum is the standard shape, and a
 branchable value beats a `nil` automations must test for.
@@ -462,7 +467,10 @@ A watched run also gains `blocksGainedThisRun` — heights earned while this run
 watched — because `blocksSinceLastCheck` keeps its existing meaning (measured
 against the pre-run baseline — run-owned `last_run_*`, falling back to
 `last_known_*` until the first result is returned) and a fifteen-minute watch
-would otherwise leave it answering two questions at once. `last_run_*` keeps
+would otherwise leave it answering two questions at once. The counter is
+`Int?` like every other number on the report — absent when nobody watched,
+because a zero there would fire `= 0` automations on unmeasured runs.
+`last_run_*` keeps
 run-boundary discipline — written once at report time, never per-poll
 ([research §6](./research.md)). A watched run builds its report from the last
 good reading — the last poll that returned data, which on a `noProgress` or

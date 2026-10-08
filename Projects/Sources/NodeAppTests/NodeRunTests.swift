@@ -35,7 +35,8 @@ struct NodeRunTests {
         NodeViewModel.persistLastRun(height: 100, chain: "main", in: defaults)
         NodeViewModel.persistLastKnown(height: 100, chain: "main", in: defaults)
         let report = NodeRunReport(
-            outcome: .started, chain: "main", blockHeight: 110,
+            outcome: .started, syncResult: .notMeasured,
+            chain: "main", blockHeight: 110, blocksGainedThisRun: nil,
             dialogTemplate: "Node running.")
         NodeRun.persistReportedTip(from: report, to: defaults)
         // A returned result is both the run baseline and a real observation.
@@ -56,7 +57,8 @@ struct NodeRunTests {
         NodeRun.persistReportedTip(from: NodeRun.noAnswerReport(), to: defaults)
         NodeRun.persistReportedTip(
             from: NodeRunReport(
-                outcome: .declined, chain: nil, blockHeight: nil,
+                outcome: .declined, syncResult: .notMeasured,
+                chain: nil, blockHeight: nil, blocksGainedThisRun: nil,
                 dialogTemplate: "The node did not start."),
             to: defaults)
         #expect(NodeViewModel.lastRun(in: defaults)?.height == 100)
@@ -72,7 +74,8 @@ struct NodeRunTests {
         NodeViewModel.persistLastRun(height: 100, chain: "main", in: defaults)
         NodeRun.persistReportedTip(
             from: NodeRunReport(
-                outcome: .started, chain: nil, blockHeight: 110,
+                outcome: .started, syncResult: .notMeasured,
+                chain: nil, blockHeight: 110, blocksGainedThisRun: nil,
                 dialogTemplate: "Node running."),
             to: defaults)
         #expect(NodeViewModel.lastRun(in: defaults)?.height == 100)
@@ -107,7 +110,8 @@ struct NodeRunTests {
         let defaults = makeVolatileDefaults()
         NodeViewModel.persistLastKnown(height: 150, chain: "main", in: defaults)
         let report = NodeRunReport(
-            outcome: .alreadyRunning, chain: "main", blockHeight: 140,
+            outcome: .alreadyRunning, syncResult: .notMeasured,
+            chain: "main", blockHeight: 140, blocksGainedThisRun: nil,
             dialogTemplate: "Node already running.")
         NodeRun.persistReportedTip(from: report, to: defaults)
         #expect(NodeViewModel.lastKnown(in: defaults)?.height == 150)
@@ -124,7 +128,8 @@ struct NodeRunTests {
         let defaults = makeVolatileDefaults()
         NodeViewModel.persistLastKnown(height: 800_000, chain: "main", in: defaults)
         let report = NodeRunReport(
-            outcome: .alreadyRunning, chain: "signet", blockHeight: 5,
+            outcome: .alreadyRunning, syncResult: .notMeasured,
+            chain: "signet", blockHeight: 5, blocksGainedThisRun: nil,
             dialogTemplate: "Node already running.")
         NodeRun.persistReportedTip(from: report, to: defaults)
         #expect(NodeViewModel.lastKnown(in: defaults)?.chain == "signet")

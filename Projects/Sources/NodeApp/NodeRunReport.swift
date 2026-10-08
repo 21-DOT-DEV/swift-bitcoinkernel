@@ -80,6 +80,64 @@ enum NodeRunOutcome: String, AppEnum {
     }
 }
 
+/// How the watch over a syncing node ended, as something a following automation
+/// step can branch on.
+///
+/// A second axis beside `NodeRunOutcome`: the outcome says what the run did to
+/// the *node* — started it, found it running, declined — while this says what
+/// the run concluded about *syncing*. The two are deliberately independent: a
+/// run that reports `alreadyRunning` may still have watched the node catch up,
+/// and an entry weigh-in refusal is `declined` on the first axis while reporting
+/// `conditionsChanged` on this one.
+///
+/// The text behind each case is a lasting commitment for the same reason the
+/// outcome's is — a saved automation compares against it — so each string is
+/// assigned explicitly and a test pins the assignment. Cases may be appended;
+/// renaming or renumbering breaks automations already built.
+///
+/// Unlike `NodeRunOutcome` this type has no framework-free twin yet: the watch
+/// decisions that produce it belong in `NodeAutomation`, and the plain form
+/// with its two-way mapping arrives with the first task that produces one.
+enum NodeSyncResult: String, AppEnum {
+    /// The node reached the tip — either the watch saw the catch-up happen, or
+    /// the entry gate found it already there: flag clear, no header gap, a tip
+    /// inside the freshness window — the same bar the watch's proof applies
+    /// at every pass.
+    case caughtUp = "caughtUp"
+    /// The run's time ran out while the node was still behind.
+    case stillSyncing = "stillSyncing"
+    /// Nothing advanced for long enough that the watch gave up — the node
+    /// stopped answering, or the readings stayed flat past the leash.
+    case noProgress = "noProgress"
+    /// The node was stopped from the app while the watch ran. "The run was
+    /// stopped" cannot occur — a stopped run throws `CancellationError` and
+    /// produces no report.
+    case nodeStopped = "nodeStopped"
+    /// Device conditions — a metered network, Low Data Mode, a critical thermal
+    /// state, Low Power Mode switched on mid-watch — ended the watch, or
+    /// refused it at the entry weigh-in.
+    case conditionsChanged = "conditionsChanged"
+    /// The run has no sync answer to give: it declined before the entry
+    /// weigh-in, got no answer before the watch could begin, carried no watch
+    /// budget (every short-action run), or found a regtest chain — where "still
+    /// syncing" is ill-defined, so nothing is claimed rather than something
+    /// vacuous.
+    case notMeasured = "notMeasured"
+
+    static var typeDisplayRepresentation: TypeDisplayRepresentation { "Node Sync Result" }
+
+    static var caseDisplayRepresentations: [NodeSyncResult: DisplayRepresentation] {
+        [
+            .caughtUp: "Caught up",
+            .stillSyncing: "Still syncing",
+            .noProgress: "No progress",
+            .nodeStopped: "Node stopped",
+            .conditionsChanged: "Conditions changed",
+            .notMeasured: "Not measured",
+        ]
+    }
+}
+
 /// What a run hands back.
 ///
 /// Each named entry is usable as its own value in the next step of someone's
@@ -93,6 +151,15 @@ struct NodeRunReport: TransientAppEntity {
     static var typeDisplayRepresentation: TypeDisplayRepresentation { "Node Run Report" }
 
     @Property(title: "Outcome") var outcome: NodeRunOutcome
+    /// How the watch over a syncing node ended — the second axis beside
+    /// `outcome`, so an automation can branch on the sync verdict apart from
+    /// what the run did to the node. Always set, never absent: `notMeasured`
+    /// is the standing answer for every run that ended before the watch —
+    /// declined, unanswered, carrying no budget, or on a regtest chain —
+    /// while the entry weigh-in's refusal reports `conditionsChanged` and a
+    /// run whose entry gate found the node already at the tip reports
+    /// `caughtUp`.
+    @Property(title: "Sync result") var syncResult: NodeSyncResult
     /// Which chain the height belongs to, as the node reports it over RPC —
     /// the wire identifier (`main`, `signet`, `regtest`), which is the honest
     /// value for an automation to compare against; display-name mapping for a
@@ -112,6 +179,11 @@ struct NodeRunReport: TransientAppEntity {
     /// this run, and never collapses because a background poll saw the node in
     /// between. Absent when no baseline has been recorded, or the chain changed.
     @Property(title: "Blocks since last check") var blocksSinceLastCheck: Int?
+    /// Heights the node gained while this run watched — the run-scoped counter
+    /// beside `blocksSinceLastCheck`, which keeps its pre-run-baseline meaning.
+    /// Absent when nobody watched, like every other number here — zero means
+    /// "watched and gained nothing", which is a different claim.
+    @Property(title: "Blocks gained this run") var blocksGainedThisRun: Int?
     /// Peers the node had when it was read. Absent if it could not be asked.
     @Property(title: "Connections") var connections: Int?
     /// The one sentence a person reads or hears.
@@ -147,21 +219,30 @@ struct NodeRunReport: TransientAppEntity {
 
     init() {}
 
+    /// `syncResult` and `blocksGainedThisRun` carry no defaults on purpose: a
+    /// producer that omitted one would still compile and report "not measured"
+    /// for a run that watched — plausible, and wrong. Requiring both is the
+    /// same compile-forcing `NodeRunOutcome`'s two-way mapping keeps for
+    /// endings: every report states its sync answer.
     init(
         outcome: NodeRunOutcome,
+        syncResult: NodeSyncResult,
         chain: String?,
         blockHeight: Int?,
         blocksBehind: Int? = nil,
         blocksSinceLastCheck: Int? = nil,
+        blocksGainedThisRun: Int?,
         connections: Int? = nil,
         dialogTemplate: LocalizedStringResource
     ) {
         self.init()
         self.outcome = outcome
+        self.syncResult = syncResult
         self.chain = chain
         self.blockHeight = blockHeight
         self.blocksBehind = blocksBehind
         self.blocksSinceLastCheck = blocksSinceLastCheck
+        self.blocksGainedThisRun = blocksGainedThisRun
         self.connections = connections
         self.dialogTemplate = dialogTemplate
         self.summary = String(localized: dialogTemplate)
