@@ -663,7 +663,6 @@ enum NodeRun {
         let network = (try? await withHardTimeout(.seconds(2)) {
             await NetworkCostMonitor.shared.first()
         }) ?? .unknown
-        let thermal = ProcessInfo.processInfo.thermalState
         let filesReadable = UIApplication.shared.isProtectedDataAvailable
         // The folder prepare is a write, attempted only when files can be read at
         // all: before the first unlock after a restart it is doomed to fail and
@@ -676,7 +675,7 @@ enum NodeRun {
             lowPowerModeEnabled: ProcessInfo.processInfo.isLowPowerModeEnabled,
             networkIsMetered: network.isMetered,
             networkIsDataRestricted: network.isDataRestricted,
-            overheating: thermal == .serious || thermal == .critical,
+            thermalState: ProcessInfo.processInfo.thermalState,
             freeDiskBytes: freeDiskBytes()
         )
     }

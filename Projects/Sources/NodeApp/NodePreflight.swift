@@ -60,8 +60,13 @@ enum NodePreflight {
         /// `networkIsMetered`, because Low Data Mode on home wireless is restricted
         /// but not metered, and either one alone should stop a multi-gigabyte sync.
         var networkIsDataRestricted: Bool = false
-        /// Whether the device is already too hot (its heat level is serious or worse).
-        var overheating: Bool = false
+        /// The device's heat level, kept whole rather than collapsed to a flag.
+        ///
+        /// Two policies read it at different thresholds: a run deciding whether to
+        /// start refuses at `.serious` or worse, while the mid-watch drift check
+        /// ends the run only at `.critical` — `.serious` is routine on a phone
+        /// that has been validating for minutes, so it ends nothing.
+        var thermalState: ProcessInfo.ThermalState = .nominal
         /// Free space on the volume holding the chain data, or `nil` if unknown.
         /// Unknown is never treated as too little — refusing on a failed reading
         /// would ground every run on a device whose free space cannot be queried.
@@ -160,7 +165,12 @@ enum NodePreflight {
         }
         if conditions.networkIsMetered { return .meteredNetwork }
         if conditions.networkIsDataRestricted { return .dataRestrictedNetwork }
-        if conditions.overheating { return .overheating }
+        // The entry bar: `.serious` or hotter refuses a start. The mid-watch
+        // drift check reads the same field at `.critical` only — the reason the
+        // level itself is stored rather than a collapsed flag.
+        if conditions.thermalState == .serious || conditions.thermalState == .critical {
+            return .overheating
+        }
         if conditions.lowPowerModeEnabled { return .lowPowerMode }
         return nil
     }
