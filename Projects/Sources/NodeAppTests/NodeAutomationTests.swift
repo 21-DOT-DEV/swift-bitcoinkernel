@@ -9,6 +9,8 @@
 //
 
 import Testing
+import Foundation
+import Bitcoin
 @testable import NodeApp
 
 @Suite("Node Automation decisions")
@@ -268,19 +270,107 @@ struct NodeAutomationTests {
     private func reading(_ chain: String, _ height: Int, behind: Int = 0)
         -> NodeAutomation.LiveReading
     {
-        NodeAutomation.LiveReading(chain: chain, height: height, blocksBehind: behind)
+        NodeAutomation.LiveReading(
+            chain: chain, height: height, blocksBehind: behind,
+            isInitialBlockDownload: false, headers: height + behind,
+            tipTime: Date(timeIntervalSince1970: 1_713_300_000))
+    }
+
+    private func baseline(_ chain: String, _ height: Int) -> NodeAutomation.TipBaseline {
+        NodeAutomation.TipBaseline(chain: chain, height: height)
+    }
+
+    @Test("a chain answer maps every field the watch needs from one reading")
+    func readingMapsAllFields() throws {
+        let info = try JSONDecoder().decode(
+            BlockchainInfo.self, from: Data(Self.infoJSON.utf8))
+        let reading = NodeAutomation.reading(from: info)
+        #expect(reading.chain == "signet")
+        #expect(reading.height == 100)
+        #expect(reading.headers == 200)
+        #expect(reading.blocksBehind == 100)
+        #expect(reading.isInitialBlockDownload == true)
+        #expect(reading.tipTime == Date(timeIntervalSince1970: 1_713_300_000))
+    }
+
+    @Test("a peer's evidence carries its announced best-known height and resolved kind")
+    func peerEvidenceMapsFields() throws {
+        let peer = try Self.decodePeer(connectionType: "outbound-full-relay", inbound: false)
+        let evidence = NodeAutomation.PeerEvidence(peer)
+        #expect(evidence.syncedHeaders == 876_000)
+        #expect(evidence.connectionType == .outboundFullRelay)
+    }
+
+    @Test("a missing connection type falls back to direction — inbound resolves to the real kind")
+    func peerEvidenceInboundFallback() throws {
+        let peer = try Self.decodePeer(connectionType: nil, inbound: true)
+        #expect(NodeAutomation.PeerEvidence(peer).connectionType == .inbound)
+    }
+
+    @Test("a missing connection type on an outbound peer resolves to no countable kind")
+    func peerEvidenceUnresolvedOutboundFailsClosed() throws {
+        let peer = try Self.decodePeer(connectionType: nil, inbound: false)
+        let resolved = NodeAutomation.PeerEvidence(peer).connectionType
+        // The generic "outbound" an absent field yields is a real resolution, but
+        // it equals neither kind the catch-up proof counts — a peer the node
+        // cannot classify can never be mistaken for block-serving.
+        #expect(resolved == .unresolvedOutbound)
+        #expect(resolved != .outboundFullRelay && resolved != .blockRelayOnly)
+    }
+
+    @Test("the connection vocabulary names every kind the wire produces")
+    func connectionTypeVocabulary() throws {
+        // All seven values `ConnectionTypeAsString` emits — this fork's
+        // `private-broadcast` included — resolve to their named constants.
+        for (wire, kind) in [
+            ("inbound", .inbound), ("outbound-full-relay", .outboundFullRelay),
+            ("block-relay-only", .blockRelayOnly), ("manual", .manual),
+            ("feeler", .feeler), ("addr-fetch", .addrFetch),
+            ("private-broadcast", .privateBroadcast),
+        ] as [(String, NodeAutomation.PeerEvidence.ConnectionType)] {
+            let peer = try Self.decodePeer(connectionType: wire, inbound: wire == "inbound")
+            #expect(NodeAutomation.PeerEvidence(peer).connectionType == kind)
+        }
+    }
+
+    /// A `getblockchaininfo` answer mid-IBD — every field the decoder requires,
+    /// the four the watch reads included.
+    private static let infoJSON = """
+    {
+      "chain": "signet", "blocks": 100, "headers": 200,
+      "bestblockhash": "0000000000000000000000000000000000000000000000000000000000000abc",
+      "difficulty": 1.0, "time": 1713300000, "mediantime": 1713299990,
+      "verificationprogress": 0.5, "initialblockdownload": true,
+      "chainwork": "0000000000000000000000000000000000000000000000000000000000000192",
+      "size_on_disk": 12345, "pruned": false, "warnings": []
+    }
+    """
+
+    /// A `getpeerinfo` row carrying the two fields `PeerEvidence` reads — the
+    /// rest exist only because the decoder requires them.
+    private static func decodePeer(connectionType: String?, inbound: Bool) throws -> PeerInfo {
+        let connField = connectionType.map { "\"connection_type\":\"\($0)\"," } ?? ""
+        return try JSONDecoder().decode(
+            PeerInfo.self,
+            from: Data(
+                """
+                {"id":0,"addr":"10.0.0.1:8333","services":"0000000000000409","relaytxes":true,
+                 "lastsend":1713300000,"lastrecv":1713300000,"bytessent":1000,"bytesrecv":2000,
+                 "conntime":1713200000,"timeoffset":0,"version":70016,"subver":"/Satoshi:31.0.0/",
+                 \(connField)"inbound":\(inbound),"synced_headers":876000,"synced_blocks":876000}
+                """.utf8))
     }
 
     @Test("blocks since a baseline is the difference between two readings")
     func blocksSince() {
         #expect(
-            NodeAutomation.blocksSince(previous: reading("main", 100), to: reading("main", 142)) == 42)
+            NodeAutomation.blocksSince(previous: baseline("main", 100), to: reading("main", 142)) == 42)
     }
 
     @Test("blocks since a baseline is unknown when either reading is missing")
     func blocksSinceMissing() {
         #expect(NodeAutomation.blocksSince(previous: nil, to: reading("main", 142)) == nil)
-        #expect(NodeAutomation.blocksSince(previous: reading("main", 100), to: nil) == nil)
+        #expect(NodeAutomation.blocksSince(previous: baseline("main", 100), to: nil) == nil)
     }
 
     @Test("blocks since a baseline is unknown across different chains, never a nonsense number")
@@ -288,14 +378,14 @@ struct NodeAutomationTests {
         // Subtracting a test-chain height from a main-chain one would produce a
         // confident-looking lie.
         #expect(
-            NodeAutomation.blocksSince(previous: reading("test", 10), to: reading("main", 900_000))
+            NodeAutomation.blocksSince(previous: baseline("test", 10), to: reading("main", 900_000))
                 == nil)
     }
 
     @Test("a height that went backwards reports no gain rather than a negative one")
     func blocksSinceNeverNegative() {
         #expect(
-            NodeAutomation.blocksSince(previous: reading("main", 200), to: reading("main", 150)) == 0)
+            NodeAutomation.blocksSince(previous: baseline("main", 200), to: reading("main", 150)) == 0)
     }
 
     @Test("a declined run reports its reason as the whole message")

@@ -201,13 +201,30 @@ results. Every task lands standalone.
 
 ## What the watch reads
 
-- [ ] T008 `LiveReading` gains `isInitialBlockDownload`, `headers`, and
+- [x] T008 `LiveReading` gains `isInitialBlockDownload`, `headers`, and
   `tipTime` — `blocksBehind` already carries the gap and `info.time` is
   already modeled — plus `PeerEvidence`, a per-peer value carrying
   `syncedHeaders` and the resolved `connectionType` (the field, falling back
   to the `inbound` boolean — unresolved outbound fails closed), riding beside
-  the reading rather than folded into it (~110) ·
-  `Sources/NodeApp/NodeAutomation.swift`, `Dashboard.swift`
+  the reading rather than folded into it. Landed with two refinements past
+  the written task: `connectionType` is a `RawRepresentable` struct over the
+  wire string — all seven values `ConnectionTypeAsString` emits named as
+  constants, this fork's `private-broadcast` included, so an untaught value
+  decodes losslessly and simply fails to match the two kinds the proof
+  counts; the absent-field fallback resolves to `unresolvedOutbound`, equal
+  to no real kind. And the baseline is its own `TipBaseline(chain:height:)`
+  rather than a fake-fielded `LiveReading` — `blocksSince(previous:)` narrows
+  to it, so the baseline's two delta facts can never be read back as measured
+  fields (`lastRunBaseline` and `measuredReport` retype accordingly; the store
+  also keeps a written-at `date` a delta has no use for). The one resolution
+  rule lives once as `PeerInfo.resolvedConnectionType` → `String` beside the
+  other `PeerInfo` mappings in `Dashboard.swift`; `PeerRow` refactors onto it
+  and `PeerEvidence` wraps it, and `PeerInfo.connectionType`'s doc gains the
+  fork's `private-broadcast` kind it had missed (~250) ·
+  `Sources/NodeApp/NodeAutomation.swift`, `Dashboard.swift`,
+  `Sources/NodeApp/NodeRun.swift`,
+  `Sources/NodeAppTests/NodeAutomationTests.swift`,
+  `Sources/Bitcoin/Models/PeerInfo.swift`
 - [ ] T009 [P] `DeviceConditions` gains the `thermalState` itself — today's
   `overheating` collapses `.serious || .critical` to a `Bool`; entry keeps
   refusing `.serious` while the drift check reads `.critical` from the same

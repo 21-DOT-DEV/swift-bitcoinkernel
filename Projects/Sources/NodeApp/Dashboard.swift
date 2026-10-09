@@ -68,6 +68,20 @@ struct SyncSummary: Equatable {
     }
 }
 
+extension PeerInfo {
+    /// The connection's role as the node reports it — the `connection_type`
+    /// field verbatim, or the bare direction reconstructed from the `inbound`
+    /// boolean when the field is absent: `"inbound"`, which names a real kind,
+    /// or `"outbound"`, which deliberately names none. A fieldless outbound
+    /// peer is never more specific than "outbound of unknown kind", so a
+    /// consumer that asks *which kind* — the watch's peer confirmation, which
+    /// counts only `outbound-full-relay` and `block-relay-only` — fails closed
+    /// on it rather than crediting a guess.
+    var resolvedConnectionType: String {
+        connectionType ?? (inbound ? "inbound" : "outbound")
+    }
+}
+
 struct PeerRow: Identifiable, Equatable {
     let id: Int
     let addr: String
@@ -83,7 +97,7 @@ struct PeerRow: Identifiable, Equatable {
         addr = peer.addr
         subver = peer.subver
         network = peer.network ?? "unknown"
-        connectionType = peer.connectionType ?? (peer.inbound ? "inbound" : "outbound")
+        connectionType = peer.resolvedConnectionType
         transport = peer.transportProtocolType ?? "v1"
         pingMilliseconds = peer.pingtime.map { $0 * 1000 }
         inbound = peer.inbound
