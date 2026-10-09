@@ -8,6 +8,7 @@
 //  See the accompanying file LICENSE for information
 //
 
+import Foundation
 import Testing
 @testable import NodeApp
 
@@ -99,16 +100,29 @@ struct NodePreflightTests {
     func networkOutranksHeatAndBattery() {
         // Spending someone's data allowance costs money; heat and battery do not.
         let conditions = NodePreflight.DeviceConditions(
-            lowPowerModeEnabled: true, networkIsMetered: true, overheating: true,
+            lowPowerModeEnabled: true, networkIsMetered: true, thermalState: .serious,
             freeDiskBytes: 8 * oneGB)
         #expect(NodePreflight.refusal(for: conditions) == .meteredNetwork)
     }
 
-    @Test("an overheating device stops the run")
-    func overheating() {
-        #expect(
-            NodePreflight.refusal(for: .init(overheating: true, freeDiskBytes: 8 * oneGB))
-                == .overheating)
+    @Test("a device at serious heat or worse stops the run; below that it may start")
+    func thermalEntryThreshold() {
+        // The entry bar is ".serious or hotter" (spec FR-011): both hot tiers
+        // refuse, both cool tiers pass. The mid-watch drift check reads the same
+        // field at `.critical` only — which is why the level itself is stored
+        // rather than a collapsed flag.
+        for state: ProcessInfo.ThermalState in [.serious, .critical] {
+            #expect(
+                NodePreflight.refusal(
+                    for: .init(thermalState: state, freeDiskBytes: 8 * oneGB))
+                    == .overheating)
+        }
+        for state: ProcessInfo.ThermalState in [.nominal, .fair] {
+            #expect(
+                NodePreflight.refusal(
+                    for: .init(thermalState: state, freeDiskBytes: 8 * oneGB))
+                    == nil)
+        }
     }
 
     @Test("battery saver stops the run")
@@ -125,7 +139,7 @@ struct NodePreflightTests {
         // heat, saver. Each step removes the winning condition and expects the next.
         var conditions = NodePreflight.DeviceConditions(
             filesReadable: false, chainFolderExists: false, lowPowerModeEnabled: true,
-            networkIsMetered: true, networkIsDataRestricted: true, overheating: true,
+            networkIsMetered: true, networkIsDataRestricted: true, thermalState: .serious,
             freeDiskBytes: 0)
         #expect(NodePreflight.refusal(for: conditions) == .filesNotReadable)
 
@@ -144,7 +158,7 @@ struct NodePreflightTests {
         conditions.networkIsDataRestricted = false
         #expect(NodePreflight.refusal(for: conditions) == .overheating)
 
-        conditions.overheating = false
+        conditions.thermalState = .nominal
         #expect(NodePreflight.refusal(for: conditions) == .lowPowerMode)
 
         conditions.lowPowerModeEnabled = false

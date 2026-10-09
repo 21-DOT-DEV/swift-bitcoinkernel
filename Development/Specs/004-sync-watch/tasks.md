@@ -225,10 +225,19 @@ results. Every task lands standalone.
   `Sources/NodeApp/NodeRun.swift`,
   `Sources/NodeAppTests/NodeAutomationTests.swift`,
   `Sources/Bitcoin/Models/PeerInfo.swift`
-- [ ] T009 [P] `DeviceConditions` gains the `thermalState` itself — today's
+- [x] T009 [P] `DeviceConditions` gains the `thermalState` itself — today's
   `overheating` collapses `.serious || .critical` to a `Bool`; entry keeps
   refusing `.serious` while the drift check reads `.critical` from the same
-  field (~120) · `Sources/NodeApp/NodePreflight.swift`,
+  field. Landed as specced, with one decision sharpened on review: the Bool
+  was deleted outright rather than kept as a computed convenience — the
+  struct holds measurements only and every threshold lives at the decision
+  site, the same split `freeDiskBytes`/`minimumFreeDiskBytes` already
+  establishes (a derived `overheating` would have been the wrong bar for
+  T017's `.critical`-only read). The stored `ProcessInfo.ThermalState`
+  defaults to `.nominal`, the refusal site spells `.serious || .critical`
+  itself, `Refusal.overheating` and its message are unchanged, and the
+  boundary test pins all four levels at the entry bar (~95) ·
+  `Sources/NodeApp/NodePreflight.swift`,
   `Sources/NodeApp/NodeRun.swift`, `Sources/NodeAppTests/NodePreflightTests.swift`
 
 **Checkpoint:** every signal the decisions below need exists as plain data.
