@@ -284,26 +284,126 @@ enum NodeAutomation {
         let height: Int
         /// Headers known but not yet downloaded as full blocks.
         let blocksBehind: Int
+        /// Whether the node still reports itself in initial block download —
+        /// the flag Bitcoin Core latches and clears on its own 24-hour tip-age
+        /// rule, and the watch's first "still syncing" signal.
+        let isInitialBlockDownload: Bool
+        /// The best header the node holds — the watch's live denominator, and
+        /// the height a confirming peer's `synced_headers` is weighed against.
+        /// `blocksBehind` already carries the gap this opens; the watch needs
+        /// the absolute figure itself.
+        let headers: Int
+        /// The tip's own timestamp — the "still syncing" signal that survives
+        /// a warm restart, where the flag is already clear at chain-tip load
+        /// and no header gap has been fetched yet. Miner-set and
+        /// consensus-tolerant to ~2 h in the future, so staleness inside that
+        /// band is invisible to it; anything older still enters the watch.
+        let tipTime: Date
     }
 
     /// Reads the node's own chain summary, reusing the value types the on-screen
     /// dashboard already computes rather than re-deriving them.
     static func reading(from info: BlockchainInfo) -> LiveReading {
         let sync = SyncSummary(info)
-        return LiveReading(chain: info.chain, height: sync.blocks, blocksBehind: sync.headersAhead)
+        return LiveReading(
+            chain: info.chain, height: sync.blocks, blocksBehind: sync.headersAhead,
+            isInitialBlockDownload: sync.isInitialBlockDownload, headers: sync.headers,
+            tipTime: info.time.date)
     }
 
-    /// Blocks between two readings — "since" whichever baseline the caller
-    /// supplies — or `nil` when that cannot be known.
+    /// What a single peer answered, pared to the two facts the watch's catch-up
+    /// proof can weigh — the `getpeerinfo` fields the `caughtUp` peer
+    /// confirmation counts (FR-006).
+    ///
+    /// Kept beside `LiveReading` rather than folded into it: the watch asks
+    /// `getpeerinfo` only on the flat passes that cannot otherwise prove a
+    /// catch-up, so a peer answer is evidence a pass may carry — it is not a
+    /// chain reading and never resets a leash.
+    struct PeerEvidence: Equatable {
+        /// `synced_headers` — the best height the peer has announced that the
+        /// node already holds (`nSyncHeight`/`pindexBestKnownBlock`, which
+        /// only ever points into our own index), or −1 until it announces
+        /// anything held — which simply never equals a real `headers`. Against
+        /// a reading's `headers`, equality is a completed exchange: Core
+        /// itself asks every block-serving peer from one block back of a tip
+        /// under a day old, so a current peer's answer is never empty, and it
+        /// proves the peer knows nothing higher than our tip (a same-height
+        /// fork would satisfy it too — height, not block identity, is the
+        /// question the proof asks).
+        let syncedHeaders: Int
+
+        /// The connection's resolved kind. Only `outboundFullRelay` and
+        /// `blockRelayOnly` ever count toward the proof — inbound peers are
+        /// attacker-selected — and an absent `connection_type` field resolves
+        /// by direction: `.inbound`, which is still never countable, or
+        /// `unresolvedOutbound`, which matches no wire kind and so cannot
+        /// qualify by accident.
+        let connectionType: ConnectionType
+
+        /// The `connection_type` vocabulary, as named constants over the wire
+        /// string.
+        ///
+        /// Open-ended deliberately: a value the list has not been taught —
+        /// including any a future Core adds — decodes losslessly and simply
+        /// fails to match a named constant, which is the fail-closed direction
+        /// the proof wants.
+        struct ConnectionType: RawRepresentable, Equatable {
+            let rawValue: String
+
+            static let inbound = Self(rawValue: "inbound")
+            static let outboundFullRelay = Self(rawValue: "outbound-full-relay")
+            static let blockRelayOnly = Self(rawValue: "block-relay-only")
+            static let manual = Self(rawValue: "manual")
+            static let feeler = Self(rawValue: "feeler")
+            static let addrFetch = Self(rawValue: "addr-fetch")
+            /// This fork's own kind — a short-lived outbound connection to a
+            /// privacy network, opened to relay the person's own transactions
+            /// and closed after (`Vendor/bitcoin`'s
+            /// `ConnectionType::PRIVATE_BROADCAST`). Self-initiated but never
+            /// block-serving, so it does not count.
+            static let privateBroadcast = Self(rawValue: "private-broadcast")
+            /// Not a wire value: what an absent `connection_type` resolves to
+            /// on an outbound peer (`PeerInfo.resolvedConnectionType`). It
+            /// deliberately equals no real kind — an outbound peer the node
+            /// could not classify is never counted as block-serving.
+            static let unresolvedOutbound = Self(rawValue: "outbound")
+        }
+
+        init(_ peer: PeerInfo) {
+            syncedHeaders = peer.syncedHeaders
+            connectionType = ConnectionType(rawValue: peer.resolvedConnectionType)
+        }
+    }
+
+    /// The little a persisted tip knows — the chain it was on and the height it
+    /// stood at when last written.
+    ///
+    /// Deliberately not a `LiveReading`: a baseline is read back from a store,
+    /// not measured from the node, so it carries only the two facts that were
+    /// written. The watch's questions — the IBD flag, the header height, the
+    /// tip's age — have no honest answers on a baseline, and keeping it a
+    /// separate type means they can never be asked of one. `blocksSince` is
+    /// its whole consumer; a live reading serves as a baseline by the same
+    /// projection (chain and height are all a baseline keeps).
+    struct TipBaseline: Equatable {
+        let chain: String
+        let height: Int
+    }
+
+    /// Blocks between a baseline and a reading — "since" whichever baseline the
+    /// caller supplies — or `nil` when that cannot be known.
     ///
     /// The name promises no particular baseline: the run passes its pre-run
-    /// snapshot, which is what makes the report's figure "blocks since the
-    /// last check". `nil` when either reading is missing, or when the two are
-    /// of **different chains** — subtracting a testnet height from a mainnet
-    /// one would produce a confident-looking nonsense number. Never negative:
-    /// a height that went backwards (a chain reorganisation, or a rebuilt
-    /// index) is reported as no gain rather than a negative one.
-    static func blocksSince(previous: LiveReading?, to current: LiveReading?) -> Int? {
+    /// snapshot (a `last_run_*` tip, or the `last_known_*` fallback), which is
+    /// what makes the report's figure "blocks since the last check"; the watch
+    /// passes its entry heights as the baseline once it reuses this for
+    /// "gained this run".
+    /// `nil` when either side is missing, or when the two are of **different
+    /// chains** — subtracting a testnet height from a mainnet one would produce
+    /// a confident-looking nonsense number. Never negative: a height that went
+    /// backwards (a chain reorganisation, or a rebuilt index) is reported as no
+    /// gain rather than a negative one.
+    static func blocksSince(previous: TipBaseline?, to current: LiveReading?) -> Int? {
         guard let previous, let current, previous.chain == current.chain else { return nil }
         return max(0, current.height - previous.height)
     }

@@ -465,7 +465,7 @@ enum NodeRun {
     /// through `persistReportedTip(from:to:)` on their `.result` path.
     private static func measuredReport(
         outcome: NodeAutomation.Outcome,
-        previous: NodeAutomation.LiveReading?,
+        previous: NodeAutomation.TipBaseline?,
         reading: NodeAutomation.LiveReading,
         session: NodeSession,
         onProgress: @MainActor (Double) -> Void
@@ -557,10 +557,16 @@ enum NodeRun {
             nodeIsStopped: session.node.nodeState.isStoppedOrStopping)
     }
 
-    /// The last tip a run actually reported, as a `LiveReading` so it can feed
-    /// `blocksSince`. Reads the run-owned baseline — the
-    /// observational `last_known_*` the sync poll writes is a different store,
-    /// so a run's delta is never truncated by background polling.
+    /// The last tip a run actually reported, as a `TipBaseline` — the chain and
+    /// height `blocksSince` measures against. Reads the run-owned baseline —
+    /// the observational `last_known_*` the sync poll writes is a different
+    /// store, so a run's delta is never truncated by background polling.
+    ///
+    /// A baseline keeps only the two facts a delta measures — the store
+    /// remembers a third (when the tip was written) that `blocksSince` has no
+    /// use for. It is not a `LiveReading`, so watch-only fields
+    /// (`isInitialBlockDownload`, `headers`, `tipTime`) can never be read back
+    /// as if they had been measured.
     ///
     /// The observational store is the fallback for the one case where no run
     /// baseline exists yet: the first run after the split was introduced (or
@@ -577,9 +583,9 @@ enum NodeRun {
     /// old single store behaved this way only by timing luck: it produced a
     /// figure only once a poll the person never saw had already overwritten
     /// the old-chain tip.
-    private static func lastRunBaseline() -> NodeAutomation.LiveReading? {
+    private static func lastRunBaseline() -> NodeAutomation.TipBaseline? {
         (NodeViewModel.lastRun() ?? NodeViewModel.lastKnown()).map {
-            NodeAutomation.LiveReading(chain: $0.chain, height: $0.height, blocksBehind: 0)
+            NodeAutomation.TipBaseline(chain: $0.chain, height: $0.height)
         }
     }
 

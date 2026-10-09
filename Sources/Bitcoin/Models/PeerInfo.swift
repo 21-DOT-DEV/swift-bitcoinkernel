@@ -105,7 +105,8 @@ public struct PeerInfo: Codable, Sendable, Equatable {
     /// the bytes received are 0. Unknown message types are listed under `"other"`.
     public let bytesrecvPerMsg: [String: Int64]?
     /// Type of connection: `outbound-full-relay`, `block-relay-only`, `inbound`, `manual`,
-    /// `addr-fetch`, or `feeler`.
+    /// `addr-fetch`, `feeler`, or this fork's `private-broadcast`. The wire
+    /// vocabulary is open-ended — a future Core may send values unnamed here.
     public let connectionType: String?
     /// Type of transport protocol: `detecting`, `v1`, or `v2`.
     public let transportProtocolType: String?
