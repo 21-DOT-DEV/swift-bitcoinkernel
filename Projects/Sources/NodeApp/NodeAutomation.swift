@@ -492,6 +492,114 @@ enum NodeAutomation {
         }
     }
 
+    // MARK: - The watch-entry gate
+
+    /// How old a tip may be before its age alone says the node is still
+    /// syncing (~60 min, FR-001). A heuristic, not a Core rule — a few block
+    /// intervals: generous enough that an ordinary lull between blocks rarely
+    /// trips it on mainnet, short enough that a warm restart still enters the
+    /// watch it belongs in (research §2). Provisional on the device pass
+    /// (T039), like every 004 constant.
+    static let tipFreshnessThreshold: Duration = .seconds(3_600)
+
+    /// How a run's watch over a syncing node ended — the second axis of the
+    /// run's report, as a plain value.
+    ///
+    /// The twin of the Shortcuts-facing `NodeSyncResult`, kept free of
+    /// framework types so the decisions producing it can be tested on every
+    /// platform. The two-way mapping lives on that type, so adding a case
+    /// here will not compile until it is accounted for there.
+    enum SyncResult: Equatable {
+        /// The node reached the tip — the watch saw the catch-up happen, or
+        /// the entry gate found it already there.
+        case caughtUp
+        /// The run's budget ran out with the node still behind.
+        case stillSyncing
+        /// Nothing advanced for long enough that the watch gave up — the
+        /// node stopped answering, or the readings stayed flat past a leash.
+        case noProgress
+        /// The node was stopped from the app while the watch ran.
+        case nodeStopped
+        /// Device conditions refused the watch at the entry weigh-in or
+        /// ended it mid-watch.
+        case conditionsChanged
+        /// The run has no sync answer to give: it declined before the
+        /// weigh-in, got no answer before the watch, carried no watch
+        /// budget, or found a self-defined chain — where "still syncing" is
+        /// ill-defined, so nothing is claimed rather than something vacuous.
+        case notMeasured
+    }
+
+    /// What the first live reading says about the watch that could follow it.
+    ///
+    /// The gate answers not just whether the watch begins but — when it does
+    /// not — which sync result the run reports instead, so a decline can
+    /// never be divorced from its ending at the call site.
+    enum WatchEntry: Equatable {
+        /// The node reports itself still syncing on at least one of the
+        /// three signals — the IBD flag set, a header gap open, or a tip
+        /// older than the freshness threshold.
+        case enter
+        /// There is nothing to watch: the node was already at the tip, or
+        /// the chain is a self-defined one the "still syncing" question is
+        /// ill-defined on. The run reports the carried result without
+        /// watching.
+        case decline(SyncResult)
+    }
+
+    /// Whether a tip's own timestamp is recent enough to mean the node is at
+    /// the tip — the "still syncing" signal that survives a warm restart,
+    /// where the flag is already clear at chain-tip load and no header gap
+    /// has been fetched yet.
+    ///
+    /// One function shared by the entry gate and the `caughtUp` proof's
+    /// freshness leg (T012), so the two can never disagree about where
+    /// "recent" ends. `tipTime` is miner-set and consensus-tolerant to ~2 h
+    /// in the future — a negative age is fresh, never stale; the staleness
+    /// such a skew can hide — research §2's ~1–3 h band — is this check's
+    /// stated blind spot. A tip exactly at the threshold is fresh: *older
+    /// than* is the stale direction.
+    static func tipIsFresh(
+        tipTime: Date, now: Date,
+        within threshold: Duration = tipFreshnessThreshold
+    ) -> Bool {
+        now.timeIntervalSince(tipTime) <= threshold.timeInterval
+    }
+
+    /// The watch-entry gate (FR-001, FR-015): whether a run holding this
+    /// first live reading begins watching — and when it does not, the sync
+    /// result it reports instead.
+    ///
+    /// Three signals admit the watch because no one of them covers every
+    /// still-syncing shape: the flag covers the never-synced or day-stale
+    /// node but clears at chain-tip load for any tip under a day old; the
+    /// gap covers a node that has fetched headers it lacks but reads zero
+    /// until that fetch lands; the tip's age covers the warm restart both
+    /// others miss (research §2).
+    static func watchEntry(reading: LiveReading, now: Date) -> WatchEntry {
+        // A self-defined chain is definitionally at its own tip — "still
+        // syncing" is ill-defined on one, so nothing is claimed rather than
+        // something vacuous. Checked first and absolutely: a just-started
+        // regtest can sit with the flag set and still must not enter (FR-015).
+        if BitcoinNetwork(rpcChain: reading.chain) == .regtest {
+            return .decline(.notMeasured)
+        }
+        // The gap is judged on the node's own figures — `headers > blocks`,
+        // not the derived `blocksBehind` — the same read `SyncWatchState`'s
+        // undone-work test makes, so gate and watch can never disagree on
+        // what a gap is.
+        if reading.isInitialBlockDownload
+            || reading.headers > reading.height
+            || !tipIsFresh(tipTime: reading.tipTime, now: now) {
+            return .enter
+        }
+        // Flag clear, gap closed, tip fresh is the `caughtUp` proof's bar
+        // evaluated once at entry — the node was already at the tip when
+        // the run arrived, which is an answer, not a missing measurement
+        // (FR-005).
+        return .decline(.caughtUp)
+    }
+
     // MARK: - The sync watch's memory
 
     /// The most a watch tolerates with no fresh reading — or flat readings that
@@ -663,5 +771,13 @@ enum NodeAutomation {
             unproductive += delta
             return .unproductive
         }
+    }
+}
+
+/// `Duration`'s value as a `TimeInterval` — for comparing it against `Date`
+/// arithmetic, which predates it.
+private extension Duration {
+    var timeInterval: TimeInterval {
+        TimeInterval(components.seconds) + TimeInterval(components.attoseconds) / 1e18
     }
 }

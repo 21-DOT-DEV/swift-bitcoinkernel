@@ -279,17 +279,41 @@ results. Every task lands standalone.
   `Sources/NodeApp/NodeAutomation.swift`,
   `Sources/NodeAppTests/NodeAutomationTests.swift` · needs T008 ·
   provisional on T039
-- [ ] T011 Watch-entry gate — enter when the IBD flag is set, a header
+- [x] T011 Watch-entry gate — enter when the IBD flag is set, a header
   gap is open, or the tip is older than `tipFreshnessThreshold` (~60 min)
   against an injected wall-clock `now`; `regtest` never enters. The gate
   answers *why* it declined, not just whether: a decline on an
   already-synced node reports `caughtUp`; a `regtest` decline reports
   `notMeasured` (settled at T007). The freshness test is one function —
   `tipIsFresh(tipTime:now:)` — that T012's proof reuses, so gate and proof
-  cannot disagree at the boundary; it is defined and boundary-tested here
-  (FR-001, FR-005, FR-015; verifies FR-001, FR-015) (~150) ·
+  cannot disagree at the boundary; it is defined and boundary-tested here.
+  Landed with the shape sharpened past the written task: the verdict is a
+  named enum — `WatchEntry`, `.enter` or `.decline(SyncResult)` — rather
+  than a Bool, so a decline structurally carries the ending the call site
+  must report; `.enter` stays bare since the admitting leg is derivable
+  from the reading itself and no consumer needs it (a payload could only
+  contradict the reading it was computed from). The freshness function
+  landed as `tipIsFresh(tipTime:now:within:)` — the bound injected
+  through a default like the leash statics — fresh iff age ≤ threshold:
+  *older than* is the stale direction, the same bar T012's proof applies;
+  a miner-skewed future tip reads fresh by the same rule (research §2's
+  stated blind spot). The gap leg reads `headers > height` on the node's
+  own figures, the same test `SyncWatchState`'s undone-work clause makes.
+  `BitcoinNetwork(rpcChain:)` detects regtest — the app's chain-name-to-
+  network mapping, which `summary` already uses — checked first and
+  absolutely, so a just-started regtest still reporting the IBD flag
+  declines `notMeasured`; an unknown chain name resolves to no known
+  network and is weighed on the signals like any real chain. And the six-case `NodeAutomation.SyncResult` twin landed
+  now — the first producer the `NodeSyncResult` comment reserved it for —
+  with `init(_:)`/`.plain` beside `NodeRunOutcome`'s, so the vocabulary
+  is compile-checked from the start (~310 across the four files — over
+  the estimate on the twin and its round-trip test, which the written
+  task deferred without naming where it would land)
+  (FR-001, FR-005, FR-015; verifies FR-001, FR-015) ·
   `Sources/NodeApp/NodeAutomation.swift`,
-  `Sources/NodeAppTests/NodeAutomationTests.swift` · needs T008
+  `Sources/NodeApp/NodeRunReport.swift`,
+  `Sources/NodeAppTests/NodeAutomationTests.swift`,
+  `Sources/NodeAppTests/NodeRunReportTests.swift` · needs T008
 - [ ] T012 The `caughtUp` proof — flag cleared *and* `blocks == headers`
   *and* one of: headers advanced this run, the tip is inside the freshness
   threshold, or — on a qualifying flat pass (flag clear, gap closed, headers

@@ -95,9 +95,11 @@ enum NodeRunOutcome: String, AppEnum {
 /// assigned explicitly and a test pins the assignment. Cases may be appended;
 /// renaming or renumbering breaks automations already built.
 ///
-/// Unlike `NodeRunOutcome` this type has no framework-free twin yet: the watch
-/// decisions that produce it belong in `NodeAutomation`, and the plain form
-/// with its two-way mapping arrives with the first task that produces one.
+/// The framework-free twin is `NodeAutomation.SyncResult`, derived and read
+/// back through `init(_:)` and `.plain` — the same two-way mapping
+/// `NodeRunOutcome` keeps with `Outcome`, and exhaustive for the same reason:
+/// adding a case on either side will not compile until the other accounts for
+/// it.
 enum NodeSyncResult: String, AppEnum {
     /// The node reached the tip — either the watch saw the catch-up happen, or
     /// the entry gate found it already there: flag clear, no header gap, a tip
@@ -135,6 +137,35 @@ enum NodeSyncResult: String, AppEnum {
             .conditionsChanged: "Conditions changed",
             .notMeasured: "Not measured",
         ]
+    }
+
+    /// Derived from the plain sync verdict the framework-free logic produces,
+    /// rather than chosen separately — the mirror of `NodeRunOutcome.init(_:)`.
+    /// Adding a way a watch can end will not compile until it is accounted for
+    /// here — something no test could enforce as reliably.
+    init(_ result: NodeAutomation.SyncResult) {
+        switch result {
+        case .caughtUp: self = .caughtUp
+        case .stillSyncing: self = .stillSyncing
+        case .noProgress: self = .noProgress
+        case .nodeStopped: self = .nodeStopped
+        case .conditionsChanged: self = .conditionsChanged
+        case .notMeasured: self = .notMeasured
+        }
+    }
+
+    /// The plain form, for the decisions that must stay testable.
+    ///
+    /// The mirror of `init(_:)` above, and exhaustive for the same reason.
+    var plain: NodeAutomation.SyncResult {
+        switch self {
+        case .caughtUp: .caughtUp
+        case .stillSyncing: .stillSyncing
+        case .noProgress: .noProgress
+        case .nodeStopped: .nodeStopped
+        case .conditionsChanged: .conditionsChanged
+        case .notMeasured: .notMeasured
+        }
     }
 }
 

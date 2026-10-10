@@ -151,6 +151,22 @@ struct NodeRunReportTests {
         }
     }
 
+    @Test("every plain sync result survives the round trip through the Shortcuts-facing type")
+    func syncResultRoundTrips() {
+        // The two sync-result types cannot be one for the same reason the
+        // outcomes can't — the Shortcuts-facing one needs plain text behind
+        // each case — and the same crossed-mapping failure applies: a
+        // conversion that swapped two cases would compile and then report the
+        // wrong ending.
+        let results: [NodeAutomation.SyncResult] = [
+            .caughtUp, .stillSyncing, .noProgress, .nodeStopped,
+            .conditionsChanged, .notMeasured,
+        ]
+        for result in results {
+            #expect(NodeSyncResult(result).plain == result)
+        }
+    }
+
     @MainActor
     @Test("a run with no sync answer reports notMeasured and no gain count")
     func unmeasuredSyncReportsNotMeasured() {
