@@ -267,13 +267,17 @@ struct NodeAutomationTests {
 
     // MARK: - Turning readings into a report
 
-    private func reading(_ chain: String, _ height: Int, behind: Int = 0)
-        -> NodeAutomation.LiveReading
-    {
+    private func reading(
+        _ chain: String, _ height: Int, behind: Int = 0,
+        isInitialBlockDownload: Bool = false,
+        tipTime: Date? = nil
+    ) -> NodeAutomation.LiveReading {
+        // No tip given lands at `watchNow` — fresh — so a bare reading is the
+        // gate's all-clear baseline and staleness is always an explicit choice.
         NodeAutomation.LiveReading(
             chain: chain, height: height, blocksBehind: behind,
-            isInitialBlockDownload: false, headers: height + behind,
-            tipTime: Date(timeIntervalSince1970: 1_713_300_000))
+            isInitialBlockDownload: isInitialBlockDownload, headers: height + behind,
+            tipTime: tipTime ?? watchNow)
     }
 
     private func baseline(_ chain: String, _ height: Int) -> NodeAutomation.TipBaseline {
@@ -607,6 +611,147 @@ struct NodeAutomationTests {
     @Test("the in-progress headline is set")
     func inProgressTitleExists() {
         #expect(NodeAutomation.inProgressTitle.isEmpty == false)
+    }
+
+    // MARK: - Watch entry
+
+    /// The wall-clock instant every gate test measures tip age against — fixed,
+    /// so a "stale" or "fresh" tip is a plain offset from it.
+    private let watchNow = Date(timeIntervalSince1970: 1_713_500_000)
+
+    @Test("the IBD flag enters the watch even with no gap and a fresh tip")
+    func gateEntersOnFlag() {
+        // The flag is the never-synced / day-stale signal — it admits alone.
+        #expect(
+            NodeAutomation.watchEntry(
+                reading: reading(
+                    "main", 800_000, isInitialBlockDownload: true, tipTime: watchNow),
+                now: watchNow)
+                == .enter)
+    }
+
+    @Test("an open header gap enters the watch")
+    func gateEntersOnGap() {
+        // Flag clear, tip fresh — but the node knows headers it does not hold.
+        #expect(
+            NodeAutomation.watchEntry(
+                reading: reading("main", 800_000, behind: 200, tipTime: watchNow),
+                now: watchNow)
+                == .enter)
+    }
+
+    @Test("a stale tip enters the watch — the warm-restart window the other signals miss")
+    func gateEntersOnStaleTip() {
+        // A restarted synced node: the flag already cleared at chain-tip load and
+        // no gap has been fetched yet, while hours of blocks wait. The tip's own
+        // age is the signal that still enters.
+        #expect(
+            NodeAutomation.watchEntry(
+                reading: reading(
+                    "main", 800_000, tipTime: watchNow.addingTimeInterval(-7_200)),
+                now: watchNow)
+                == .enter)
+    }
+
+    @Test("flag clear, gap closed, tip fresh declines as caught up")
+    func gateDeclinesCaughtUp() {
+        // The watch's proof evaluated once at entry: the node was already at the
+        // tip when the run arrived — an answer, not a missing measurement
+        // (FR-005).
+        #expect(
+            NodeAutomation.watchEntry(
+                reading: reading("main", 800_000, tipTime: watchNow),
+                now: watchNow)
+                == .decline(.caughtUp))
+    }
+
+    @Test("regtest never enters — even with the flag set or a gap open, it reports notMeasured")
+    func gateDeclinesRegtest() {
+        // A self-defined chain is definitionally at its own tip (FR-015): a
+        // just-started regtest can sit with the IBD flag set and a stale tip and
+        // still must not enter — the decline is absolute, checked before any
+        // signal.
+        #expect(
+            NodeAutomation.watchEntry(
+                reading: reading(
+                    "regtest", 0, isInitialBlockDownload: true,
+                    tipTime: watchNow.addingTimeInterval(-7_200)),
+                now: watchNow)
+                == .decline(.notMeasured))
+        #expect(
+            NodeAutomation.watchEntry(
+                reading: reading("regtest", 100, behind: 50, tipTime: watchNow),
+                now: watchNow)
+                == .decline(.notMeasured))
+        // And a settled regtest — flag clear, gap closed, a just-mined tip —
+        // still reports notMeasured, never caughtUp: "still syncing" is
+        // ill-defined on the chain, so the decline names the missing
+        // measurement, not a tip it does not have.
+        #expect(
+            NodeAutomation.watchEntry(
+                reading: reading("regtest", 800_000, tipTime: watchNow),
+                now: watchNow)
+                == .decline(.notMeasured))
+    }
+
+    @Test("an unknown chain is weighed on the signals like a known one")
+    func gateTreatsUnknownChainNormally() {
+        // A name with no picker counterpart — a fork's, a future network's —
+        // resolves to no known network, so it is judged on the three signals
+        // like any real chain.
+        #expect(
+            NodeAutomation.watchEntry(
+                reading: reading(
+                    "scalenet", 100, isInitialBlockDownload: true, tipTime: watchNow),
+                now: watchNow)
+                == .enter)
+        #expect(
+            NodeAutomation.watchEntry(
+                reading: reading("scalenet", 100, tipTime: watchNow),
+                now: watchNow)
+                == .decline(.caughtUp))
+    }
+
+    @Test("a tip exactly at the freshness boundary still reads fresh")
+    func tipAtBoundaryIsFresh() {
+        // "Older than" is the stale direction: at exactly the threshold the tip
+        // is still inside it — the same bar the caught-up proof applies (T012).
+        #expect(
+            NodeAutomation.tipIsFresh(
+                tipTime: watchNow.addingTimeInterval(-3_600), now: watchNow))
+    }
+
+    @Test("a tip past the freshness boundary reads stale")
+    func tipPastBoundaryIsStale() {
+        #expect(
+            NodeAutomation.tipIsFresh(
+                tipTime: watchNow.addingTimeInterval(-3_600.001), now: watchNow)
+                == false)
+    }
+
+    @Test("a tip stamped in the future reads fresh — miner skew, not staleness")
+    func futureTipIsFresh() {
+        // `time` is miner-set and consensus-tolerant to ~2 h ahead; a negative
+        // age can never mean "older than".
+        #expect(
+            NodeAutomation.tipIsFresh(
+                tipTime: watchNow.addingTimeInterval(7_200), now: watchNow))
+    }
+
+    @Test("the freshness figure is the spec's sixty minutes, and an injected bound is honored")
+    func freshnessThreshold() {
+        #expect(NodeAutomation.tipFreshnessThreshold == .seconds(3_600))
+        // The injected `within` is what lets the gate and the caught-up proof
+        // (T012) share one boundary — tests shrink the window rather than
+        // recompute ages around 3,600 seconds.
+        #expect(
+            NodeAutomation.tipIsFresh(
+                tipTime: watchNow.addingTimeInterval(-61), now: watchNow,
+                within: .seconds(60)) == false)
+        #expect(
+            NodeAutomation.tipIsFresh(
+                tipTime: watchNow.addingTimeInterval(-59), now: watchNow,
+                within: .seconds(60)))
     }
 
     // MARK: - SyncWatchState
