@@ -491,4 +491,177 @@ enum NodeAutomation {
                 comment: "Joins the run's status sentence to its blocks-gained sentence. The space is the sentence separator — adjust or replace for languages that join sentences differently.")
         }
     }
+
+    // MARK: - The sync watch's memory
+
+    /// The most a watch tolerates with no fresh reading — or flat readings that
+    /// still show undone work — before the run ends `noProgress` (~120 s,
+    /// FR-007). Sits inside Core's own stall-recovery constants, so what peer
+    /// churn can fix resolves inside it. Provisional on the device pass (T039).
+    static let unproductiveLeash: Duration = .seconds(120)
+
+    /// The most a watch tolerates flat readings with nothing provably left
+    /// undone — an IBD node that has learned no gap yet, a chain quiet past
+    /// Core's recency rule — before the run ends `noProgress` (~240 s, FR-007).
+    /// Provisional on the device pass (T039).
+    static let flatWindowLeash: Duration = .seconds(240)
+
+    /// The sync watch's memory between polls — the heights it started from, the
+    /// best it has seen, and how long it has been since the node showed work.
+    ///
+    /// A run holds one `var` for the length of a watch and hands each pass to
+    /// `advance(instant:reading:)`: the pass's own instant and the node's
+    /// answer, or `nil` when the question timed out or was declined. Time is
+    /// measured pass to pass rather than against a since-last-gain timestamp —
+    /// a first-ever start has never produced an advancing reading, so no
+    /// timestamp can mark "last gain" for it — and a run the system suspended
+    /// wakes to one large delta, the correct accounting since the in-process
+    /// daemon froze for exactly as long.
+    ///
+    /// The two leashes implement FR-007. A pass feeds exactly one:
+    ///
+    /// - An *advancing* reading — `blocks` or `headers` above the best the
+    ///   watch has seen — resets both and feeds none. Advancing headers count:
+    ///   during header fetch the blocks are legitimately frozen while the gap
+    ///   opens.
+    /// - No fresh reading at all feeds `unproductive`.
+    /// - A flat reading feeds `unproductive` only while undone work shows
+    ///   (`headers > blocks`); everything else flat feeds `flatWindow`.
+    ///
+    /// Feeding one leash never resets the other: a quiet-chain flat stretch
+    /// keeps counting toward `flatWindow` across the odd timed-out question,
+    /// and silence keeps counting toward `unproductive` between flat answers.
+    /// Only a gain resets — `stall` reports a tripped leash, unproductive
+    /// first when both stand over.
+    ///
+    /// Peer evidence never enters: a `getpeerinfo` answer is `caughtUp`
+    /// evidence only, not a chain reading (FR-007), so `advance` takes a
+    /// `LiveReading?` and nothing else.
+    ///
+    /// Generic over the instant type alone — the state does arithmetic, never
+    /// sleeps — so the run's `C: Clock<Duration>` and a `TestClock` hand it
+    /// the same shape (`Instant.Duration == Duration`).
+    struct SyncWatchState<Instant: InstantProtocol>: Equatable
+        where Instant.Duration == Duration
+    {
+        /// One of the watch's two stall timers. Names the spec's leashes, so
+        /// "this pass fed it" (`advance`'s return) and "it tripped" (`stall`)
+        /// share one vocabulary.
+        enum Leash: Equatable {
+            /// No fresh reading, or a flat one with undone work still showing.
+            case unproductive
+            /// A flat reading with nothing provably left to do.
+            case flatWindow
+        }
+
+        /// Where the watch started — the h₀ of the run's fraction and the
+        /// baseline `blocksSince` measures "gained this run" against. A
+        /// `TipBaseline`, not a `LiveReading`: a start position is not a
+        /// measurement, and the reading's watch-only fields must not be
+        /// readable back off one.
+        let baseline: TipBaseline
+
+        /// The headers height at entry — the bar `headersAdvanced` is judged
+        /// against. `baseline` has no headers figure (a `TipBaseline` keeps
+        /// only the two facts a delta needs), so the latch's reference lives
+        /// here.
+        let baselineHeaders: Int
+
+        /// Low Power Mode as it read when the watch committed — the drift
+        /// check's baseline: already on at entry is a standing preference, so
+        /// only a mid-watch switch-on ends the watch.
+        let lowPowerModeAtEntry: Bool
+
+        /// The bounds the leashes trip at — the spec figures by default,
+        /// injectable so the action can wire the constants and tests can
+        /// shrink them.
+        let unproductiveLeash: Duration
+        let flatWindowLeash: Duration
+
+        /// The latest instant seen — deltas measure from here, not from
+        /// entry, so one suspended pass lands as one large delta rather than
+        /// being sliced by passes that never ran. A backwards pass feeds
+        /// nothing and never moves the anchor.
+        private var previousInstant: Instant
+
+        /// The best block and header heights the watch has seen. "Advancing"
+        /// is judged against these — never the last reading — so a rewound or
+        /// reorged answer reads as flat rather than becoming a new low the
+        /// next pass measures from.
+        private(set) var bestBlocks: Int
+        private(set) var bestHeaders: Int
+
+        /// Time fed to each leash since the last advancing reading. Public to
+        /// readers — the detail line's staleness clause ("last gain N ago")
+        /// sums them — but only `advance` moves them.
+        private(set) var unproductive: Duration
+        private(set) var flatWindow: Duration
+
+        /// Whether headers have moved past the entry figure — the leg the
+        /// `caughtUp` proof needs on runs the tip-age gate let in, where flag
+        /// and gap already described a finished state at the first answer and
+        /// only observed growth proves the catch-up happened.
+        var headersAdvanced: Bool { bestHeaders > baselineHeaders }
+
+        /// A leash past its bound, if any — `.unproductive` wins when both
+        /// stand over, since a node that stopped answering is the tighter
+        /// signal.
+        var stall: Leash? {
+            if unproductive >= unproductiveLeash { return .unproductive }
+            if flatWindow >= flatWindowLeash { return .flatWindow }
+            return nil
+        }
+
+        init(
+            at instant: Instant,
+            entry reading: LiveReading,
+            lowPowerMode: Bool,
+            unproductiveLeash: Duration = NodeAutomation.unproductiveLeash,
+            flatWindowLeash: Duration = NodeAutomation.flatWindowLeash
+        ) {
+            baseline = TipBaseline(chain: reading.chain, height: reading.height)
+            baselineHeaders = reading.headers
+            lowPowerModeAtEntry = lowPowerMode
+            self.unproductiveLeash = unproductiveLeash
+            self.flatWindowLeash = flatWindowLeash
+            previousInstant = instant
+            bestBlocks = reading.height
+            bestHeaders = reading.headers
+            unproductive = .zero
+            flatWindow = .zero
+        }
+
+        /// Records one poll pass — its instant and the node's answer, or `nil`
+        /// when none arrived — and returns the leash the pass fed, or `nil` on
+        /// a gain. Exactly one leash is fed per pass; a gain resets both.
+        @discardableResult
+        mutating func advance(instant: Instant, reading: LiveReading?) -> Leash? {
+            // A backwards instant feeds nothing and never re-anchors: storing
+            // it would hand the rewound span to the next pass's delta.
+            let delta = max(.zero, previousInstant.duration(to: instant))
+            previousInstant = max(previousInstant, instant)
+            if let reading {
+                if reading.height > bestBlocks || reading.headers > bestHeaders {
+                    bestBlocks = max(bestBlocks, reading.height)
+                    bestHeaders = max(bestHeaders, reading.headers)
+                    unproductive = .zero
+                    flatWindow = .zero
+                    return nil
+                }
+                // Undone work is the spec's `headers > blocks`, read off the
+                // node's own figures rather than the derived `blocksBehind` —
+                // a reading whose gap field ever disagreed could not misroute
+                // the pass. Flat with nothing provably left is the longer
+                // leash — the state cannot be expected to move faster.
+                if reading.headers > reading.height {
+                    unproductive += delta
+                    return .unproductive
+                }
+                flatWindow += delta
+                return .flatWindow
+            }
+            unproductive += delta
+            return .unproductive
+        }
+    }
 }

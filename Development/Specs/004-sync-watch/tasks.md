@@ -244,13 +244,38 @@ results. Every task lands standalone.
 
 ## Watch decisions — pure functions in `NodeAutomation`, each tested in-diff
 
-- [ ] T010 `SyncWatchState` — the watch's memory as a value type: baseline
+- [x] T010 `SyncWatchState` — the watch's memory as a value type: baseline
   heights, best-seen, the headers-advanced latch, both stall accumulators,
   the entry Low-Power snapshot. `advance(instant:reading:)` feeds exactly one
   accumulator per pass — an advancing reading resets both; an absent reading
   feeds `unproductive` (~120 s); a flat reading feeds `unproductive` only
   while undone work shows (`headers > blocks`), everything else flat feeds
-  `flatWindow` (~240 s) (FR-007; verifies FR-007) (~220) ·
+  `flatWindow` (~240 s). Landed with the API sharpened past the written task:
+  the type is generic over `Instant: InstantProtocol` alone (constrained
+  `Instant.Duration == Duration`) rather than `C: Clock` — it does
+  arithmetic, never sleeps, and both `ContinuousClock` and `TestClock`
+  instants satisfy it, which is what T018's `C: Clock<Duration>` threading
+  hands it. `advance` returns the `Leash?` it fed (nil = a gain), making
+  "feeds exactly one" assertable at the boundary, while the trip verdict is
+  a separate `var stall: Leash?` (unproductive first when both stand), so a
+  tripped leash keeps reporting rather than firing once. The leash figures
+  are `NodeAutomation` statics injected through the init's defaults — T034's
+  "wire the constants" works by passing or by pinning. The latch is computed
+  (`bestHeaders > baselineHeaders`), not stored — best-seen only ratchets,
+  so a stored flag could only desync. Feeding one leash provably leaves the
+  other counting (no cross-reset), a backwards instant feeds nothing and
+  never re-anchors the next delta (the anchor holds the latest instant
+  seen), and the baseline is a `TipBaseline` —
+  `blocksSince` consumes it directly for "gained this run" — with
+  `baselineHeaders` beside it, since a `TipBaseline` has no headers figure.
+  The sum of the two accumulators is exactly time-since-last-gain (each
+  advancing pass drops its own delta), which T015's staleness clause reads.
+  The undone-work test compares `headers > height` on the node's own figures
+  rather than trusting the derived `blocksBehind` field
+  (~425 — just over the ceiling on test volume: eighteen FR-007 scenarios,
+  each a small arrange-act-assert, ride in the same change as the type they
+  cover; the type itself is ~170 lines, half of it doc comments)
+  (FR-007; verifies FR-007) ·
   `Sources/NodeApp/NodeAutomation.swift`,
   `Sources/NodeAppTests/NodeAutomationTests.swift` · needs T008 ·
   provisional on T039

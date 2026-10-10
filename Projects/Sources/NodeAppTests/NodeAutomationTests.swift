@@ -608,4 +608,268 @@ struct NodeAutomationTests {
     func inProgressTitleExists() {
         #expect(NodeAutomation.inProgressTitle.isEmpty == false)
     }
+
+    // MARK: - SyncWatchState
+
+    /// A state entered on the given reading at `t0`; tests advance the clock by
+    /// hand from there. The leashes default to the real figures — an injected
+    /// pair is only for proving the injection seam works.
+    private func watchState(
+        at instant: ContinuousClock.Instant,
+        entry: NodeAutomation.LiveReading,
+        lowPowerMode: Bool = false,
+        unproductiveLeash: Duration = NodeAutomation.unproductiveLeash,
+        flatWindowLeash: Duration = NodeAutomation.flatWindowLeash
+    ) -> NodeAutomation.SyncWatchState<ContinuousClock.Instant> {
+        NodeAutomation.SyncWatchState(
+            at: instant, entry: entry, lowPowerMode: lowPowerMode,
+            unproductiveLeash: unproductiveLeash, flatWindowLeash: flatWindowLeash)
+    }
+
+    @Test("watch entry seeds the baseline and best-seen heights and owes no leash time")
+    func watchEntrySeeds() {
+        let t0 = ContinuousClock.now
+        let state = watchState(
+            at: t0, entry: reading("main", 800_000, behind: 200), lowPowerMode: true)
+        #expect(state.baseline == baseline("main", 800_000))
+        #expect(state.baselineHeaders == 800_200)
+        #expect(state.bestBlocks == 800_000)
+        #expect(state.bestHeaders == 800_200)
+        // A gap at entry does not latch the headers flag — the latch wants
+        // growth *past the entry figure*, not headers standing over blocks.
+        #expect(state.headersAdvanced == false)
+        #expect(state.unproductive == .zero)
+        #expect(state.flatWindow == .zero)
+        #expect(state.stall == nil)
+        #expect(state.lowPowerModeAtEntry)
+    }
+
+    @Test("a pass with no fresh reading feeds the unproductive leash alone")
+    func absentReadingFeedsUnproductive() {
+        let t0 = ContinuousClock.now
+        var state = watchState(at: t0, entry: reading("main", 800_000))
+        #expect(
+            state.advance(instant: t0.advanced(by: .seconds(60)), reading: nil)
+                == .unproductive)
+        #expect(state.unproductive == .seconds(60))
+        #expect(state.flatWindow == .zero)
+        #expect(state.stall == nil)
+    }
+
+    @Test("a flat reading with undone work showing feeds the unproductive leash")
+    func flatWithGapFeedsUnproductive() {
+        let t0 = ContinuousClock.now
+        var state = watchState(at: t0, entry: reading("main", 800_000, behind: 200))
+        // Same heights again — nothing advanced, but `headers > blocks` means
+        // the node has shown work it is not doing.
+        #expect(
+            state.advance(
+                instant: t0.advanced(by: .seconds(60)),
+                reading: reading("main", 800_000, behind: 200))
+                == .unproductive)
+        #expect(state.unproductive == .seconds(60))
+        #expect(state.flatWindow == .zero)
+    }
+
+    @Test("a flat reading with nothing provably undone feeds the flat-window leash")
+    func flatNoGapFeedsFlatWindow() {
+        let t0 = ContinuousClock.now
+        var state = watchState(at: t0, entry: reading("main", 800_000))
+        #expect(
+            state.advance(
+                instant: t0.advanced(by: .seconds(60)),
+                reading: reading("main", 800_000))
+                == .flatWindow)
+        #expect(state.flatWindow == .seconds(60))
+        #expect(state.unproductive == .zero)
+    }
+
+    @Test("a reading that gains blocks resets both leashes and feeds none")
+    func advancingBlocksResets() {
+        let t0 = ContinuousClock.now
+        var state = watchState(at: t0, entry: reading("main", 800_000))
+        _ = state.advance(instant: t0.advanced(by: .seconds(60)), reading: nil)
+        _ = state.advance(
+            instant: t0.advanced(by: .seconds(90)), reading: reading("main", 800_000))
+        #expect(state.unproductive == .seconds(60))
+        #expect(state.flatWindow == .seconds(30))
+        #expect(
+            state.advance(
+                instant: t0.advanced(by: .seconds(95)),
+                reading: reading("main", 800_010))
+                == nil)
+        #expect(state.unproductive == .zero)
+        #expect(state.flatWindow == .zero)
+        #expect(state.bestBlocks == 800_010)
+    }
+
+    @Test("a reading that gains only headers counts as a gain")
+    func advancingHeadersResets() {
+        let t0 = ContinuousClock.now
+        var state = watchState(at: t0, entry: reading("main", 800_000))
+        _ = state.advance(instant: t0.advanced(by: .seconds(60)), reading: nil)
+        // Header fetch legitimately freezes blocks while the gap opens — a
+        // headers gain is still a gain, and it latches the proof's leg.
+        #expect(
+            state.advance(
+                instant: t0.advanced(by: .seconds(65)),
+                reading: reading("main", 800_000, behind: 50))
+                == nil)
+        #expect(state.unproductive == .zero)
+        #expect(state.headersAdvanced)
+    }
+
+    @Test("the headers-advanced latch sets only above the entry figure")
+    func headersLatchAboveEntry() {
+        let t0 = ContinuousClock.now
+        var state = watchState(at: t0, entry: reading("main", 800_000, behind: 200))
+        _ = state.advance(
+            instant: t0.advanced(by: .seconds(5)),
+            reading: reading("main", 800_000, behind: 200))
+        #expect(state.headersAdvanced == false)
+        _ = state.advance(
+            instant: t0.advanced(by: .seconds(10)),
+            reading: reading("main", 800_000, behind: 201))
+        #expect(state.headersAdvanced)
+    }
+
+    @Test("a blocks gain never sets the headers latch")
+    func blocksGainDoesNotLatch() {
+        let t0 = ContinuousClock.now
+        var state = watchState(at: t0, entry: reading("main", 800_000, behind: 200))
+        _ = state.advance(
+            instant: t0.advanced(by: .seconds(5)),
+            reading: reading("main", 800_100, behind: 100))
+        #expect(state.bestBlocks == 800_100)
+        #expect(state.headersAdvanced == false)
+    }
+
+    @Test("feeding one leash never resets the other")
+    func leashesAccumulateIndependently() {
+        let t0 = ContinuousClock.now
+        var state = watchState(at: t0, entry: reading("main", 800_000))
+        _ = state.advance(instant: t0.advanced(by: .seconds(60)), reading: nil)
+        _ = state.advance(
+            instant: t0.advanced(by: .seconds(90)), reading: reading("main", 800_000))
+        _ = state.advance(instant: t0.advanced(by: .seconds(120)), reading: nil)
+        // Silence between flat answers still counts toward `unproductive`, and
+        // the flat stretch kept its own count across the timed-out question.
+        #expect(state.unproductive == .seconds(90))
+        #expect(state.flatWindow == .seconds(30))
+        #expect(state.stall == nil)
+    }
+
+    @Test("the unproductive leash trips the moment silence reaches its bound")
+    func unproductiveTripsAtBound() {
+        let t0 = ContinuousClock.now
+        var state = watchState(at: t0, entry: reading("main", 800_000))
+        _ = state.advance(instant: t0.advanced(by: .seconds(119)), reading: nil)
+        #expect(state.stall == nil)
+        _ = state.advance(instant: t0.advanced(by: .seconds(120)), reading: nil)
+        #expect(state.stall == .unproductive)
+    }
+
+    @Test("the flat-window leash trips at its own longer bound")
+    func flatWindowTripsAtBound() {
+        let t0 = ContinuousClock.now
+        var state = watchState(at: t0, entry: reading("main", 800_000))
+        _ = state.advance(
+            instant: t0.advanced(by: .seconds(239)), reading: reading("main", 800_000))
+        #expect(state.stall == nil)
+        _ = state.advance(
+            instant: t0.advanced(by: .seconds(240)), reading: reading("main", 800_000))
+        #expect(state.stall == .flatWindow)
+    }
+
+    @Test("a suspended run's giant delta trips the leash in one pass")
+    func giantDeltaTripsAtOnce() {
+        let t0 = ContinuousClock.now
+        var state = watchState(at: t0, entry: reading("main", 800_000))
+        // A frozen process wakes with the whole gap as one delta — the correct
+        // accounting, since the in-process daemon froze for exactly as long.
+        _ = state.advance(instant: t0.advanced(by: .seconds(300)), reading: nil)
+        #expect(state.stall == .unproductive)
+    }
+
+    @Test("a rewound reading is flat — never a gain, never a new low to measure from")
+    func rewoundReadingIsFlat() {
+        let t0 = ContinuousClock.now
+        var state = watchState(at: t0, entry: reading("main", 800_120))
+        // Reorged below the best seen, gap closed: flat, on the long leash.
+        #expect(
+            state.advance(
+                instant: t0.advanced(by: .seconds(30)),
+                reading: reading("main", 800_090))
+                == .flatWindow)
+        // Reorged with a reopened gap (`headers > blocks`): still flat, but the
+        // work showing makes it unproductive — the spec's mid-watch-reorg edge.
+        #expect(
+            state.advance(
+                instant: t0.advanced(by: .seconds(60)),
+                reading: reading("main", 800_090, behind: 30))
+                == .unproductive)
+        #expect(state.bestBlocks == 800_120)
+    }
+
+    @Test("a backwards instant feeds nothing and never re-anchors the delta")
+    func backwardsInstantIsInert() {
+        let t0 = ContinuousClock.now
+        var state = watchState(at: t0, entry: reading("main", 800_000))
+        _ = state.advance(instant: t0.advanced(by: .seconds(-10)), reading: nil)
+        #expect(state.unproductive == .zero)
+        _ = state.advance(instant: t0.advanced(by: .seconds(20)), reading: nil)
+        // 20 s of silence, not 30 — storing the earlier instant would have
+        // handed the rewound span to this pass's delta.
+        #expect(state.unproductive == .seconds(20))
+    }
+
+    @Test("the leash figures are the spec's — two minutes of silence, four flat")
+    func leashDefaults() {
+        #expect(NodeAutomation.unproductiveLeash == .seconds(120))
+        #expect(NodeAutomation.flatWindowLeash == .seconds(240))
+        // The init's defaults defer to the statics — a state built without
+        // leash arguments must carry the spec figures, not literals that could
+        // silently drift from them.
+        let state = NodeAutomation.SyncWatchState(
+            at: ContinuousClock.now, entry: reading("main", 800_000),
+            lowPowerMode: false)
+        #expect(state.unproductiveLeash == NodeAutomation.unproductiveLeash)
+        #expect(state.flatWindowLeash == NodeAutomation.flatWindowLeash)
+    }
+
+    @Test("a gain after a tripped leash clears the verdict — stall follows the timers")
+    func gainClearsStall() {
+        let t0 = ContinuousClock.now
+        var state = watchState(at: t0, entry: reading("main", 800_000))
+        _ = state.advance(instant: t0.advanced(by: .seconds(120)), reading: nil)
+        #expect(state.stall == .unproductive)
+        // The run would already have ended on the trip — but if one more
+        // reading lands, the state answers honestly: a gain resets, and
+        // nothing is owed.
+        _ = state.advance(
+            instant: t0.advanced(by: .seconds(125)), reading: reading("main", 800_010))
+        #expect(state.stall == nil)
+    }
+
+    @Test("an injected leash is honored")
+    func injectedLeashHonored() {
+        let t0 = ContinuousClock.now
+        var state = watchState(
+            at: t0, entry: reading("main", 800_000), unproductiveLeash: .seconds(10))
+        _ = state.advance(instant: t0.advanced(by: .seconds(10)), reading: nil)
+        #expect(state.stall == .unproductive)
+    }
+
+    @Test("with both leashes tripped the unproductive verdict stands")
+    func stallPrefersUnproductive() {
+        let t0 = ContinuousClock.now
+        var state = watchState(at: t0, entry: reading("main", 800_000))
+        _ = state.advance(instant: t0.advanced(by: .seconds(130)), reading: nil)
+        _ = state.advance(
+            instant: t0.advanced(by: .seconds(370)), reading: reading("main", 800_000))
+        // Both stand over — the tighter signal reports first.
+        #expect(state.unproductive >= NodeAutomation.unproductiveLeash)
+        #expect(state.flatWindow >= NodeAutomation.flatWindowLeash)
+        #expect(state.stall == .unproductive)
+    }
 }
