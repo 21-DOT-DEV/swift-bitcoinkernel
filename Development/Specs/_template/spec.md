@@ -11,6 +11,10 @@ Rules:
     The bold `**FR-001**`/`**SC-001**` form is the definition the checker
     counts — a plain-text mention elsewhere (e.g. pointing at another
     feature's FR) is treated as a reference, not a definition.
+  * A rule is stated once — here — and siblings cite the ID rather than
+    restating its terms. One claim per statement; a bullet with several
+    semi-independent clauses invites a restatement that contradicts one of
+    them while echoing the rest. See Specs/README.md "A rule lives once".
   * Every requirement must be testable by somebody who has never read plan.md.
     A standing constraint on the design space — an ADR's enforcement, a
     platform limit — is not a functional requirement: record it under

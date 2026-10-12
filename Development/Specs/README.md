@@ -29,6 +29,47 @@ changes the design, edit the affected section so the plan describes what shipped
 Never append a note saying an earlier section is now wrong: that is how a plan
 ends up contradicting itself, and how it grows without bound.
 
+**A rule lives once.** A requirement, pairing rule, or scope boundary is
+stated fully in exactly one place — the `FR-NNN` or edge-case bullet in
+`spec.md` — and siblings cite the ID instead of restating the rule's terms
+(a one-line gloss beside the cite is fine; re-specification is how two
+copies of one rule drift into contradiction). Inside `spec.md`, keep one
+claim per statement: a bullet carrying three semi-independent clauses
+invites a restatement that contradicts one clause while echoing the rest.
+After editing a claim-bearing sentence, grep its subject across the
+siblings — a second normative statement of the same rule is drift, not
+coverage.
+
+**A fix is new content.** Review-driven edits are themselves claims, and
+they get one delta sweep per round over the cumulative changes since the
+last clean pass — never per-fix (a sweep's own fixes ride into the next
+round's delta). A round is done when a pass yields zero *blocking*
+findings. Blocking means: a contradiction between documents, a requirement
+that cannot be observed, a wrong mechanism/path/command claim, a broken
+task or PR dependency, or a token/secrets exposure. Thinner findings are
+recorded in the round's commit message (the "everything else" row of the
+material table below), not fixed — a thin fix is fresh regression
+surface, and the drain/churn classification below is how an all-thin
+round gets noticed.
+
+The sweep opens with a **claims inventory**: every assertable line in the
+delta extracted to a flat list — one fact each, anchored to file and
+section, covering the whole delta, because a claim the fix did not mean
+to make is the usual shape of a fix-introduced bug. Then the recurrence
+list runs as sequential search passes, then one open pass for whatever
+the list does not name. The list earns entries: a bug class gets a line
+only after producing a finding twice — today it reads scope-boundary
+claims, duplicated-rule drift, unverified mechanism claims,
+self-reference gaps, convention-conformance, unobservable guards.
+Classify every finding **drain** (predates this round's fixes) or
+**churn** (introduced by them): churn flat while drain thins is a
+treadmill — raise the fix bar, not the sweep rate.
+
+This discipline applies to every document this file governs —
+spec-bearing folders, `_template/`, and this file. Executable surfaces
+(workflows, actions) carry their own gates; if a sweep on a code-side
+delta catches what those gates miss, the rule earns a code-side home.
+
 Plans therefore carry **no status log, review log, or round-by-round history**.
 That material has three homes instead:
 
@@ -62,4 +103,5 @@ disagree. Do not hand-edit it.
 | 002 | Keep Screen Awake toggle in both demo apps | — | Implemented | [plan.md](002-keep-screen-awake/plan.md) |
 | 003 | Action that runs the node unattended from a Shortcuts automation | — | In Progress | [plan.md](003-node-automation-action/plan.md) |
 | 004 | The long-running action watches the node sync toward the tip | — | Planned | [plan.md](004-sync-watch/plan.md) |
+| 005 | Authenticate github.com clones and retry fetch flakes in CI | — | Planned | [plan.md](005-reliable-clones/plan.md) |
 <!-- END GENERATED INDEX -->
