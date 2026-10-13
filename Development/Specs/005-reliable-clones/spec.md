@@ -18,7 +18,14 @@ A maintainer pushes to `main`. Each macOS job that resolves packages checks
 out with `persist-credentials: false`, runs `github-git-auth` (configures the
 global git header, prints one line confirming git sends `Authorization`), then
 fetches packages — authenticated, off the anonymous quota. If `tuist generate` hits a
-clone timeout, the step retries on its own inside the same job. If the
+clone timeout, the step retries on its own inside the same job — and the
+workspace's remote packages ride inside that fetch, pinned into the
+derived-data directory the build steps already read (validation asserts,
+rather than assumes, that the failure propagates out of the internal
+resolve and into the retry). Jobs whose
+build or test commands would otherwise fetch in-step resolve packages in a
+dedicated step under the same retry, so the fetching that can still flake is
+all fetch-only work. If the
 manifest is actually broken, the step fails immediately with the real error —
 no retries, no masking.
 
@@ -49,9 +56,9 @@ non-network failure exits on the first attempt.
    output, **when** the retry action evaluates it, **then** the step fails
    immediately with the original exit code — covers FR-005.
 7. **Given** a failed fetch attempt, **when** the next attempt starts,
-   **then** at least the configured wait has elapsed and the resolved
-   manifest's `.build` directory (repo root for these calls) has been
-   removed — covers FR-006.
+   **then** at least the configured wait has elapsed and every
+   resolution-state directory the step lists has been removed — covers
+   FR-006.
 8. **Given** the effective github.com extraheader count inside the workspace
    (`--includes`, which sees checkout's separate credential file) missing or
    exceeding one — or the probe call itself failing — **when** the auth
@@ -60,6 +67,13 @@ non-network failure exits on the first attempt.
 9. **Given** a job whose `GITHUB_TOKEN` carries write permission, **when** the
    auth action's verify step runs, **then** a `::warning::` annotation is
    emitted and the job continues — covers FR-008.
+10. **Given** a workflow whose `github-git-auth`-using job carries a
+    write-capable effective permission — including no `permissions:`
+    block declared at either level — a checkout without
+    `persist-credentials: false`, a checkout after the auth step, or
+    an `AUTH_LINT_EXEMPT` marker outside `actions-selftest.yml`,
+    **when** the workflow lint runs at PR time, **then** the lint fails —
+    covers FR-009.
 
 ## Functional requirements
 
@@ -68,6 +82,12 @@ non-network failure exits on the first attempt.
   - Neither the token nor its base64 form appears unmasked in job logs
     (`::add-mask::` on both before any git read — git's trace redacts the
     header value; `git config` output and step logs do not).
+  - every xcodebuild invocation in an auth-using job selects
+    `-scmProvider system` — applied uniformly, since any action that
+    loads package state can trigger a drift-resolve, and the flag is
+    global (even `-version` accepts it); the system git
+    reads the config file, while the built-in provider's config
+    handling is never relied on.
 - **FR-002** No github.com git request in a CI job carries more than one
   `Authorization` header (checkouts in auth-using jobs set
   `persist-credentials: false`).
@@ -75,39 +95,135 @@ non-network failure exits on the first attempt.
   dependencies does so with SwiftPM's shared repository cache disabled
   (`--disable-dependency-cache` — including the Dockerfile's in-container
   `RUN` invocations, which the flag reaches as a plain CLI arg);
-  xcodebuild resolution steps carry `-disablePackageRepositoryCache`
-  for the equivalent effect.
-- **FR-004** Every `tuist generate` step in CI declares an explicit
-  `timeout-minutes` bound.
+  every xcodebuild invocation carries `-disablePackageRepositoryCache`
+  for the equivalent effect — including the resolve `tuist generate`
+  performs internally, which no workflow flag can reach: the manifest's
+  `additionalPackageResolutionArguments` passes it there.
+- **FR-004** Every step whose purpose includes resolving package
+  dependencies declares an explicit `timeout-minutes` bound — `tuist
+  generate` counts: it resolves twice over — and for a step wrapped by
+  the retry action the bound covers the whole retry loop.
 - **FR-005** A fetch step wrapped by the retry action retries a failed
   attempt — up to three attempts total — only when the attempt's output
-  matches a fetch/transport signature; otherwise it exits immediately with
-  the original exit code.
-  - The signature set includes the incident-observed `Recv failure:
-    Operation timed out` and git's `lowSpeed` abort text (`Operation too
-    slow`) — without the latter, the stall-killer manufactures failures
-    the loop never retries.
+  matches a signature from the table below; otherwise it exits immediately
+  with the original exit code. The table is authoritative — every row
+  carries its selftest case and every selftest printer maps back to a row.
+
+  | Retry — signature on the attempt's log | Selftest case |
+  |---|---|
+  | `Recv failure: Operation timed out` — the incident-observed text | printer → retried |
+  | `Operation too slow` — git's `lowSpeed` abort; the stall-killer manufactures this failure | printer → retried |
+  | `Could not resolve host` — transient DNS | printer → retried |
+  | `RPC failed; curl (18\|56\|92)` — transport-layer RPC abort | printer → retried |
+  | `RPC failed; HTTP 5[0-9][0-9]` — server-side failure | printer → retried |
+  | `early EOF` — truncated pack | printer → retried |
+  | `unexpected disconnect while reading sideband packet` | printer → retried |
+  | `Connection reset by peer` | printer → retried |
+  | `Failed to connect` — connect-phase TCP failure/timeout | printer → retried |
+  | `The remote end hung up unexpectedly` — server-side abort | printer → retried |
+  | `returned error: (50[234]\|429)` — server error or throttle | printer → retried |
+
+  | Do not retry — auth-shaped | Selftest case |
+  |---|---|
+  | `Authentication failed`; `returned error: 40[13]`; `HTTP 40[13]` | `RPC failed; HTTP 403` printer → exactly one attempt |
+
+  - Exclusion is checked before inclusion — a log matching both (`RPC
+    failed; HTTP 403` carries a transport signature AND a 4xx) fails
+    immediately: a dead credential must never burn three attempts. `RPC
+    failed` is never a bare signature — unqualified it also matches auth
+    rejections, the exact failures meant to fail fast; it is always
+    written transport-scoped (`curl 18|56|92` or `HTTP 5xx`). T008's
+    canary isn't wrapped at all, so its single attempt comes from the
+    job shape, not the exclusion.
+  - `Could not resolve host` retries a mistyped manifest host twice more
+    before failing with the real code — the accepted cost of matching
+    DNS failures at all, recorded here rather than discovered in a run.
+  - "Original exit code" means the code observed at the step boundary —
+    for a wrapped `swift package … tuist` step that is SwiftPM's generic
+    failure code: the plugin reports tuist's failure as a diagnostic
+    rather than propagating its exit value (confirmed in the vendored
+    plugin source), so T008 asserts nonzero,
+    never a tuist-specific code.
 - **FR-006** Before each retry, the action waits the configured backoff and
-  removes the `.build` of the manifest SwiftPM resolved — for `swift package
-  … -p Projects/` calls that is the repo **root** `.build` (`-p` is Tuist's
-  arg, not SwiftPM's `--package-path`); the path is a `build-dir` input
-  defaulting to `.build`.
+  removes every directory the wrapped step's package resolution writes into,
+  so a fetch corpse cannot survive into the next attempt. The directories
+  arrive as a `cleanup-dirs` input — one path per line, defaulting to
+  `.build`; relative paths resolve against the workspace; entries may
+  carry workflow expressions (`${{ … }}`) — the runner expands them
+  before the action ever sees the text — and are deleted as the expanded
+  paths.
+  - **FR-006a — input reading.** Entries are read line-by-line
+    (`IFS= read -r` looped on `|| [[ -n $line ]]` so a final unterminated
+    line is not silently dropped — a `|-` block scalar strips it) with
+    no word-splitting and no glob expansion: taken literally, `~`,
+    `$HOME`, `$VAR`, `*` are never expanded, so a stray one lands
+    inside the workspace and warns as absent.
+  - **FR-006b — safety guard.** Every entry is checked before deletion:
+    it must normalize to an absolute path strictly inside
+    `$GITHUB_WORKSPACE` or `$RUNNER_TEMP` — existing entries resolved
+    through symlinks (`realpath`-style); for a missing entry the
+    deepest *existing* ancestor resolves through symlinks and only the
+    non-existent tail is lexical — otherwise `link/newdir` with `link`
+    a symlink to `/etc` would pass the text check while `rm -rf`
+    follows the intermediate link out — and the two roots are
+    canonicalized the same way before the comparison. The roots
+    themselves and anything outside either tree warn and are skipped
+    rather than `rm -rf`'d, so `/` or `../..` cannot reach outside the
+    job's trees.
+  - **FR-006c — visibility.** An entry that names nothing emits
+    `::warning::` — a silently skipped path would quietly disable
+    half the wipe.
+  - **FR-006d — per-step entries.** A wrapped `swift package` step
+    lists the resolved manifest's `.build` — for `swift package …
+    -p Projects/` calls that is the repo **root** `.build` (`-p` is
+    Tuist's arg, not SwiftPM's `--package-path`). A wrapped
+    `xcodebuild` step lists its `-clonedSourcePackagesDirPath`-pinned
+    dir, the entry carrying the same expression the pin flag does.
+    A wrapped `tuist generate` step lists root `.build` plus
+    `${{ env.DERIVED_DATA }}/SourcePackages` — the two resolves it
+    performs and the CI-only manifest pin behind them are
+    research.md's §6; pinned, the remote graph fetches once inside
+    the retried step and the builds' `-derivedDataPath .derivedData`
+    reads it warm.
 - **FR-007** The auth action emits a `::warning::` annotation — without
-  failing the job — when git is not observed sending the `Authorization`
-  header, when more than one `Authorization` header is sent, when the
-  probe call itself fails, or when the effective github.com extraheader
-  count differs from one — count and probe both run inside the workspace,
-  where repo-local config applies to the traced request.
+  failing the job — when the probe call itself fails, or when the
+  traced `ls-remote` fails to send exactly one `Authorization` header
+  per request — counted as case-insensitive `=> Send header:
+  authorization:` lines versus `=> Send header: (GET|POST) ` request
+  lines, where equal-at-zero is inconclusive (a probe that died before
+  sending proves nothing; the request count must be ≥ 1) — or when the
+  effective github.com extraheader count differs from one — count and
+  probe both run inside the workspace, where repo-local config applies
+  to the traced request.
 - **FR-008** The auth action emits a `::warning::` annotation — without
   failing the job — when the job's `GITHUB_TOKEN` reports write access to
   the repository (`permissions.push`), because only `contents: read` jobs
   are meant to adopt it; an absent field or a failed API call is
   inconclusive — a `::notice::`, never a misleading warning.
+- **FR-009** A static workflow lint — run by the ubuntu-only
+  `workflow-lint` workflow (triggered on `.github/workflows/**`,
+  `.github/actions/**`, and `.github/actionlint.yaml`) at PR time —
+  fails when a job that uses `github-git-auth` carries a
+  write-capable effective permission (the job's `permissions:` block if
+  present, otherwise the workflow's; any write value or `write-all`
+  counts — and no block declared at either level fails too, since the
+  token then inherits the repo default, which may be write), a
+  checkout without `persist-credentials: false`, or a
+  checkout ordered after the auth step — the mechanical form of
+  FR-008's scope rule and FR-002's ordering rule, checked
+  deterministically at PR time; FR-008's runtime warn-guard stays as
+  backup for what static parsing cannot see. One exemption exists: a
+  job may declare `AUTH_LINT_EXEMPT: "<reason>"`, which exempts ONLY
+  the write-permission rule — the checkout checks still apply — and
+  the marker itself fails the lint in any file other than
+  `actions-selftest.yml`, the only place a deliberately write-scoped
+  job belongs (its FR-008 canary).
 
 ## Measurable outcomes
 
-- **SC-001** In a job log, the auth step's verify output confirms
-  `Send header: Authorization` on a real github.com request and reports
+- **SC-001** In a job log, the auth step's verify output confirms an
+  `Authorization` header on every github.com request in the trace
+  (header lines == request lines, ≥ 1) and reports
   exactly one configured extraheader; a missing/broken config or a
   write-scoped job token produces a warning annotation, never a step
   failure.
@@ -118,7 +234,8 @@ non-network failure exits on the first attempt.
   A real forced timeout can't produce the first arm — `lowSpeed` is
   global and would abort every attempt — so the counter file
   manufactures the single signature-printing failure.
-- **SC-003** The feature lands as six pull requests, each independently
+- **SC-003** The feature lands as seven numbered pull requests —
+  prose-only amendment PRs excluded — each independently
   mergeable with CI green on its own diff; every code-change PR is ≤ ~150
   changed lines (PR 1 is prose).
 
@@ -164,9 +281,25 @@ non-network failure exits on the first attempt.
   exits immediately; retries never mask a new failure mode.
 - **Fetch succeeds on a later attempt** — the step proceeds normally; the
   attempt count is visible in the grouped log.
-- **In-process xcodebuild fetches** — covered because the config lives in the
-  git config FILE; an env-var-only injection would miss them (verified in
-  research.md §2).
+- **A `cleanup-dirs` entry that names nothing or escapes the job's
+  trees** — warned on and skipped; the annotation, not silence, is what
+  lets a wiring mistake like a stray `~` or `..` surface in the
+  throwaway run rather than inside a real retry.
+- **The repo-root `Tuist.swift` pin stops applying** (version drift, a
+  silently ignored option, or the `TUIST_` variable unset in a workflow) —
+  generate's fetch returns to the default DerivedData, the builds
+  re-clone, and the post-generate invariant check warns on *every* run —
+  green ones included — while the pinned `.derivedData/SourcePackages`
+  entry still warns on each retry and downstream logs show `Fetching`
+  lines: the regression announces itself rather than hiding an unwiped
+  corpse or an unretried fetch.
+- **In-process xcodebuild fetches** — covered by explicit `-scmProvider
+  system` on every resolving invocation and in the manifest's
+  internal-resolve args: the system git reads the config FILE, an
+  env-var-only injection would miss, and no default-provider assumption is
+  relied on — the throwaway canary (a deliberately wrong header that must
+  break a re-run generate's internal resolve) proves the whole chain
+  obeys it.
 
 ## Assumptions and dependencies
 
@@ -180,7 +313,11 @@ non-network failure exits on the first attempt.
 - git ≥ 2.34 on runners (HTTP/2 header-redaction fix in `GIT_TRACE_CURL`);
   the `macos-26` image README lists 2.55.0 — the fix is years old so any
   current image (`macos-26`, `xcode-27`) clears it, and masking is the
-  load-bearing control regardless.
+  load-bearing control regardless. Two gits exist on the runner: that
+  2.55 is the PATH git the probe and SwiftPM's clones invoke, while
+  `-scmProvider system` has xcodebuild call the git it resolves — both
+  read `~/.gitconfig` through the URL-scoped key, and the canary covers
+  the xcodebuild side.
 - `actions/checkout` semantics as shipped (v6): `persist-credentials`
   defaults to `true`.
 - SwiftPM supports `--disable-dependency-cache` (verified on the current

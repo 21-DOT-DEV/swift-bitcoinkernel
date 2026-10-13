@@ -3,7 +3,7 @@ feature: 005
 title: Authenticate github.com clones and retry fetch flakes in CI
 phase: null
 status: Planned
-updated: 2026-10-11
+updated: 2026-10-13
 adrs: []
 ---
 
@@ -20,7 +20,7 @@ crawled for 9.5 minutes, and the dead clone left SwiftPM's shared repository
 cache in a state it fataled on (`cannot change to …: No such file or
 directory`). This feature authenticates every github.com git request with the
 job's own `GITHUB_TOKEN`, closes the poisoned-cache crash path, and wraps the
-package-fetch steps in a signature-gated retry — delivered as six small,
+package-fetch steps in a signature-gated retry — delivered as seven small,
 independently revertable pull requests. Tooling/CI work, no roadmap phase.
 Supersedes the monolithic `RELIABLE-CLONE` approach: same mechanism, none of
 the perl.
@@ -32,8 +32,9 @@ third-party retry actions and the perl supervisor: [research.md](./research.md).
 
 ## Technical Context
 
-**Surface**: GitHub Actions YAML only — two local composite actions under
-`.github/actions/` plus wiring in five workflows. No Swift, no product code.
+**Surface**: CI only — two local composite actions under `.github/actions/`,
+wiring in five workflows, one root `Tuist.swift` manifest, and Dockerfile
+flag args. No product code.
 **Mechanism**: `git config --global http.https://github.com/.extraheader` —
 the same Authorization header `actions/checkout` sets, applied globally so it
 reaches fetchers outside the repo (SwiftPM's clones, xcodebuild's in-process
@@ -58,7 +59,9 @@ a checkout.
 
 - **Principle I** (Scope & Core alignment): not applicable — no product scope
   change; CI infrastructure only.
-- **Principle II** (C++ interop): not applicable — no Swift or C++ touched.
+- **Principle II** (C++ interop): not applicable — no product Swift or C++
+  touched; the one Swift file is a Tuist build manifest with no interop
+  surface.
 - **Principle III** (Node lifecycle): not applicable.
 - **Principle IV** (API surface): not applicable — no public API added.
 - **Principle V** (Spec-first & TDD): satisfied — this plan exists before any
@@ -95,7 +98,11 @@ Three independent mechanisms, one per layer of the failure:
    `swift run` / `generate-documentation` — the same shared cache, the same
    fatal mid-fetch path — swiftlang/swift-package-manager#9037) and
    `-disablePackageRepositoryCache` on the xcodebuild resolution steps for
-   the same belt-and-suspenders (the cache buys nothing on a fresh runner);
+   the same belt-and-suspenders (the cache buys nothing on a fresh runner)
+   — including the resolve `tuist generate` runs internally, which T007's
+   repo-root `Tuist.swift` manifest args flag on CI only, alongside
+   `-scmProvider system` pinning that call onto the config-reading git;
+   no workflow step could attach them to that call;
    `timeout-minutes: 30` on the generate steps as the pathological
    never-dies bound — the bound covers the whole retry loop, and 30 ≈ the
    per-attempt-10-min × 3 precedent of retry tooling, comfortably over the
@@ -110,10 +117,31 @@ Three independent mechanisms, one per layer of the failure:
    `lowSpeed` aborts layer 1 manufactures) — exits immediately with the real code
    otherwise
    (never masks deterministic failures), backs off linearly, and wipes the
-   resolved package's `.build` per FR-006 (`build-dir` input) — so a
-   mid-clone corpse can't block the
-   retry. No supervisor: macOS has no `timeout`/`gtimeout`, and the bound is
-   covered by the step's `timeout-minutes` plus git's `lowSpeed` aborts.
+   directories the wrapped step's resolution wrote per FR-006
+   (`cleanup-dirs` input) — so a mid-clone corpse can't block the
+   retry. Jobs whose build/test commands would fetch in-step get a dedicated
+   pure-fetch resolve step under the same retry (T010) — only fetch work is
+   safe to re-run wholesale. The app-workflow jobs are the carve-out: their
+   workspace fetch already lives inside `tuist generate`, and a
+   `TUIST_`-prefixed variable the workflows set to an absolute path switches
+   the repo-root `Tuist.swift`'s `additionalPackageResolutionArguments` on
+   there
+   only — pinning that internal resolve onto the system git
+   (`-scmProvider`, so the extraheader reaches it) and into the
+   `.derivedData/SourcePackages`
+   the builds' `-derivedDataPath` already reads, while a local generate keeps
+   the default DerivedData an Xcode open reuses. The file sits at the repo
+   root rather than `Projects/` because Tuist's locator treats `Tuist.swift`
+   as a root marker — inside `Projects/` it would relocate the root; beside
+   `.git` nothing moves. A post-generate step asserting the pinned
+   SourcePackages `checkouts/` is non-empty turns a pin regression into an
+   every-run
+   `::warning::` instead of a symptom visible only inside retries. Fetched once inside the
+   retried step — coverage pending T008's propagation check — and reused
+   rather than re-cloned mid-build (the default-DerivedData split that made
+   them re-fetch is documented in tuist/tuist#2712). No supervisor: macOS
+   has no `timeout`/`gtimeout`, and the bound is covered by the step's
+   `timeout-minutes` plus git's `lowSpeed` aborts.
 
 Dropped from `RELIABLE-CLONE`: the ~60-line embedded perl supervisor (its
 only load-bearing job — bounding a crawl — is covered declaratively), the
@@ -129,17 +157,29 @@ architecture.
 
 ## Verification
 
-- [ ] `git ls-remote` trace in a job log shows `Send header: Authorization`
-      on github.com requests after the auth step (SC-001)
+- [ ] `git ls-remote` trace in a job log shows an `Authorization` header
+      on every github.com request after the auth step (SC-001)
 - [ ] Probe and count behave per FR-007 (workspace-local, `--includes`
       catches checkout v6's separate credential file) (SC-001)
+- [ ] A deliberately wrong extraheader makes a re-run `tuist generate`
+      fail auth-shaped in its workspace-resolve phase — proving the
+      whole chain (env hops → manifest args → selected provider) reads
+      the config file rather than ignoring it (SC-001)
 - [ ] The write-scope check behaves per FR-008 — verified once against a
       throwaway job temporarily granted `contents: write` (SC-001)
 - [ ] An attempt failing with a fetch signature is retried and a later
       attempt leaves the step green, per SC-002's evidence (SC-002)
 - [ ] A generate step failing on a non-network error exits on attempt 1 with
       the real code (SC-002)
-- [ ] Each of the six PRs lands independently: every code-change PR ≤ ~150
+- [ ] A fetch-signature failure forced inside `tuist generate`'s internal
+      resolve exits non-zero with the signature text visible in the step
+      log and more than one attempt — the internal resolve really is under
+      the retry (SC-002)
+- [ ] Downstream build/test steps in every job that gained a dedicated
+      resolve step — and the app jobs' `build-for-testing` — log no
+      `Fetching`/`Cloning`/`Checking out` lines: each job's fetch happens
+      inside retried fetch-only work or not at all (SC-002)
+- [ ] Each of the seven PRs lands independently: every code-change PR ≤ ~150
       changed lines (PR 1 is prose) and CI green on its own diff (SC-003)
 
 ## Risks
@@ -171,22 +211,34 @@ architecture.
   repo adopts, extract both actions to `21-DOT-DEV/actions` consumed via
   `@v1`; the action directories are already self-contained. Not built now —
   release-process overhead for a single consumer.
-- **`docker-builds` auth** — would require plumbing the token into the
-  container build, a different mechanism; the Linux fetch burst is smaller
+- **`docker-builds` auth** — a small BuildKit secret mount
+  (`RUN --mount=type=secret` feeding `GIT_CONFIG_COUNT`) would do it;
+  deferred for scope, not size; the Linux fetch burst is smaller
   and unobserved failing.
-- **Retry on other fetch-invoking steps** (`swift build`, `swift test`,
-  `xcodebuild` resolution in apple-builds) — deliberately unwrapped: retrying
-  them re-runs build/test work, not just the fetch. Auth + the widened
-  cache-hardening is their coverage.
+- **Retry on the fetch phase of build/test steps** — superseded by T010's
+  dedicated resolve steps (and, for the app-workflow jobs, the workspace
+  fetch riding inside the retried `tuist generate` via T007's clone-path
+  pin), which move
+  each job's fetch into retried fetch-only work; retrying the build/test
+  steps themselves would re-run build/test work. Residual: a mid-step
+  re-resolution (a manifest that
+  changes after the resolve step) still fetches unretried —
+  `-disableAutomaticPackageResolution` and `-skipPackageUpdates`
+  are the named candidates — the first pins versions to the resolved
+  file (the app jobs have a committed one at
+  `Projects/.package.resolved`; the root package does not), the second
+  is the closer-fitting fetch-suppression flag, and neither's behavior
+  with missing checkouts is documented — both await a flag experiment;
+  revisit if a mid-build fetch flake is ever observed.
 - **Job-level `timeout-minutes` on the jobs that lack one**
   (`apple-builds`, `development-docs`, `docker-builds`, and `docc-release`'s
-  `build`/`release` jobs — only its `docc` job carries 20) — a pre-existing
+  `build`/`release` jobs — its `docc` job carries 45 after T010) — a pre-existing
   gap surfaced by this review; `tuist-apps`'s cap is raised here only
   because this feature's step bound changes its arithmetic.
 
 ## Division of labor
 
-Solo-maintainer CI work: six sequential pull requests per
+Solo-maintainer CI work: seven sequential pull requests per
 [tasks.md](./tasks.md) slicing — each targets `main` after the previous
 merges (no stacking needed at this size). End-to-end validation runs on a
 throwaway branch before the retry wiring lands.
