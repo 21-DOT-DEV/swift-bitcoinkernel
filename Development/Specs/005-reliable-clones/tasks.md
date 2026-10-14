@@ -14,7 +14,7 @@ is green; the index lists feature 005.
 
 ## Phase 1 — The auth mechanism, inert
 
-- [ ] T002 `github-git-auth` composite action: global
+- [x] T002 `github-git-auth` composite action: global
   `http.https://github.com/.extraheader` from a `token` input — mask BOTH the
   raw token and its base64 form per FR-001 (the encoded value is what sits
   in the config; anything echoing `git config` otherwise leaks it) — masking runs

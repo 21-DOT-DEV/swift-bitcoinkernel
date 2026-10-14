@@ -1,0 +1,145 @@
+name: Authenticate GitHub clones
+description: >-
+  Sends the job's GITHUB_TOKEN as an Authorization header on every github.com
+  git request, moving package-dependency clones off the runner's shared
+  anonymous-throttle quota.
+
+# Sends the job's GITHUB_TOKEN on every github.com git request via a preemptive
+# Authorization HEADER — not credentials in the URL (git only sends URL
+# credentials after a 401 challenge that github.com never issues for public
+# repos, so a token embedded via url.insteadOf is never sent), and not an
+# env-var injection (the config FILE is the channel every reader honors — an
+# xcodebuild-internal fetcher has been observed ignoring GIT_CONFIG_GLOBAL
+# redirection). This is the mechanism actions/checkout uses for the workspace
+# checkout, applied globally so git operations outside the repo — SwiftPM's
+# dependency clones, xcodebuild's SourcePackages resolution — get it too.
+#
+# The token sits in ~/.gitconfig in plaintext for the rest of the job —
+# composite actions cannot register a post step, so there is no cleanup. That
+# is acceptable on the ephemeral GitHub-hosted runners every caller uses with a
+# contents: read token on a public repo, but do NOT reuse this action on a
+# self-hosted runner: the token would leak across jobs sharing the image.
+#
+# Pairing rule — every checkout in a job using this action must set
+# persist-credentials: false, and this step must run AFTER all checkouts in the
+# job. Otherwise requests carry TWO Authorization headers (checkout's
+# repo-local credential plus this global one), which github.com answers with a
+# bare 400.
+#
+# Detailed rationale: Development/Specs/005-reliable-clones/research.md.
+
+inputs:
+  token:
+    description: Token used to authenticate github.com git requests (pass github.token)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Configure git
+      shell: bash
+      env:
+        GIT_AUTH_TOKEN: ${{ inputs.token }}
+      run: |
+        # Mask BOTH token forms before any git read — git's own curl trace
+        # redacts the header value (redact_sensitive_header), but `git config`
+        # output and step logs redact nothing, and the base64 form is what sits
+        # in the file.
+        echo "::add-mask::$GIT_AUTH_TOKEN"
+        AUTH=$(printf 'x-access-token:%s' "$GIT_AUTH_TOKEN" | base64 | tr -d '\n')
+        echo "::add-mask::$AUTH"
+
+        # --replace-all converges to exactly one header from any prior state —
+        # a re-run (or a polluted global file) can never grow a second
+        # Authorization header, which github.com rejects with a bare 400. The
+        # URL-scoped key reaches https://github.com/ only; no other host sees
+        # the token.
+        git config --global --replace-all \
+          "http.https://github.com/.extraheader" \
+          "AUTHORIZATION: basic $AUTH"
+
+        # Stall-killer: under ~1KB/s for 60s git aborts the transfer
+        # ("Operation too slow"), a signature the retry layer turns into a
+        # retry instead of a minutes-long crawl (the 9.5-minute incident fetch).
+        git config --global http.lowSpeedLimit 1024
+        git config --global http.lowSpeedTime 60
+
+    # Warn-only verification — a broken or degraded auth setup annotates,
+    # never fails: clones carry whatever auth is configured and the retry layer
+    # bounds the fallout. Count and probe run inside the workspace so
+    # repo-local config (checkout's includeIf-pulled credential file) applies —
+    # a --global-only view is blind to exactly the duplicate-header case this
+    # step exists to catch. A failure in one check must not skip the rest, so
+    # every read is individually guarded.
+    - name: Verify
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        echo "::group::Effective header count"
+        # Two counts, two scopes. Effective (--includes, inside the workspace)
+        # catches a checkout credential duplicated on top of ours — expect 1.
+        # Global catches the inverse blind spot: our write missing while
+        # checkout's repo-local credential supplies the only header (count 1
+        # either way, but out-of-repo clones — SwiftPM, SourcePackages — would
+        # run anonymous) — also expect 1.
+        GLOBAL_COUNT=$(git config --global --get-all \
+          "http.https://github.com/.extraheader" 2>/dev/null | grep -c . || true)
+        HEADERS=$(git -C "$GITHUB_WORKSPACE" config --includes --show-origin \
+          --get-all "http.https://github.com/.extraheader" 2>/dev/null || true)
+        COUNT=$(grep -c . <<<"$HEADERS" || true)
+        if [ "$COUNT" -ne 1 ]; then
+          echo "::warning::expected exactly 1 effective github.com extraheader, found $COUNT — zero means clones run anonymous; two or more means github.com answers a bare 400"
+          [ -n "$HEADERS" ] && printf 'configured values:\n%s\n' "$HEADERS"
+        elif [ "$GLOBAL_COUNT" -ne 1 ]; then
+          echo "::warning::effective count is 1 but the GLOBAL count is $GLOBAL_COUNT — the only header lives in repo-local config, so out-of-repo clones run anonymous"
+          printf 'configured values:\n%s\n' "$HEADERS"
+        else
+          printf 'exactly 1 effective github.com extraheader\n'
+        fi
+        echo "::endgroup::"
+
+        echo "::group::Send-path probe"
+        # Proof the header reaches the wire: count `=> Send header:
+        # authorization:` lines against `=> Send header: (GET|POST) ` request
+        # lines in git's own curl trace — equal AND at least one request (a
+        # probe that died before sending proves nothing). git 2.54 emits two
+        # requests per ls-remote (GET info/refs, POST git-upload-pack), logs
+        # the header name as configured (AUTHORIZATION:), and git redacts the
+        # value in the trace regardless.
+        set +e
+        TRACE=$(GIT_TRACE_CURL=1 GIT_TRACE_CURL_NO_DATA=1 GIT_TERMINAL_PROMPT=0 \
+          git -C "$GITHUB_WORKSPACE" ls-remote \
+          "https://github.com/$GITHUB_REPOSITORY" HEAD 2>&1 >/dev/null)
+        PROBE_RC=$?
+        set -e
+        REQUESTS=$(grep -cE '=> Send header: (GET|POST) ' <<<"$TRACE" || true)
+        AUTH_SENT=$(grep -ci '=> Send header: authorization:' <<<"$TRACE" || true)
+        if [ "$PROBE_RC" -ne 0 ]; then
+          echo "::warning::probe ls-remote failed (rc=$PROBE_RC) — cannot confirm the header reached the wire"
+        fi
+        if [ "$REQUESTS" -eq 0 ]; then
+          echo "::warning::trace captured no requests — header check inconclusive"
+        elif [ "$AUTH_SENT" -ne "$REQUESTS" ]; then
+          echo "::warning::$AUTH_SENT Authorization header(s) across $REQUESTS request(s) — expected exactly one per request"
+        elif [ "$PROBE_RC" -eq 0 ]; then
+          echo "github.com git requests carry the Authorization header"
+        fi
+        echo "::endgroup::"
+
+        echo "::group::Token scope"
+        # This action is meant for contents: read jobs; a write-scoped token
+        # persisted in ~/.gitconfig is worth a tripwire. GitHub has no
+        # token-introspection endpoint — the repo object's permissions field is
+        # the effective-permission proxy. Warn ONLY on an affirmative write: an
+        # absent field or a failed call is inconclusive, not a violation.
+        if ! PUSH=$(gh api "repos/$GITHUB_REPOSITORY" --jq '.permissions.push' 2>/dev/null); then
+          echo "::notice::token scope check inconclusive — repository API call failed"
+        elif [ "$PUSH" = "true" ]; then
+          echo "::warning::job's GITHUB_TOKEN reports write access (permissions.push) — this action is meant for contents: read jobs"
+        elif [ "$PUSH" = "false" ]; then
+          echo "job token is read-scoped"
+        else
+          echo "::notice::token scope check inconclusive — permissions.push absent from repository response"
+        fi
+        echo "::endgroup::"
