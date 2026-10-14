@@ -352,7 +352,9 @@ struct NodeAutomationTests {
 
     /// A `getpeerinfo` row carrying the two fields `PeerEvidence` reads — the
     /// rest exist only because the decoder requires them.
-    private static func decodePeer(connectionType: String?, inbound: Bool) throws -> PeerInfo {
+    private static func decodePeer(
+        connectionType: String?, inbound: Bool, syncedHeaders: Int = 876_000
+    ) throws -> PeerInfo {
         let connField = connectionType.map { "\"connection_type\":\"\($0)\"," } ?? ""
         return try JSONDecoder().decode(
             PeerInfo.self,
@@ -361,7 +363,7 @@ struct NodeAutomationTests {
                 {"id":0,"addr":"10.0.0.1:8333","services":"0000000000000409","relaytxes":true,
                  "lastsend":1713300000,"lastrecv":1713300000,"bytessent":1000,"bytesrecv":2000,
                  "conntime":1713200000,"timeoffset":0,"version":70016,"subver":"/Satoshi:31.0.0/",
-                 \(connField)"inbound":\(inbound),"synced_headers":876000,"synced_blocks":876000}
+                 \(connField)"inbound":\(inbound),"synced_headers":\(syncedHeaders),"synced_blocks":876000}
                 """.utf8))
     }
 
@@ -1016,5 +1018,281 @@ struct NodeAutomationTests {
         #expect(state.unproductive >= NodeAutomation.unproductiveLeash)
         #expect(state.flatWindow >= NodeAutomation.flatWindowLeash)
         #expect(state.stall == .unproductive)
+    }
+
+    // MARK: - The catch-up proof
+
+    /// A `PeerEvidence` row built the wire-decoding way — a `getpeerinfo`
+    /// JSON row through `PeerInfo` — so the two fields the proof reads are
+    /// the ones a real answer carries.
+    private func peerEvidence(
+        connectionType: String?, inbound: Bool, syncedHeaders: Int
+    ) throws -> NodeAutomation.PeerEvidence {
+        try NodeAutomation.PeerEvidence(
+            Self.decodePeer(
+                connectionType: connectionType, inbound: inbound,
+                syncedHeaders: syncedHeaders))
+    }
+
+    /// The settled shape of "still syncing with nothing provably left": flag
+    /// clear, gap closed, tip two hours stale — what a warm restart on a
+    /// quiet chain reports every pass. Only watched growth, a fresh tip, or
+    /// confirming peers can prove such a node caught up.
+    private func settledReading(
+        _ chain: String = "main", _ height: Int = 800_000
+    ) -> NodeAutomation.LiveReading {
+        reading(chain, height, tipTime: watchNow.addingTimeInterval(-7_200))
+    }
+
+    @Test("a set IBD flag is never caught up — no leg can certify past it")
+    func flagVetoesEveryLeg() throws {
+        // Gap closed, tip fresh, headers advanced, two peers confirming —
+        // every leg present, still not caught up. The flag is Core's own
+        // verdict; certifying past it would contradict the node (FR-006).
+        let peers = try [
+            peerEvidence(
+                connectionType: "outbound-full-relay", inbound: false,
+                syncedHeaders: 800_000),
+            peerEvidence(
+                connectionType: "block-relay-only", inbound: false,
+                syncedHeaders: 800_000),
+        ]
+        #expect(
+            NodeAutomation.caughtUp(
+                reading: reading(
+                    "main", 800_000, isInitialBlockDownload: true, tipTime: watchNow),
+                headersAdvanced: true, peers: peers, now: watchNow)
+                == false)
+    }
+
+    @Test("an open gap is never caught up, even when headers advanced this run")
+    func openGapNeverCaughtUp() {
+        // Header-fetch in flight: headers grew past the entry figure, but
+        // blocks have not closed on them — the node is plainly still syncing.
+        #expect(
+            NodeAutomation.caughtUp(
+                reading: reading("main", 800_000, behind: 200, tipTime: watchNow),
+                headersAdvanced: true, peers: [], now: watchNow)
+                == false)
+    }
+
+    @Test("watched header growth with a closed gap proves the catch-up")
+    func headersAdvancedProves() {
+        // The warm-restart catch-up the watch exists for: tip still stale
+        // and no peer answer, but headers moved past the entry figure.
+        #expect(
+            NodeAutomation.caughtUp(
+                reading: settledReading(),
+                headersAdvanced: true, peers: [], now: watchNow))
+    }
+
+    @Test("a fresh tip proves the catch-up with no watched growth")
+    func freshTipProves() {
+        // Blocks closed on already-known headers — headers never advanced,
+        // but the tip that just connected is recent. The same shape the
+        // entry gate declines `caughtUp`, judged identically mid-watch.
+        #expect(
+            NodeAutomation.caughtUp(
+                reading: reading("main", 800_000),
+                headersAdvanced: false, peers: [], now: watchNow))
+    }
+
+    @Test("two confirming outbound block-serving peers prove the quiet-chain catch-up")
+    func peerConfirmationProves() throws {
+        // Nothing new exists for headers to advance to, the tip is stale —
+        // and two block-serving peers' completed exchanges say they hold
+        // nothing higher. That is the proof this leg exists for.
+        let peers = try [
+            peerEvidence(
+                connectionType: "outbound-full-relay", inbound: false,
+                syncedHeaders: 800_000),
+            peerEvidence(
+                connectionType: "block-relay-only", inbound: false,
+                syncedHeaders: 800_000),
+        ]
+        #expect(
+            NodeAutomation.caughtUp(
+                reading: settledReading(),
+                headersAdvanced: false, peers: peers, now: watchNow))
+    }
+
+    @Test("a single confirming peer is not a quorum")
+    func onePeerIsNoQuorum() throws {
+        let peers = try [
+            peerEvidence(
+                connectionType: "outbound-full-relay", inbound: false,
+                syncedHeaders: 800_000),
+        ]
+        #expect(
+            NodeAutomation.caughtUp(
+                reading: settledReading(),
+                headersAdvanced: false, peers: peers, now: watchNow)
+                == false)
+    }
+
+    @Test("inbound, manual, and unclassified peers never count — attacker-selected evidence is no evidence")
+    func onlyBlockServingKindsCount() throws {
+        // One qualifying peer plus an inbound, a manual, and an
+        // unclassifiable outbound peer all confirming the same height:
+        // still only one that counts.
+        let peers = try [
+            peerEvidence(
+                connectionType: "outbound-full-relay", inbound: false,
+                syncedHeaders: 800_000),
+            peerEvidence(connectionType: "inbound", inbound: true, syncedHeaders: 800_000),
+            peerEvidence(connectionType: "manual", inbound: false, syncedHeaders: 800_000),
+            peerEvidence(connectionType: nil, inbound: false, syncedHeaders: 800_000),
+        ]
+        #expect(
+            NodeAutomation.caughtUp(
+                reading: settledReading(),
+                headersAdvanced: false, peers: peers, now: watchNow)
+                == false)
+    }
+
+    @Test("peers reporting a different height are no evidence")
+    func mismatchedPeerHeightIsNoEvidence() throws {
+        // One peer announcing a newer best block, one that never announced
+        // anything held — neither equals our headers figure.
+        let peers = try [
+            peerEvidence(
+                connectionType: "outbound-full-relay", inbound: false,
+                syncedHeaders: 800_001),
+            peerEvidence(
+                connectionType: "block-relay-only", inbound: false, syncedHeaders: -1),
+        ]
+        #expect(
+            NodeAutomation.caughtUp(
+                reading: settledReading(),
+                headersAdvanced: false, peers: peers, now: watchNow)
+                == false)
+    }
+
+    @Test("no peer answer is no evidence — an absent or timed-out ask proves nothing")
+    func absentPeersAreNoEvidence() {
+        #expect(
+            NodeAutomation.caughtUp(
+                reading: settledReading(),
+                headersAdvanced: false, peers: [], now: watchNow)
+                == false)
+    }
+
+    @Test("blocks taller than headers certifies nothing — a nonsense reading is not a closed gap")
+    func headersBelowBlocksIsNoClosedGap() {
+        // `headers < blocks` cannot come from a real node; if one ever did,
+        // the proof treats it as unproven rather than reading "gap closed"
+        // into a figure that means something is wrong.
+        #expect(
+            NodeAutomation.caughtUp(
+                reading: reading("main", 800_000, behind: -50, tipTime: watchNow),
+                headersAdvanced: false, peers: [], now: watchNow)
+                == false)
+    }
+
+    @Test("the state's latch is the proof's growth leg — a watched fetch then a closed gap")
+    func stateLatchFeedsProof() {
+        let t0 = ContinuousClock.now
+        var state = watchState(
+            at: t0,
+            entry: reading(
+                "main", 800_000, behind: 200,
+                tipTime: watchNow.addingTimeInterval(-7_200)))
+        // Headers arrive — the pass is a gain and the latch sets.
+        _ = state.advance(
+            instant: t0.advanced(by: .seconds(5)),
+            reading: reading(
+                "main", 800_000, behind: 300,
+                tipTime: watchNow.addingTimeInterval(-7_200)))
+        // Blocks close on them — flag clear, gap closed, tip still stale.
+        let closing = settledReading("main", 800_300)
+        _ = state.advance(instant: t0.advanced(by: .seconds(10)), reading: closing)
+        #expect(
+            NodeAutomation.caughtUp(
+                reading: closing,
+                headersAdvanced: state.headersAdvanced, peers: [], now: watchNow))
+    }
+
+    @Test("confirmingPeers counts only block-serving kinds at the exact height")
+    func confirmingPeersCounts() throws {
+        // Every kind the wire produces, all confirming the same height — plus
+        // one qualifying kind at the wrong height. Only the two block-serving
+        // kinds at our headers figure count.
+        let peers = try [
+            peerEvidence(
+                connectionType: "outbound-full-relay", inbound: false,
+                syncedHeaders: 800_000),
+            peerEvidence(
+                connectionType: "block-relay-only", inbound: false,
+                syncedHeaders: 800_000),
+            peerEvidence(connectionType: "inbound", inbound: true, syncedHeaders: 800_000),
+            peerEvidence(connectionType: "manual", inbound: false, syncedHeaders: 800_000),
+            peerEvidence(connectionType: "feeler", inbound: false, syncedHeaders: 800_000),
+            peerEvidence(
+                connectionType: "addr-fetch", inbound: false, syncedHeaders: 800_000),
+            peerEvidence(
+                connectionType: "private-broadcast", inbound: false,
+                syncedHeaders: 800_000),
+            peerEvidence(connectionType: nil, inbound: false, syncedHeaders: 800_000),
+            peerEvidence(
+                connectionType: "outbound-full-relay", inbound: false,
+                syncedHeaders: 799_999),
+        ]
+        #expect(NodeAutomation.confirmingPeers(peers, at: 800_000) == 2)
+    }
+
+    @Test("the peer quorum is the spec's two confirmations, and an injected floor is honored")
+    func peerQuorum() throws {
+        #expect(NodeAutomation.peerConfirmationsRequired == 2)
+        let peers = try [
+            peerEvidence(
+                connectionType: "outbound-full-relay", inbound: false,
+                syncedHeaders: 800_000),
+        ]
+        #expect(
+            NodeAutomation.caughtUp(
+                reading: settledReading(),
+                headersAdvanced: false, peers: peers, now: watchNow,
+                requiredPeerConfirmations: 1))
+        #expect(
+            NodeAutomation.caughtUp(
+                reading: settledReading(),
+                headersAdvanced: false, peers: peers, now: watchNow,
+                requiredPeerConfirmations: 3)
+                == false)
+    }
+
+    @Test("a flat pass with only the peer leg left wants the question")
+    func qualifyingPassWantsEvidence() {
+        // Flag clear, gap closed, headers never advanced — the cheap legs
+        // are spent; peers are the last way a catch-up can be proven.
+        #expect(
+            NodeAutomation.wantsPeerEvidence(
+                reading: settledReading(), headersAdvanced: false))
+    }
+
+    @Test("watched growth never asks — the pass already has its leg")
+    func grownPassNeverAsks() {
+        #expect(
+            NodeAutomation.wantsPeerEvidence(
+                reading: settledReading(), headersAdvanced: true)
+                == false)
+    }
+
+    @Test("a set flag never asks — peers cannot certify past it")
+    func flaggedPassNeverAsks() {
+        #expect(
+            NodeAutomation.wantsPeerEvidence(
+                reading: reading("main", 800_000, isInitialBlockDownload: true),
+                headersAdvanced: false)
+                == false)
+    }
+
+    @Test("an open gap never asks — the node is still plainly behind")
+    func gappedPassNeverAsks() {
+        #expect(
+            NodeAutomation.wantsPeerEvidence(
+                reading: reading("main", 800_000, behind: 200),
+                headersAdvanced: false)
+                == false)
     }
 }
