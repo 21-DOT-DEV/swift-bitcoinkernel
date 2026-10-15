@@ -314,12 +314,34 @@ results. Every task lands standalone.
   `Sources/NodeApp/NodeRunReport.swift`,
   `Sources/NodeAppTests/NodeAutomationTests.swift`,
   `Sources/NodeAppTests/NodeRunReportTests.swift` · needs T008
-- [ ] T012 The `caughtUp` proof — flag cleared *and* `blocks == headers`
+- [x] T012 The `caughtUp` proof — flag cleared *and* `blocks == headers`
   *and* one of: headers advanced this run, the tip is inside the freshness
   threshold, or — on a qualifying flat pass (flag clear, gap closed, headers
   never advanced) — at least `peerConfirmationsRequired` (2)
   `outbound-full-relay`/`block-relay-only` peers report `synced_headers ==
-  headers` (FR-006; verifies FR-006) (~200) ·
+  headers` (FR-006; verifies FR-006). Landed as four members in a
+  catch-up-proof section, since the spike never reached the watch: the
+  verdict `caughtUp(reading:headersAdvanced:peers:now:)` takes plain facts —
+  the latch as a `Bool`, not the generic state — matching the file's
+  decision-function convention; "gap closed" is literal `headers == height`
+  so a nonsense `headers < blocks` reading fails closed rather than reading
+  "closed" into a corrupt figure. The qualifier shipped here as
+  `wantsPeerEvidence(reading:headersAdvanced:)` — flag clear, gap closed,
+  latch unset, tip staleness deliberately absent (a fresh tip ends the run
+  on the freshness leg that same pass, so re-checking could only suppress
+  an owed ask) — because a pure decision belongs beside the proof, not in
+  T025's call-site wiring. `confirmingPeers(_:at:)` returns the count, not a
+  `Bool`, so a `noProgress` verdict on device can attribute "one of two"
+  versus "zero answered"; `peerConfirmationsRequired = 2` is a static
+  injected through `caughtUp`'s defaulted `requiredPeerConfirmations:`,
+  the leash-statics pattern. Seventeen tests: every leg positive, every
+  veto negative (set flag, open gap, nonsense gap, sub-quorum, wrong kind,
+  wrong height, no answer), the full seven-kind wire vocabulary at the
+  exact-height bar, the injected floor, and one test driving a real
+  `SyncWatchState` to the latch — plus `decodePeer` gained a `syncedHeaders:`
+  parameter (~390 — over the estimate on test volume: seventeen scenarios
+  ride with the four members they cover; the members themselves are ~110
+  lines, most of it doc comments) ·
   `Sources/NodeApp/NodeAutomation.swift`,
   `Sources/NodeAppTests/NodeAutomationTests.swift` · needs T008, T010
 - [ ] T013 Ending precedence — `nodeStopped`, then `caughtUp`, then

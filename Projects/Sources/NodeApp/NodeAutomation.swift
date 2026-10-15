@@ -772,6 +772,107 @@ enum NodeAutomation {
             return .unproductive
         }
     }
+
+    // MARK: - The catch-up proof
+
+    /// The fewest agreeing outbound block-serving peers the catch-up proof
+    /// accepts as confirmation that nothing higher than our tip exists
+    /// (FR-006). Two is the eclipse-aware floor: a run can be fooled into
+    /// `caughtUp` only by peers as compromised as its own whole outbound view
+    /// already is — the residual exposure every node carries. Provisional on
+    /// the device pass (T039), like every 004 constant.
+    static let peerConfirmationsRequired = 2
+
+    /// How many of these peer answers count toward the catch-up proof at the
+    /// node's current header height.
+    ///
+    /// An answer counts only when both halves hold: the connection is a
+    /// self-initiated outbound block-serving kind — `outbound-full-relay` or
+    /// `block-relay-only`, the only kinds a tip under a day old earns Core's
+    /// anchored `getheaders` on — *and* its `synced_headers` equals `headers`
+    /// exactly. Inbound peers never count (attacker-selected), nor manual,
+    /// feeler, addr-fetch, or this fork's `private-broadcast`; an
+    /// unclassifiable outbound resolves to no kind and fails closed. A peer
+    /// announcing a different height — lower, or −1 for "announced nothing
+    /// held" — proves nothing about this tip. Equality proves height, not
+    /// block identity: a same-height fork satisfies it too, which is the
+    /// question the proof asks.
+    ///
+    /// The count is exposed rather than folded into a `Bool` so the run can
+    /// attribute a `noProgress` verdict — "one of two confirmed" and "zero
+    /// answered" are different diagnoses on a device log.
+    static func confirmingPeers(_ peers: [PeerEvidence], at headers: Int) -> Int {
+        peers.filter {
+            ($0.connectionType == .outboundFullRelay
+                || $0.connectionType == .blockRelayOnly)
+                && $0.syncedHeaders == headers
+        }.count
+    }
+
+    /// Whether a flat pass has run out of ways to prove a catch-up except by
+    /// asking the peers — the qualifier for the one `getpeerinfo` such a pass
+    /// may spend (FR-006).
+    ///
+    /// Three conditions, all read off the current pass: the flag is clear
+    /// (peers cannot certify past a set flag), the gap is closed (a node
+    /// still behind its known headers has cheaper proof coming), and headers
+    /// never advanced this run (a pass whose headers moved already has its
+    /// leg). Tip staleness is deliberately absent — a fresh tip would already
+    /// have ended the run on the freshness leg this same pass, so staleness
+    /// is implied, and checking it again could only suppress an ask the pass
+    /// was owed. Evaluated on flat passes; whether the pass was flat is the
+    /// caller's knowledge — `SyncWatchState.advance` reports it.
+    static func wantsPeerEvidence(reading: LiveReading, headersAdvanced: Bool) -> Bool {
+        !reading.isInitialBlockDownload
+            && reading.headers == reading.height
+            && !headersAdvanced
+    }
+
+    /// Whether the node's own report proves the run saw it reach the tip —
+    /// the `caughtUp` ending's one proof, re-evaluated on the current reading
+    /// every pass (FR-006).
+    ///
+    /// Two preconditions gate everything, and no leg can substitute for
+    /// either: the IBD flag cleared (Core's own verdict — reporting `caughtUp`
+    /// while it stands would contradict the node, and peers cannot certify
+    /// past it) and `blocks == headers` exactly — equality, not `≤`, so a
+    /// nonsense `headers < blocks` reading fails closed rather than being
+    /// read as "gap closed". Then one of three legs must hold:
+    ///
+    /// - `headersAdvanced` — headers moved past the entry figure this run:
+    ///   the run watched a catch-up happen. Covers the tip-age-admitted node
+    ///   that then fetched and closed its gap; the tip's age alone can stay
+    ///   stale past it, since the last block to land may legitimately be old.
+    /// - A fresh tip — `tipIsFresh` on the current reading, the same bar the
+    ///   entry gate applies, so gate and proof can never disagree about where
+    ///   "recent" ends. Covers blocks closing on already-known headers, where
+    ///   the headers latch has nothing to set.
+    /// - Confirming peers — on a pass where the first two legs cannot fire,
+    ///   at least `requiredPeerConfirmations` outbound block-serving peers
+    ///   report `synced_headers == headers`. The completed exchange Core
+    ///   itself asked for, not an inference — the quiet-chain shape where
+    ///   nothing new exists for headers to advance to.
+    ///
+    /// Absent and timed-out peer answers are indistinguishable and both
+    /// right: an empty `peers` is simply no evidence.
+    ///
+    /// - Parameter requiredPeerConfirmations: the quorum — the spec's two by
+    ///   default, injectable like the leash statics so the constant is wired
+    ///   in one place.
+    static func caughtUp(
+        reading: LiveReading,
+        headersAdvanced: Bool,
+        peers: [PeerEvidence],
+        now: Date,
+        requiredPeerConfirmations: Int = peerConfirmationsRequired
+    ) -> Bool {
+        guard !reading.isInitialBlockDownload, reading.headers == reading.height else {
+            return false
+        }
+        return headersAdvanced
+            || tipIsFresh(tipTime: reading.tipTime, now: now)
+            || confirmingPeers(peers, at: reading.headers) >= requiredPeerConfirmations
+    }
 }
 
 /// `Duration`'s value as a `TimeInterval` — for comparing it against `Date`
