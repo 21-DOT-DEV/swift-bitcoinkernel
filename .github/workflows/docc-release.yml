@@ -30,6 +30,23 @@ jobs:
         with:
           ref: ${{ github.event.inputs.release_tag || github.ref }}
           fetch-depth: 0
+          # github-git-auth sets a github.com Authorization header globally;
+          # checkout's own persisted credential would make a second one, and
+          # github.com answers two with a bare 400.
+          persist-credentials: false
+
+      # `swift build` resolves package dependencies — the anonymous-clone
+      # burst GitHub throttles on a shared per-IP quota; send GITHUB_TOKEN on
+      # every github.com git request (see .github/actions/github-git-auth).
+      # `$/`, not `./`: resolve the action at the workflow's own commit —
+      # the checkout above is `release_tag`, which lacks the action on
+      # releases cut before it existed. actionlint ≤1.7.12 mis-parses
+      # `$/`; `.github/actionlint.yaml` suppresses it until a release
+      # ships rhysd/actionlint#732.
+      - name: Authenticate GitHub clones
+        uses: $/.github/actions/github-git-auth
+        with:
+          token: ${{ github.token }}
 
       - name: Build package
         run: swift build
@@ -52,6 +69,18 @@ jobs:
         with:
           ref: ${{ github.event.inputs.release_tag || github.ref }}
           fetch-depth: 0
+          # github-git-auth sets a github.com Authorization header globally;
+          # checkout's own persisted credential would make a second one, and
+          # github.com answers two with a bare 400.
+          persist-credentials: false
+
+      # `generate-documentation` resolves package dependencies — same
+      # anonymous-clone throttling defense, and `$/` for the same reason
+      # (this job also checks out `release_tag`), as the build job above.
+      - name: Authenticate GitHub clones
+        uses: $/.github/actions/github-git-auth
+        with:
+          token: ${{ github.token }}
 
       - name: Enable development dependencies
         # Delete ALL tags at HEAD so Context.gitInformation?.currentTag is nil,
@@ -124,11 +153,16 @@ jobs:
       contents: write  # for gh release upload
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # gh resolves its repo from the local git remote; with no checkout in
+      # this job, name the repo explicitly.
+      GH_REPO: ${{ github.repository }}
       RELEASE_TAG: ${{ github.event.inputs.release_tag || github.ref_name }}
       DEVELOPER_DIR: "/Applications/Xcode_26.4.app/Contents/Developer"
     steps:
-      - uses: actions/checkout@v6
-
+      # No checkout — every step below is API- or env-driven (artifact
+      # downloads, `gh release upload`, the summary), so a checkout's only
+      # effect here was persisting this job's write-scoped GITHUB_TOKEN in the
+      # repo-local git credential file.
       - name: Echo toolchain versions
         run: |
           {

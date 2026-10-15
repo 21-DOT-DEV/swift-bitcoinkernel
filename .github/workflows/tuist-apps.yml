@@ -55,6 +55,24 @@ jobs:
       DERIVED_DATA: .derivedData
     steps:
       - uses: actions/checkout@v6
+        with:
+          # github-git-auth sets a github.com Authorization header globally;
+          # checkout's own persisted credential would make a second one, and
+          # github.com answers two with a bare 400.
+          persist-credentials: false
+
+      # Every job opens with a burst of ANONYMOUS github.com clones — SwiftPM
+      # resolving the root package before `tuist generate` can run, and
+      # xcodebuild resolving the workspace's remote packages inside
+      # `tuist generate` and at Build time — and GitHub throttles anonymous
+      # HTTPS clones on a shared per-IP quota. This sends the job's
+      # GITHUB_TOKEN on every github.com git request made afterwards, in or
+      # out of the repo (see .github/actions/github-git-auth for why an
+      # extraheader and not url.insteadOf).
+      - name: Authenticate GitHub clones
+        uses: ./.github/actions/github-git-auth
+        with:
+          token: ${{ github.token }}
 
       # Record the toolchain that actually ran. The xcode-27 preview image is a
       # moving target — when a run goes newly red or green, this is the line
