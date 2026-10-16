@@ -344,9 +344,21 @@ results. Every task lands standalone.
   lines, most of it doc comments) ·
   `Sources/NodeApp/NodeAutomation.swift`,
   `Sources/NodeAppTests/NodeAutomationTests.swift` · needs T008, T010
-- [ ] T013 Ending precedence — `nodeStopped`, then `caughtUp`, then
+- [x] T013 Ending precedence — `nodeStopped`, then `caughtUp`, then
   `conditionsChanged`, then `noProgress`, then `stillSyncing`; cancellation
-  stays outside the list entirely (FR-019; verifies FR-019) (~100) ·
+  stays outside the list entirely (FR-019; verifies FR-019). Landed as
+  `watchEnding(nodeStopped:caughtUp:conditionsChanged:noProgress:budgetSpent:)`
+  → `SyncResult?` — a thin ranker beside `caughtUp`, five guarded returns
+  in FR-019 order. Each candidacy stays in its own tested member, so the
+  signature carries presence-Bools rather than typed payloads: the drifted
+  condition and the tripped `Leash` remain in the caller's scope for
+  wording, T017's condition vocabulary stays unpinned, and `Leash` keeps
+  its generic home. `nil` means keep watching; `notMeasured` and
+  cancellation are unrepresentable. Nine tests: every solo ending, every
+  adjacent boundary, the spec's scenario-18 pair, the all-five pile-up,
+  and the keep-watching nil (~144 — over the estimate on test volume: nine
+  scenarios ride with the one member they cover; the member is ~45 lines,
+  most of it doc comment) ·
   `Sources/NodeApp/NodeAutomation.swift`,
   `Sources/NodeAppTests/NodeAutomationTests.swift` · needs T010
 - [ ] T014 Live-tip fraction and the stage→band map — `(h − h₀) /
