@@ -1,0 +1,20 @@
+name: fail-exempt-checkout-still-applies
+on: push
+permissions: {}
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      # The marker lifts ONLY the write-scope rule — a bad checkout in the
+      # exempt file still fails.
+      AUTH_LINT_EXEMPT: "write scope exists to prove the FR-008 token-scope warning fires"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/github-git-auth
+        with:
+          token: ${{ github.token }}
+      - run: gh release create canary
+        env:
+          GH_TOKEN: ${{ github.token }}

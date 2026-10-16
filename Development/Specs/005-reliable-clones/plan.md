@@ -3,7 +3,7 @@ feature: 005
 title: Authenticate github.com clones and retry fetch flakes in CI
 phase: null
 status: Planned
-updated: 2026-10-13
+updated: 2026-10-15
 adrs: []
 ---
 
@@ -179,7 +179,7 @@ architecture.
       resolve step — and the app jobs' `build-for-testing` — log no
       `Fetching`/`Cloning`/`Checking out` lines: each job's fetch happens
       inside retried fetch-only work or not at all (SC-002)
-- [ ] Each of the seven PRs lands independently: every code-change PR ≤ ~150
+- [ ] Each PR lands independently: every code-change PR ≤ ~150
       changed lines (PR 1 is prose) and CI green on its own diff (SC-003)
 
 ## Risks
@@ -207,9 +207,24 @@ architecture.
 ## Deferred work
 
 - **Org-wide extraction** — sibling `21-DOT-DEV` repos (swift-tor,
-  swift-event, swift-openssl…) run the same anonymous-fetch CI. When a second
-  repo adopts, extract both actions to `21-DOT-DEV/actions` consumed via
-  `@v1`; the action directories are already self-contained. Not built now —
+  swift-event, swift-openssl…) run the same anonymous-fetch CI. When a
+  second repo adopts, the contract is settled (precedent in
+  research.md §10): `github-git-auth`, `retry-on-fetch-flake`, and the
+  pairing lint move to `21-DOT-DEV/actions` — an org toolkit repo whose
+  admission rule is this same second-consumer gate — with the lint
+  packaged as a third callable action (`auth-pairing-check`, running the
+  script against the consumer's own `.github/workflows`; its `uses:`
+  matcher extended to recognize `org/repo@ref` alongside `./` and `$/`,
+  or flipped jobs go lint-blind). The actions' selftest moves with them
+  — it must `uses: ./` inside its own repo, since `uses:` cannot
+  evaluate expressions and only the repo's own checkout exercises a PR's
+  action code — and consumers pin `@v1` (the documented default;
+  `@<sha> # v1.x.y` stays supported — Dependabot and Renovate both
+  maintain the comment). Sequencing: land and validate the remaining
+  tasks here → move the trio plus selftest → tag `v1.0.0` → one flip
+  PR per consumer deleting `.github/actions/` and re-pointing every
+  `uses:` — this repo included, whose `$/` docc-release jobs get
+  simpler since a remote ref is commit-independent. Not built now —
   release-process overhead for a single consumer.
 - **`docker-builds` auth** — a small BuildKit secret mount
   (`RUN --mount=type=secret` feeding `GIT_CONFIG_COUNT`) would do it;

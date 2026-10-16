@@ -7,7 +7,16 @@
 # release ships rhysd/actionlint#732 — then drop this block.
 # Known gap: actionlint skips a `$/` step's inputs, so a missing `token`
 # is caught by neither lint nor runner — it surfaces as clone failures
-# downstream.
+# downstream. That hole is covered by .github/scripts/check-auth-pairing.sh
+# (the workflow-lint `auth-pairing` job) until the suppression can drop.
+
+# `xcode-27` is a custom runner label (the Xcode 27 image used by the demo-app
+# workflows), not a GitHub-hosted `macos-*` name — declare it so actionlint
+# stops flagging every `runs-on: xcode-27` as an unknown label.
+self-hosted-runner:
+  labels:
+    - xcode-27
+
 paths:
   .github/workflows/docc-release.yml:
     ignore:

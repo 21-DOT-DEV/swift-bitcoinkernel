@@ -200,6 +200,9 @@ jobs:
             echo ""
             echo "- **Release**: \`$RELEASE_TAG\`"
             for target in Bitcoin BitcoinKernel; do
+              # Fixed known path — `ls -lh` is the readable human-size source;
+              # find/stat would be worse here.
+              # shellcheck disable=SC2012
               SIZE=$(ls -lh docs/${target}.doccarchive.zip | awk '{print $5}')
               SHA=$(shasum -a 256 docs/${target}.doccarchive.zip | awk '{print $1}')
               echo ""

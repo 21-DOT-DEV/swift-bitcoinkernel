@@ -1,0 +1,16 @@
+name: fail-checkout-true
+on: push
+permissions: {}
+jobs:
+  build:
+    runs-on: macos-26
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: true
+      - uses: ./.github/actions/github-git-auth
+        with:
+          token: ${{ github.token }}
+      - run: swift build

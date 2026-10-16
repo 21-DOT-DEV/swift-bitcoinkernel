@@ -1,0 +1,13 @@
+name: ok-checkout-no-auth
+on: push
+permissions: {}
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # docker-builds.yml's real shape: the job's fetches happen inside a
+      # container, so no github-git-auth — and no pairing rule applies.
+      - uses: actions/checkout@v6
+      - run: docker build .

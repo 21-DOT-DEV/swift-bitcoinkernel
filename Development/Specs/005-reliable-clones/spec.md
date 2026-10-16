@@ -70,7 +70,8 @@ non-network failure exits on the first attempt.
 10. **Given** a workflow whose `github-git-auth`-using job carries a
     write-capable effective permission — including no `permissions:`
     block declared at either level — a checkout without
-    `persist-credentials: false`, a checkout after the auth step, or
+    `persist-credentials: false`, a checkout after the auth step, a
+    `github-git-auth` step missing its required `token` input, or
     an `AUTH_LINT_EXEMPT` marker outside `actions-selftest.yml`,
     **when** the workflow lint runs at PR time, **then** the lint fails —
     covers FR-009.
@@ -202,17 +203,22 @@ non-network failure exits on the first attempt.
   inconclusive — a `::notice::`, never a misleading warning.
 - **FR-009** A static workflow lint — run by the ubuntu-only
   `workflow-lint` workflow (triggered on `.github/workflows/**`,
-  `.github/actions/**`, and `.github/actionlint.yaml`) at PR time —
+  `.github/actions/**`, `.github/actionlint.yaml`, and
+  `.github/scripts/**`) at PR time —
   fails when a job that uses `github-git-auth` carries a
   write-capable effective permission (the job's `permissions:` block if
   present, otherwise the workflow's; any write value or `write-all`
   counts — and no block declared at either level fails too, since the
   token then inherits the repo default, which may be write), a
-  checkout without `persist-credentials: false`, or a
-  checkout ordered after the auth step — the mechanical form of
+  checkout without `persist-credentials: false`, a
+  checkout ordered after the auth step, or a `github-git-auth` step
+  missing its required `token` input — the mechanical form of
   FR-008's scope rule and FR-002's ordering rule, checked
   deterministically at PR time; FR-008's runtime warn-guard stays as
-  backup for what static parsing cannot see. One exemption exists: a
+  backup for what static parsing cannot see. The `token` rule covers
+  the hole `.github/actionlint.yaml` documents: actionlint ≤1.7.12
+  can't parse `uses: $/…`, so its input validation never sees those
+  steps. One exemption exists: a
   job may declare `AUTH_LINT_EXEMPT: "<reason>"`, which exempts ONLY
   the write-permission rule — the checkout checks still apply — and
   the marker itself fails the lint in any file other than
@@ -234,8 +240,8 @@ non-network failure exits on the first attempt.
   A real forced timeout can't produce the first arm — `lowSpeed` is
   global and would abort every attempt — so the counter file
   manufactures the single signature-printing failure.
-- **SC-003** The feature lands as seven numbered pull requests —
-  prose-only amendment PRs excluded — each independently
+- **SC-003** The feature lands as the pull requests in the slicing
+  table — prose-only amendment PRs excluded — each independently
   mergeable with CI green on its own diff; every code-change PR is ≤ ~150
   changed lines (PR 1 is prose).
 

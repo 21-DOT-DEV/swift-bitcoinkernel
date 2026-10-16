@@ -482,3 +482,53 @@ FR-008 canary. The job lands in PR 3 beside the
 wiring it checks — in PR 2 no job uses the action yet, so it would
 pass trivially — and the runtime warn-guard stays as backup for what
 static parsing cannot see.
+
+## 10. Org extraction — precedent behind the deferred contract
+
+§8 rejects a shared repo *today*; this section records what industry
+practice says the extraction looks like when the second-consumer trigger
+fires, so the deferred item is executable rather than aspirational.
+
+- **Multi-action monorepo, subdirectory consumption** — `gradle/actions`
+  (`setup-gradle`, `dependency-submission`, `wrapper-validation`,
+  consumed as `gradle/actions/<name>@vN` under a repo-wide major line),
+  `grafana/shared-workflows`, `mongodb-labs/drivers-github-tools`,
+  `Expensify/GitHub-Actions`, `ExpediaGroup/github-helpers`, and
+  `spotify/.github/actions` all ship several actions from one repo.
+  GitHub's one-repo-per-action guidance targets independently-versioned
+  public actions; an org-internal set trades that for one release train.
+- **Policy checks ship as callable steps, not reusable workflows** —
+  gradle's `wrapper-validation` is the precedent: a check that must read
+  the *consumer's* files can only run inside a consumer's job, which a
+  called workflow owns end-to-end. `auth-pairing-check` is the same
+  shape — a script-runner composite invoked from the consumer's lint job.
+- **The selftest lives in the actions repo — forced, not chosen.**
+  `uses:` does not evaluate expressions (a `@${{ github.sha }}` ref
+  silently no-ops), so the shared repo's own workflow exercises the
+  actions via `./` refs on the PR's own code — the same property T009
+  wants here today. Pre-release consumer testing pins a literal SHA on
+  a throwaway branch — the T008 pattern.
+- **Per-component tags are the scaling valve** — a repo-wide `@v1` line
+  suffices at three actions; when unrelated actions start coupling
+  releases, grafana (release-please, PR #412) and FlowFuse tag
+  `<action>/vX.Y.Z` plus a floating `<action>/vX`. Dependabot reads
+  prefixed tags natively; Renovate needs a documented regex rule.
+- **Consumer pinning** — `@v1` documented default, consistent with this
+  repo tag-pinning third-party actions today; `@<sha> # v1.x.y` stays
+  the strict alternative (Shopify's documented convention, maintained by
+  Dependabot/Renovate). `@main` is never referenced — no validation
+  gate between a merge and every consumer's CI.
+- **Admission prefers self-contained actions** — mongodb-labs' README
+  documents the branch-name dance cross-action `uses:` forces (relative
+  refs inside an action resolve against the *caller's* workspace —
+  actions/runner#2101); grafana works around it by checking out
+  `github.action_repository`@`github.action_ref` into a side dir. All
+  three extraction candidates are self-contained by construction.
+- **Zero-wiring enforcement exists at a plan tier** — repository
+  rulesets (GitHub Team plan+) can require the pairing-lint workflow to
+  pass on every PR org-wide; it passes trivially where the action is
+  never used. Recorded as an upgrade path, not the base design.
+- **zizmor overlaps but doesn't replace the lint** — its
+  credential-persistence audit covers FR-009's persist-credentials rule
+  only; ordering, the `$/` token-input hole, and effective write scope
+  stay custom. A candidate addition to the shared repo's own CI.

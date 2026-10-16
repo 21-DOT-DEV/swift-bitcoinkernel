@@ -1,0 +1,16 @@
+name: fail-checkout-persist
+on: push
+permissions: {}
+jobs:
+  build:
+    runs-on: macos-26
+    permissions:
+      contents: read
+    steps:
+      # Missing persist-credentials: false — checkout's default `true`
+      # persists a credential that double-headers with the extraheader.
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/github-git-auth
+        with:
+          token: ${{ github.token }}
+      - run: swift build

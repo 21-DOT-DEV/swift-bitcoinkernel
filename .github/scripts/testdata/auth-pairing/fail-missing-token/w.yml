@@ -1,0 +1,16 @@
+name: fail-missing-token
+on: push
+permissions: {}
+jobs:
+  build:
+    runs-on: macos-26
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      # No `with:` at all — actionlint would catch this on a `./` step, but
+      # not on `$/`; the lint covers both forms.
+      - uses: $/.github/actions/github-git-auth
+      - run: swift build

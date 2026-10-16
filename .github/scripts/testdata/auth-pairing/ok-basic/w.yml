@@ -1,0 +1,19 @@
+name: ok-basic
+on: push
+permissions: {}
+jobs:
+  build:
+    runs-on: macos-26
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/github-git-auth
+        with:
+          token: ${{ github.token }}
+      - run: swift build
+  # Reusable-workflow job: no `steps:` — must be skipped, not parsed.
+  call:
+    uses: octo/reusable/.github/workflows/build.yml@main

@@ -1,0 +1,18 @@
+name: fail-write-scope
+on: push
+permissions: {}
+jobs:
+  release-build:
+    runs-on: macos-26
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/github-git-auth
+        with:
+          token: ${{ github.token }}
+      - run: gh release upload v1.0.0 artifact.zip
+        env:
+          GH_TOKEN: ${{ github.token }}

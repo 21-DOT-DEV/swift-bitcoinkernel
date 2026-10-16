@@ -1,0 +1,86 @@
+name: workflow-lint
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/**'
+      - '.github/actions/**'
+      - '.github/actionlint.yaml'
+      - '.github/scripts/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/**'
+      - '.github/actions/**'
+      - '.github/actionlint.yaml'
+      - '.github/scripts/**'
+
+permissions: {}
+
+env:
+  # Pinned upstream release (rhysd/actionlint). The `uses: $/…` suppression in
+  # actionlint.yaml stands until a pinned release carries rhysd/actionlint#732.
+  ACTIONLINT_VERSION: "1.7.12"
+  ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8" # actionlint_1.7.12_linux_amd64.tar.gz
+
+jobs:
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install actionlint (pinned release, checksum-verified)
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl -fsSLo actionlint.tar.gz \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  actionlint.tar.gz" | sha256sum -c -
+          tar -xzf actionlint.tar.gz actionlint
+          sudo install -m 0755 actionlint /usr/local/bin/actionlint
+          actionlint --version
+      - name: Lint workflows and actions
+        # Project mode: discovers .github/workflows/*.yml AND
+        # .github/actions/*/action.yml itself — explicit paths would be
+        # parsed as workflows. Also the only mode that reads actionlint.yaml.
+        run: actionlint
+
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Shellcheck CI scripts
+        run: |
+          # actionlint already shellchecks `run:` blocks inside workflows;
+          # this job covers standalone scripts, which actionlint never sees.
+          if ! command -v shellcheck >/dev/null; then
+            sudo apt-get update -qq && sudo apt-get install -y shellcheck
+          fi
+          shellcheck -S warning .github/scripts/*.sh
+
+  auth-pairing:
+    name: auth-pairing
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Lint github-git-auth pairing (FR-009)
+        run: bash .github/scripts/check-auth-pairing.sh .github/workflows
+      - name: Self-test the lint rules
+        run: bash .github/scripts/check-auth-pairing.test.sh

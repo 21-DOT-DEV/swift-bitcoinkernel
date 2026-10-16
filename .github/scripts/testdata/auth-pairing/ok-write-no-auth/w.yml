@@ -1,0 +1,14 @@
+name: ok-write-no-auth
+on: push
+permissions: {}
+jobs:
+  release:
+    runs-on: macos-26
+    permissions:
+      contents: write
+    steps:
+      # docc-release.yml's real shape: a write-scoped job that performs no
+      # fetch needs no auth action — and takes no auth-related rule.
+      - run: gh release create v1.0.0
+        env:
+          GH_TOKEN: ${{ github.token }}

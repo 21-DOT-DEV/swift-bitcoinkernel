@@ -1,0 +1,20 @@
+name: fail-marker-outside
+on: push
+permissions: {}
+jobs:
+  build:
+    runs-on: macos-26
+    permissions:
+      contents: read
+    env:
+      # An otherwise-valid read-scoped job — the ONLY violation is the
+      # marker living outside actions-selftest.yml.
+      AUTH_LINT_EXEMPT: "not the canary file"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/github-git-auth
+        with:
+          token: ${{ github.token }}
+      - run: swift build
