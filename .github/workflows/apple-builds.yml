@@ -24,6 +24,19 @@ jobs:
       DEVELOPER_DIR: "/Applications/Xcode_26.4.app/Contents/Developer"
     steps:
       - uses: actions/checkout@v6
+        with:
+          # github-git-auth sets a github.com Authorization header globally;
+          # checkout's own persisted credential would make a second one, and
+          # github.com answers two with a bare 400.
+          persist-credentials: false
+      # Sends GITHUB_TOKEN on every github.com git request — the `swift
+      # test`/plugin steps below resolve package dependencies with an
+      # anonymous-clone burst that GitHub throttles on a shared per-IP quota
+      # (see .github/actions/github-git-auth).
+      - name: Authenticate GitHub clones
+        uses: ./.github/actions/github-git-auth
+        with:
+          token: ${{ github.token }}
       # Two invocations. The first runs the package in PARALLEL: the
       # `.kernelSerialized` trait serializes libbitcoinkernel's process-global
       # state tests in-process (Tests/BitcoinKernelTests/Support/KernelSerialization.swift),
@@ -57,6 +70,17 @@ jobs:
       DEVELOPER_DIR: "/Applications/Xcode_26.4.app/Contents/Developer"
     steps:
       - uses: actions/checkout@v6
+        with:
+          # github-git-auth sets a github.com Authorization header globally;
+          # checkout's own persisted credential would make a second one, and
+          # github.com answers two with a bare 400.
+          persist-credentials: false
+      # See the macOS job — xcodebuild's package resolution is equally exposed
+      # to anonymous-clone throttling.
+      - name: Authenticate GitHub clones
+        uses: ./.github/actions/github-git-auth
+        with:
+          token: ${{ github.token }}
       - name: Build for iOS
         run: |
           xcrun xcodebuild \
@@ -76,6 +100,17 @@ jobs:
       DEVELOPER_DIR: "/Applications/Xcode_26.4.app/Contents/Developer"
     steps:
       - uses: actions/checkout@v6
+        with:
+          # github-git-auth sets a github.com Authorization header globally;
+          # checkout's own persisted credential would make a second one, and
+          # github.com answers two with a bare 400.
+          persist-credentials: false
+      # See the macOS job — xcodebuild's package resolution is equally exposed
+      # to anonymous-clone throttling.
+      - name: Authenticate GitHub clones
+        uses: ./.github/actions/github-git-auth
+        with:
+          token: ${{ github.token }}
       - name: Build for visionOS
         run: |
           xcrun xcodebuild \
@@ -97,6 +132,17 @@ jobs:
       DEVELOPER_DIR: "/Applications/Xcode_26.4.app/Contents/Developer"
     steps:
       - uses: actions/checkout@v6
+        with:
+          # github-git-auth sets a github.com Authorization header globally;
+          # checkout's own persisted credential would make a second one, and
+          # github.com answers two with a bare 400.
+          persist-credentials: false
+      # See the macOS job — xcodebuild's package resolution is equally exposed
+      # to anonymous-clone throttling.
+      - name: Authenticate GitHub clones
+        uses: ./.github/actions/github-git-auth
+        with:
+          token: ${{ github.token }}
       - name: Build BitcoinKernel for tvOS
         run: |
           xcrun xcodebuild \

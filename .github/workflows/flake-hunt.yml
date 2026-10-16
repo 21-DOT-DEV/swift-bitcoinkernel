@@ -53,6 +53,18 @@ jobs:
       DERIVED_DATA: .derivedData
     steps:
       - uses: actions/checkout@v6
+        with:
+          # github-git-auth sets a github.com Authorization header globally;
+          # checkout's own persisted credential would make a second one, and
+          # github.com answers two with a bare 400.
+          persist-credentials: false
+
+      # Same anonymous-clone throttling defense as tuist-apps.yml — see the
+      # comment above that workflow's authenticate step.
+      - name: Authenticate GitHub clones
+        uses: ./.github/actions/github-git-auth
+        with:
+          token: ${{ github.token }}
 
       - name: Generate workspace
         run: swift package --disable-sandbox tuist generate -p Projects/ --no-open

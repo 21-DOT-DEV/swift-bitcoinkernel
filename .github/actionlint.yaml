@@ -1,0 +1,14 @@
+# actionlint configuration.
+#
+# `uses: $/…` (self-repository reference — resolves the action at the
+# workflow's own running commit; shipped 2026-07, needs runner ≥2.336.0)
+# is rejected as an invalid `uses:` format by actionlint ≤1.7.12.
+# Suppress only that message, only in the one file that uses it, until a
+# release ships rhysd/actionlint#732 — then drop this block.
+# Known gap: actionlint skips a `$/` step's inputs, so a missing `token`
+# is caught by neither lint nor runner — it surfaces as clone failures
+# downstream.
+paths:
+  .github/workflows/docc-release.yml:
+    ignore:
+      - 'specifying action "\$/[^"]*" in invalid format'

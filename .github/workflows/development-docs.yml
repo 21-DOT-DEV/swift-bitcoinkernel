@@ -18,16 +18,31 @@ jobs:
   check:
     name: Plans & decision records
     # Apple machine because Swift ships preinstalled; the checker is its own
-    # dependency-free package, so this never builds the project itself.
+    # small package (two remote dependencies fetched on every run), not the
+    # project itself.
     runs-on: macos-26
-    # actions/checkout needs this to fetch a private repository; every other
-    # workflow in this repository grants it the same way.
+    # contents: read is actions/checkout's minimum on a private repo; kept on
+    # this public one — least-privilege costs nothing and survives a
+    # visibility flip.
     permissions:
       contents: read
     env:
       DEVELOPER_DIR: "/Applications/Xcode_26.4.app/Contents/Developer"
     steps:
       - uses: actions/checkout@v6
+        with:
+          # github-git-auth sets a github.com Authorization header globally;
+          # checkout's own persisted credential would make a second one, and
+          # github.com answers two with a bare 400.
+          persist-credentials: false
+
+      # The Tools package fetches two remote github.com dependencies
+      # (swift-yaml, swift-argument-parser) — the same anonymous-clone
+      # throttling defense as the other workflows.
+      - name: Authenticate GitHub clones
+        uses: ./.github/actions/github-git-auth
+        with:
+          token: ${{ github.token }}
 
       - name: Unit-test the checker
         run: swift test --package-path Development/Tools

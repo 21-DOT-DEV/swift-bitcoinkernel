@@ -59,12 +59,19 @@ is green; the index lists feature 005.
   `if: always()` step through `steps.<id>.outputs`, proving composite
   outputs publish across an inner failure (T006's negative cases
   depend on it).
-  `.github/actionlint.yaml` declares `xcode-27` (a custom label
-  actionlint's built-in list doesn't know — verified: `runner-label`
-  errors on `flake-hunt:45` and the four `tuist-apps` matrix rows), and
+  `.github/actionlint.yaml` gains `self-hosted-runner.labels:
+  [xcode-27]` (a custom label actionlint's built-in list doesn't know
+  — verified: `runner-label` errors on `flake-hunt:45` and the four
+  `tuist-apps` matrix rows); the file already exists — created in the
+  T003 PR carrying the `paths:`/`ignore:` for `docc-release.yml`'s two
+  `uses: $/…` lines (actionlint ≤1.7.12 can't parse `$/`; drop that
+  block once a pinned release ships `rhysd/actionlint#732` — its known
+  gap: the ignore also hides the `$/` step's input check, and a
+  missing `token` is caught by neither lint nor runner — it surfaces
+  as clone failures downstream). Also,
   two pre-existing findings are fixed so the gate is green: drop the
   always-empty `${{ matrix.suffix }}` from `tuist-apps:13` (renders
-  identical names) and resolve `docc-release:162`'s SC2012 (fixed known
+  identical names) and resolve `docc-release:195`'s SC2012 (fixed known
   path — a `# shellcheck disable` comment, not a `find` rewrite). Lands
   inside PR 2 — workflow commit pushed alone first so CI observes red
   with the action missing (CI only ever tests the tip; one push of both
@@ -85,14 +92,17 @@ is green; the index lists feature 005.
   mistakes are linted rather than learned by live failure. No brew on
   ubuntu: `actionlint` installs from a pinned release tarball with a
   checksum check, `shellcheck` from the distro package; if a newer
-  lint rule ever fails an unrelated diff, pin the versions then.
+  lint rule ever fails an unrelated diff, pin the versions then. The
+  `$/` suppression already lives in `.github/actionlint.yaml` (shipped
+  in the T003 PR), so this job needs no pinned-version workaround.
   `permissions: {}` at the workflow level, `contents: read` on the
-  jobs. T004 adds the FR-009 job to this file in PR 3 (FR-009
+  jobs. T004's FR-009 job lands here with the file — it couldn't ride
+  the T003 PR because this file didn't exist yet (FR-009
   pending) · `.github/workflows/workflow-lint.yml`
 
 ## Phase 2 — Turn auth on everywhere packages are fetched
 
-- [ ] T003 Add `persist-credentials: false` to every checkout and the
+- [x] T003 Add `persist-credentials: false` to every checkout and the
   `github-git-auth` step immediately after it, in every fetch-performing job
   across all five macOS workflows — except `docc-release.yml`'s `release`
   job, which fetches nothing and holds `contents: write`; that job's unused
@@ -107,11 +117,13 @@ is green; the index lists feature 005.
 - [ ] T004 Record the pairing rule (FR-002 and its edge cases — the
   mechanisms, and auth *after* every checkout) in `.github/AGENTS.md`;
   `docker-builds` and the write-scoped `release` job are the documented
-  exceptions. Same edit
-  tightens the "private repos" framing in the least-privilege bullet and the
-  `permissions: {}` gotcha — the rule is least-privilege generally, the repo
-  is public. The rule's mechanical form also lands here: the FR-009 job
-  joins T011's `workflow-lint` — fail the PR when a
+  exceptions, and a `$/`-reference variant covers jobs whose checkout
+  uses an explicit `ref:` differing from the workflow's commit. The
+  prose half shipped in the T003 PR — rule, exceptions, `$/` variant,
+  and the "private repos" → least-privilege tightening (the rule is
+  least-privilege generally; the repo is public). The box stays open
+  for the mechanical half, which lands with T011's file: the FR-009
+  job fails a PR when a
   job using `github-git-auth` carries a write-capable effective
   permission (the job's `permissions:` block if present, otherwise the
   workflow's; any write value or `write-all` counts — and no block
@@ -359,14 +371,28 @@ invoke the action; logs show the attempt group format.
 | # | Landed | Pull request | Tasks | Changed lines | Depends on |
 |---|---|---|---|---|---|
 | 1 | [x] | The plan documents | T001 | ~1,450 prose | — |
-| 2 | [ ] | `github-git-auth` action, inert + `actions-selftest` + `workflow-lint` workflows + `actionlint.yaml` + pre-existing lint fixes | T002, T009, T011 | ~190 | — |
-| 3 | [ ] | Auth wired into fetch jobs across five workflows, `release`-job checkout removed, pairing rule + FR-009 job in `workflow-lint` | T003, T004 | ~140 | PR 2 |
+| 2 | [ ] | `github-git-auth` action, inert + `actions-selftest` + `workflow-lint` workflows + `xcode-27` label config in `actionlint.yaml` + pre-existing lint fixes | T002, T009, T011 | ~190 | — |
+| 3 | [ ] | Auth wired into fetch jobs across five workflows, `release`-job checkout removed, pairing rule + `$/` variant in `.github/AGENTS.md`, `actionlint.yaml` created with the `$/` ignore | T003, T004's prose | ~230 | — |
 | 4 | [ ] | Cache flags on all fetch steps + `timeout-minutes: 30` + job-cap bump | T005 | ~55 | — |
 | 5 | [ ] | `retry-on-fetch-flake` action, inert + selftest retry cases | T006 | ~100 | PR 2 (selftest workflow) |
 | 6 | [ ] | Retry wired into the two generate steps + `Tuist.swift` clone-path pin + routing rule | T007 | ~50 | PR 5 |
 | 7 | [ ] | Dedicated resolve steps under retry in the remaining fetch jobs + docc job-cap raise | T010 | ~95 | PRs 3, 5 |
 
-Numbered order is the recommended landing sequence. PR 4 has no code
+Numbered order is the recommended landing sequence.
+
+PR 3 ships before PR 2 by choice: the diff that introduces
+`uses: $/…` carries its own lint suppression
+(`.github/actionlint.yaml`), and the action's `Verify` step observes
+auth in every wired job — warn-only, so it can't turn CI red; T009's
+selftest remains the gate that can. Before PR 3 merges, confirm the
+Verify output ("exactly 1 effective github.com extraheader" and
+"carry the Authorization header") on all four `xcode-27` rows of its
+CI run — that observation stands in for T009 until it lands. FR-009's
+job moves with T011 since `workflow-lint.yml` doesn't exist yet; PR
+3's ~230 lines exceed SC-003's ~150 cap — the overage is comments,
+doc text, and this bookkeeping, recorded here rather than trimmed.
+
+PR 4 has no code
 dependency and may land in any position — one caveat: PRs 4 and 7 both
 touch apple-builds' xcodebuild lines, so whichever lands second rebases
 (an adjacent-line conflict, not a design coupling). PRs 3, 5, 6 and 7 must follow their

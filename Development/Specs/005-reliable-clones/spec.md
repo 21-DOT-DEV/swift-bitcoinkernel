@@ -248,12 +248,19 @@ non-network failure exits on the first attempt.
   would persist in a shared `~/.gitconfig` across jobs and parallel jobs
   would fight over it.
 - **Tagged-release checkout** (`docc-release`) — the `build`/`docc` jobs
-  authenticate identically at a tag ref; the `release` job is excluded: it
-  fetches nothing and its token is `contents: write`, so its unused checkout
-  step is removed (the checkout's only effect was persisting that token in
-  checkout's repo-local credential — nothing in the job reads repo files)
-  and `GH_REPO` is set
-  so `gh release upload` resolves the repo without one.
+  authenticate at a tag ref checked out via an explicit `ref:`
+  (`release_tag` on manual re-runs), which can differ from the commit the
+  workflow file came from: `./` resolves a local action from the
+  *checked-out* tree and dies `Can't find action.yml` on tags cut before
+  the action existed, so both jobs use `uses: $/…` instead — the
+  self-repository reference resolves at the workflow's own running commit
+  (runner ≥2.336.0; GitHub-hosted `macos-26` qualifies). The `release`
+  job is excluded: it fetches nothing and its token is
+  `contents: write`, so its unused checkout step is removed (the
+  checkout's only effect was persisting that token in checkout's
+  repo-local credential — nothing in the job reads repo files) and
+  `GH_REPO` is set so `gh release upload` resolves the repo without
+  one.
 - **A write-scoped job wired to auth by mistake** — the action warns
   (`::warning::`) and continues; exclusion is by wiring, the
   `permissions.push` check is the tripwire for drift.
