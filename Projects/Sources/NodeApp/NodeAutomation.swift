@@ -873,6 +873,54 @@ enum NodeAutomation {
             || tipIsFresh(tipTime: reading.tipTime, now: now)
             || confirmingPeers(peers, at: reading.headers) >= requiredPeerConfirmations
     }
+
+    // MARK: - Ending precedence
+
+    /// The one sync result the watch reports for this pass — or `nil` when
+    /// no ending holds and the watch keeps going (FR-019).
+    ///
+    /// Each parameter is one candidacy, computed from the pass's own facts:
+    /// the node was stopped from the app, the catch-up proof held, the drift
+    /// check found a condition, a leash tripped, or the sync budget ran out.
+    /// Overlaps are routine rather than rare — a tripped leash keeps
+    /// standing until a gain resets it (`SyncWatchState.stall` reads
+    /// accumulators, not edges), so a completed proof or a drifted
+    /// condition can land on a pass where a leash is already over, and a
+    /// deliberate stop can arrive on the pass a proof completes.
+    ///
+    /// The order is the contract, and each rank has its reason:
+    ///
+    /// - `nodeStopped` — a deliberate stop ends measurement itself; nothing
+    ///   else the pass may have proven outranks the node's absence.
+    /// - `caughtUp` — a completed proof is terminal truth: conditions that
+    ///   drifted in the same pass are advisory for the next run, not a
+    ///   verdict on one that already finished.
+    /// - `conditionsChanged` — unconsented conditions outrank a tripwire.
+    /// - `noProgress` — any verdict outranks a spent budget.
+    /// - `stillSyncing` — the budget spent with nothing else to say.
+    ///
+    /// Two values are deliberately unanswerable here. `notMeasured` has no
+    /// candidacy: a watch that committed already has its first answer, so
+    /// "no answer" is not an ending it can reach. And cancellation is absent
+    /// structurally — it ends the run, not the watch: the run's own checks
+    /// (`Task.isCancelled`, and the flag the run's `onCancel` hook sets)
+    /// live outside the candidacies, and a cancelled run is converted back
+    /// into a thrown `CancellationError` at the action boundary rather than
+    /// reported as a sync result.
+    static func watchEnding(
+        nodeStopped: Bool,
+        caughtUp: Bool,
+        conditionsChanged: Bool,
+        noProgress: Bool,
+        budgetSpent: Bool
+    ) -> SyncResult? {
+        if nodeStopped { return .nodeStopped }
+        if caughtUp { return .caughtUp }
+        if conditionsChanged { return .conditionsChanged }
+        if noProgress { return .noProgress }
+        if budgetSpent { return .stillSyncing }
+        return nil
+    }
 }
 
 /// `Duration`'s value as a `TimeInterval` — for comparing it against `Date`

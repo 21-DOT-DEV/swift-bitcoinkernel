@@ -1295,4 +1295,103 @@ struct NodeAutomationTests {
                 headersAdvanced: false)
                 == false)
     }
+
+    // MARK: - Ending precedence
+
+    @Test("a stopped node outranks every other ending — even all of them at once")
+    func nodeStoppedOutranksAll() {
+        // The pass where everything is true at once: the person stopped the
+        // node as the network turned metered, the proof landed, a leash
+        // stood already tripped, and the budget ran out.
+        #expect(
+            NodeAutomation.watchEnding(
+                nodeStopped: true, caughtUp: true, conditionsChanged: true,
+                noProgress: true, budgetSpent: true) == .nodeStopped)
+    }
+
+    @Test("a deliberate stop outranks even a completed catch-up proof")
+    func nodeStoppedOutranksCaughtUp() {
+        // The proof is terminal truth, but a stopped node leaves nothing to
+        // measure — the stop ends measurement itself.
+        #expect(
+            NodeAutomation.watchEnding(
+                nodeStopped: true, caughtUp: true, conditionsChanged: false,
+                noProgress: false, budgetSpent: false) == .nodeStopped)
+    }
+
+    @Test("a stopped node as the network turns metered reports nodeStopped")
+    func nodeStoppedBeatsMetered() {
+        // Spec scenario 18: both endings hold on the pass — the deliberate
+        // stop is the report, not the drifted condition.
+        #expect(
+            NodeAutomation.watchEnding(
+                nodeStopped: true, caughtUp: false, conditionsChanged: true,
+                noProgress: false, budgetSpent: false) == .nodeStopped)
+    }
+
+    @Test("a completed proof outranks drifted conditions, a tripped leash, and a spent budget")
+    func caughtUpOutranksTheRest() {
+        // Terminal truth: conditions that drifted in the same pass are
+        // advisory for the next run, not a verdict on one that finished.
+        #expect(
+            NodeAutomation.watchEnding(
+                nodeStopped: false, caughtUp: true, conditionsChanged: true,
+                noProgress: true, budgetSpent: true) == .caughtUp)
+    }
+
+    @Test("drifted conditions outrank a tripped leash and a spent budget")
+    func conditionsChangedOutranksStallAndBudget() {
+        #expect(
+            NodeAutomation.watchEnding(
+                nodeStopped: false, caughtUp: false, conditionsChanged: true,
+                noProgress: true, budgetSpent: true) == .conditionsChanged)
+    }
+
+    @Test("a tripped leash outranks a spent budget")
+    func noProgressOutranksBudget() {
+        // Any verdict outranks a spent budget — a node that went quiet
+        // reports noProgress, not stillSyncing.
+        #expect(
+            NodeAutomation.watchEnding(
+                nodeStopped: false, caughtUp: false, conditionsChanged: false,
+                noProgress: true, budgetSpent: true) == .noProgress)
+    }
+
+    @Test("a spent budget alone ends stillSyncing")
+    func spentBudgetIsStillSyncing() {
+        #expect(
+            NodeAutomation.watchEnding(
+                nodeStopped: false, caughtUp: false, conditionsChanged: false,
+                noProgress: false, budgetSpent: true) == .stillSyncing)
+    }
+
+    @Test("each ending alone reports itself")
+    func soloEndings() {
+        // Every candidacy that can stand alone reports its own ending — the
+        // order only arbitrates overlaps.
+        #expect(
+            NodeAutomation.watchEnding(
+                nodeStopped: true, caughtUp: false, conditionsChanged: false,
+                noProgress: false, budgetSpent: false) == .nodeStopped)
+        #expect(
+            NodeAutomation.watchEnding(
+                nodeStopped: false, caughtUp: true, conditionsChanged: false,
+                noProgress: false, budgetSpent: false) == .caughtUp)
+        #expect(
+            NodeAutomation.watchEnding(
+                nodeStopped: false, caughtUp: false, conditionsChanged: true,
+                noProgress: false, budgetSpent: false) == .conditionsChanged)
+        #expect(
+            NodeAutomation.watchEnding(
+                nodeStopped: false, caughtUp: false, conditionsChanged: false,
+                noProgress: true, budgetSpent: false) == .noProgress)
+    }
+
+    @Test("with nothing holding, the watch keeps going")
+    func nothingKeepsWatching() {
+        #expect(
+            NodeAutomation.watchEnding(
+                nodeStopped: false, caughtUp: false, conditionsChanged: false,
+                noProgress: false, budgetSpent: false) == nil)
+    }
 }
