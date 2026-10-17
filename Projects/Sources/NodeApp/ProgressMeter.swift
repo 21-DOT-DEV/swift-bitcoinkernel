@@ -70,8 +70,7 @@ final class ProgressMeter {
         // A non-finite fraction would crash `Int64(_:)` — an unforced trap inside
         // an unattended background action is the worst available failure mode,
         // so the report is dropped as if it never arrived. Finite-but-huge
-        // values trap the same conversion, so the fraction is clamped first —
-        // matching `Progress`'s own clamping convention.
+        // values trap the same conversion, so the fraction is clamped first.
         guard fraction.isFinite else { return }
         let clamped = min(max(fraction, 0), 1)
         // A report that changes nothing wrote nothing: it cannot count as the

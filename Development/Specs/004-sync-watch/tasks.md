@@ -361,12 +361,27 @@ results. Every task lands standalone.
   most of it doc comment) ·
   `Sources/NodeApp/NodeAutomation.swift`,
   `Sources/NodeAppTests/NodeAutomationTests.swift` · needs T010
-- [ ] T014 Live-tip fraction and the stage→band map — `(h − h₀) /
+- [x] T014 Live-tip fraction and the stage→band map — `(h − h₀) /
   max(liveHeaders − h₀, 1)` against a live denominator, clamped at zero on a
   reorg below baseline; every pre-watch write compresses into the ~10%
   start-up band, the watch's distance fraction sweeps to the ~95% working
   ceiling, and the no-budget path keeps the full range (FR-002, FR-004;
-  verifies FR-002) (~150) · `Sources/NodeApp/NodeAutomation.swift`,
+  verifies FR-002). Landed as five members in a "The bar's fraction and
+  bands" section: statics `startUpBandEnd` = 0.1 and `watchBandEnd` = 0.95
+  (named for where each band *ends* — the meter's floor takes the first),
+  `syncFraction(height:baselineHeight:liveHeaders:)` — plain facts like
+  T012/T013; typed inputs would imply reads it doesn't make, and a chain
+  mismatch is unconstructible inside a live watch — and `startUpBand(_:)` /
+  `watchBand(_:)`, each clamping its input to `0...1`. The fraction reports
+  raw arithmetic: a height past headers
+  yields > 1 and the band, not the meter, clamps it — a reading that
+  surprising shouldn't hide inside a measurement. The no-budget clause is
+  call-site absence: an unbudgeted run never calls the maps, and T028's
+  write-sequence test is the designated pin. Fifteen tests: the fraction's
+  zero/half/full arc, the floored denominator, below-baseline clamp,
+  above-headers raw > 1, both bands' endpoints and edges, a non-linear
+  sweep, and the assembled reading → fraction → band chain (~150) ·
+  `Sources/NodeApp/NodeAutomation.swift`,
   `Sources/NodeAppTests/NodeAutomationTests.swift` · needs T008
 - [ ] T015 Ending sentences and card wording — the five endings, the
   position clause always, the staleness clause once flat past the leash;
@@ -531,7 +546,8 @@ unchanged; the assembled run's proof is the end-to-end group.
 current build; nothing else blocks it, so run it early.
 
 - [ ] T032 Meter honesty, sized by the experiment — if numeric writes are
-  required: `scale` ≈ 10,000, `advance()` capped at `scale − 1 − reserve`,
+  required: `scale` ≈ 10,000, `advance()` capped at `scale − 1 − reserve`
+  (sized from `NodeAutomation.watchBandEnd`, not a twin literal),
   the write floor split `earned` (monotone) / `reported` (may dither ±1),
   `tick()` alternating `{earned, earned + 1}` with its skip gate keyed on
   `earned`, `heartbeatUnits` retired; fallback if only *increasing* writes

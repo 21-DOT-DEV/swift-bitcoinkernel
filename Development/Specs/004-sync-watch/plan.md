@@ -274,7 +274,8 @@ numeric writes* ([research §4](./research.md) — Apple's own example writes te
 on every chunk, and text alone may satisfy the check at zero honesty cost):
 
 - `scale` grows to ≈10,000 (units are arbitrary per Foundation's guidance).
-- `advance()` caps at `scale − 1 − reserve` (~95%).
+- `advance()` caps at `scale − 1 − reserve` — the cap's figure sourced from
+  `NodeAutomation.watchBandEnd` (~95%), never a second literal.
 - The write floor splits: `earned` (monotone — the honesty invariant) and
   `reported` (last written — may dither ±1 around it).
 - `tick()` *dithers*: writes whichever of `{earned, earned + 1}` is not

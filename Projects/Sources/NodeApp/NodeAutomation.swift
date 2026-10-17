@@ -921,6 +921,83 @@ enum NodeAutomation {
         if budgetSpent { return .stillSyncing }
         return nil
     }
+
+    // MARK: - The bar's fraction and bands
+
+    /// Where a budgeted run's start-up band ends — the first ~10% of the bar
+    /// (FR-004).
+    ///
+    /// The watch shares one bar with the stages before it, and the bar never
+    /// retreats: start-up writes reach ~0.9 and a completed reading writes
+    /// the completion-equivalent value, so a sync fraction starting near
+    /// zero would be silently discarded for the whole watch — a bar pinned
+    /// near full while the node grinds. A budgeted run therefore compresses
+    /// every pre-watch write into this band so the watch's own fraction has
+    /// somewhere visible to start from.
+    static let startUpBandEnd: Double = 0.1
+
+    /// The bar's working ceiling — where the watch band ends (~95%, FR-004).
+    ///
+    /// The last ~5% is the reserve the honesty rules hold: a full bar claims
+    /// the work finished, and only an earned `finish(_:)` is in a position
+    /// to know that. Plan §3.4 assigns this figure as the meter's
+    /// `advance(to:)` cap — a sync that lands with T032 if T038's device
+    /// experiment keeps numeric writes. Today the meter stops one unit
+    /// short of full; the agreement is specced, not yet coded.
+    static let watchBandEnd: Double = 0.95
+
+    /// The fraction of the distance to the live tip this run has closed —
+    /// `(h − h₀) / max(liveHeaders − h₀, 1)` recomputed from each pass's
+    /// own reading (FR-002). Never rate-projected, never clock-derived,
+    /// never `verificationprogress`.
+    ///
+    /// The denominator is the pass's live `headers`, not the gap measured
+    /// at entry: fresh headers arriving mid-watch grow it, which can pull
+    /// the true fraction down — the display floor absorbs the dip while
+    /// the detail line keeps reporting ground truth. A reorg below the
+    /// entry height clamps the numerator at zero: the run closed nothing.
+    /// And a node that has learned no gap yet — `liveHeaders` at or below
+    /// the entry height — reads zero through the floored denominator
+    /// rather than dividing by nothing.
+    ///
+    /// The arithmetic is reported raw: a reading whose height somehow
+    /// passed its headers yields a fraction above one, which the band map
+    /// clamps at the working ceiling. "More than everything known" is a
+    /// display clamp, not a measurement the function should hide.
+    static func syncFraction(height: Int, baselineHeight: Int, liveHeaders: Int) -> Double {
+        Double(max(0, height - baselineHeight))
+            / Double(max(liveHeaders - baselineHeight, 1))
+    }
+
+    /// The bar position a pre-watch write lands — its own 0–1 compressed
+    /// into the start-up band (FR-004).
+    ///
+    /// Applied once around the run's progress callback, so every write a
+    /// stage makes before the watch — the fixed milestones and the smooth
+    /// first-answer ramp alike — lands inside `0 ... startUpBandEnd`
+    /// without the call sites knowing the layout. An unbudgeted run never
+    /// calls it: with no watch to leave room for, its writes keep the
+    /// full bar.
+    ///
+    /// The input is clamped to `0...1`: a stray write lands at the band's
+    /// edge rather than escaping it.
+    static func startUpBand(_ stageFraction: Double) -> Double {
+        min(max(stageFraction, 0), 1) * startUpBandEnd
+    }
+
+    /// The bar position a sync fraction lands during the watch — its 0–1
+    /// swept across the watch band, from the start-up band's end up to
+    /// the working ceiling (FR-002, FR-004).
+    ///
+    /// The floor is the start-up band's end, so the watch begins exactly
+    /// where start-up left the bar: a fraction of zero parks the bar at
+    /// the band floor — the honest display while the node has learned no
+    /// gap yet — and a finished fraction stops at the ceiling, short of
+    /// the full bar only an earned ending may fill.
+    static func watchBand(_ distanceFraction: Double) -> Double {
+        startUpBandEnd
+            + min(max(distanceFraction, 0), 1) * (watchBandEnd - startUpBandEnd)
+    }
 }
 
 /// `Duration`'s value as a `TimeInterval` — for comparing it against `Date`
