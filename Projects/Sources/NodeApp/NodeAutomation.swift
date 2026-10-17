@@ -109,9 +109,13 @@ enum NodeAutomation {
     struct Ending: Equatable {
         /// Whether the bar is filled.
         ///
-        /// Only a run that actually read a node finished the work the bar describes. A
-        /// run that declined, or whose node never answered, did not — and filling the
-        /// bar for those tells the person the opposite of what happened.
+        /// Only an earned ending fills: a run that actually read a node and
+        /// carried no watch to serve (the `notMeasured` paths), or a watch
+        /// that finished the one way that completes the bar's claim —
+        /// `caughtUp`. A run that declined, got no answer, or ended its
+        /// watch on `stillSyncing`/`noProgress`/`conditionsChanged` did not
+        /// finish the work the bar describes — and filling the bar for those
+        /// tells the person the opposite of what happened.
         let fillsProgressBar: Bool
         /// The card's headline: what became of the node, in two or three words.
         let title: String
@@ -127,6 +131,12 @@ enum NodeAutomation {
     /// path never does. "Checking" covers starting, waiting, and reading alike.
     static let inProgressTitle = "Checking the Bitcoin node"
 
+    /// The headline the card flips to once a watch begins (FR-003 — the plan
+    /// §3.4 wording, pinned). Distinct from `inProgressTitle`: "checking"
+    /// covers starting, waiting, and reading, while a committed watch is
+    /// doing exactly one thing — "syncing" is the honest verb for it.
+    static let watchingTitle = "Syncing the Bitcoin node"
+
     /// Turns a finished run into what the card shows.
     ///
     /// Kept here, beside `summary(...)`, because it is a judgment about what the person
@@ -134,17 +144,57 @@ enum NodeAutomation {
     /// they cannot end up contradicting each other, which is the failure this replaced:
     /// the bar was previously filled for every ending, including runs that refused to
     /// start.
-    static func ending(outcome: Outcome, summary: String) -> Ending {
+    ///
+    /// `syncEnding` is required for the same reason `NodeRunReport` requires
+    /// it: a producer that could omit the sync answer could still claim a
+    /// card that disagrees with the field. When it is real, the sync ending
+    /// owns the headline — the card's job is to say how *syncing* ended, and
+    /// the detail line keeps the whole sentence for everything else. The
+    /// two frames an ending can arrive in are distinct cases: a watch that
+    /// saw the catch-up earns "Caught up", while an entry gate that found
+    /// the node already there reads "Synced to tip" — nothing was caught
+    /// up *by* the run. The same split holds for conditions: mid-watch
+    /// drift says what changed, a weigh-in refusal says the watch did not
+    /// start.
+    static func ending(
+        outcome: Outcome, syncEnding: SyncEnding, summary: String
+    ) -> Ending {
+        assert(
+            isCoherent(outcome: outcome, ending: syncEnding),
+            "\(outcome) cannot carry \(syncEnding)")
         let title: String
-        switch outcome {
-        case .started: title = "Node running"
-        case .alreadyRunning: title = "Node already running"
-        case .didNotComeUp: title = "Node still starting"
-        case .noAnswer: title = "Node did not answer"
-        case .declined: title = "Node not started"
+        switch syncEnding {
+        case .caughtUp:
+            title = "Caught up"
+        case .alreadyAtTip:
+            title = "Synced to tip"
+        case .stillSyncing:
+            title = "Still syncing"
+        case .noProgress:
+            title = "No progress"
+        case .nodeStopped:
+            title = "Node stopped"
+        case .conditionsChanged:
+            title = "Conditions changed"
+        case .watchRefused:
+            // A weigh-in refusal means nothing changed — the condition
+            // stood and the watch never began, so "changed" would be a
+            // lie. "Watch not started" parallels "Node not started" for
+            // `.declined`.
+            title = "Watch not started"
+        case .notMeasured:
+            switch outcome {
+            case .started: title = "Node running"
+            case .alreadyRunning: title = "Node already running"
+            case .didNotComeUp: title = "Node still starting"
+            case .noAnswer: title = "Node did not answer"
+            case .declined: title = "Node not started"
+            }
         }
         return Ending(
-            fillsProgressBar: outcome == .started || outcome == .alreadyRunning,
+            fillsProgressBar: syncEnding.result == .caughtUp
+                || (syncEnding == .notMeasured
+                    && (outcome == .started || outcome == .alreadyRunning)),
             title: title,
             detail: summary)
     }
@@ -436,14 +486,49 @@ enum NodeAutomation {
     /// through `formatted()`: the resolver applies the locale's digit grouping at
     /// display time, and pre-formatting them would both freeze the app's locale into
     /// the dialog and cut the count loose from the catalog's plural variants.
+    ///
+    /// The duration style a `noProgress` sentence uses for the measured
+    /// silence — wide units ("4 minutes"), hours and minutes only. A shared
+    /// static so the wording and the tests asserting it cannot drift apart.
+    static let summarySilenceFormat = Duration.UnitsFormatStyle(
+        allowedUnits: [.minutes, .hours], width: .wide)
+
+    /// The card detail line's duration style — abbreviated ("3 min") for
+    /// the terse `localizedAdditionalDescription` idiom. Shared for the
+    /// same reason as `summarySilenceFormat`.
+    static let detailSilenceFormat = Duration.UnitsFormatStyle(
+        allowedUnits: [.minutes, .hours], width: .abbreviated)
+
+    /// The single sentence a person reads or hears, derived from the same
+    /// values the named fields carry so the two can never disagree.
+    ///
+    /// `syncEnding` is required for the same reason `NodeRunReport` requires
+    /// it: a producer that could omit the sync answer could still produce a
+    /// sentence disagreeing with the field. `notMeasured` reproduces the
+    /// pre-watch sentence exactly — the short action's output is unchanged.
+    /// A real ending appends its own sentence at a sentence boundary (the
+    /// run's history first, its verdict last), except `nodeStopped`, which
+    /// rewrites the lead-in wholesale: "Node running" is a lie once the app
+    /// has stopped it.
+    ///
+    /// The two frames an ending can arrive in are distinct cases, so the
+    /// wording can never conflate them: the entry gate's `alreadyAtTip`
+    /// versus a watch's `caughtUp`, the weigh-in's `watchRefused` versus
+    /// mid-watch `conditionsChanged`. The endings that name a detail carry
+    /// it — a `nil` silence or refusal produces the generic honest ending
+    /// rather than a fabricated detail.
     static func summary(
         outcome: Outcome,
+        syncEnding: SyncEnding,
         chain: String,
         height: Int,
         blocksBehind: Int?,
         blocksSinceLastCheck: Int?,
         declinedReason: LocalizedStringResource?
     ) -> LocalizedStringResource {
+        assert(
+            isCoherent(outcome: outcome, ending: syncEnding),
+            "\(outcome) cannot carry \(syncEnding)")
         switch outcome {
         case .declined:
             // The reason is the whole message: it is the only thing that tells the
@@ -473,23 +558,161 @@ enum NodeAutomation {
                         ? "Node running on \(chainName) at block \(height)."
                         : "A node was already running on \(chainName) at block \(height)."
                 }
-            guard let gained = blocksSinceLastCheck else { return headline }
-            // One plural key covers all three counts — its catalog entry binds the
-            // number so "zero" renders "No new blocks…", "one" the singular, and
-            // "other" the plural — rather than a `block(s)` ternary only English
-            // would survive.
-            let gainedText: LocalizedStringResource =
-                "\(gained) new blocks since the last check."
-            // A dedicated key, not the bare "%@ %@" a plain interpolation would
-            // mint: a generic key is shared by any future pair of substituted
-            // strings anywhere in the app, and a translator could never give this
-            // join its own wording — including languages whose sentence join is
-            // not a space.
-            return LocalizedStringResource(
-                "run.summary.with-gain",
-                defaultValue: "\(headline) \(gainedText)",
-                comment: "Joins the run's status sentence to its blocks-gained sentence. The space is the sentence separator — adjust or replace for languages that join sentences differently.")
+            var text = headline
+            if case .nodeStopped = syncEnding {
+                // The app stopped the node mid-watch, so the outcome sentence's
+                // "running" is no longer true — the lead-in is rewritten, but the
+                // last measured position is still truth worth keeping.
+                text =
+                    if let blocksBehind, blocksBehind > 0 {
+                        "The node was stopped from the app — last measured on \(chainName) at block \(height), \(blocksBehind) behind."
+                    } else {
+                        "The node was stopped from the app — last measured on \(chainName) at block \(height)."
+                    }
+            }
+            if let gained = blocksSinceLastCheck {
+                // One plural key covers all three counts — its catalog entry binds the
+                // number so "zero" renders "No new blocks…", "one" the singular, and
+                // "other" the plural — rather than a `block(s)` ternary only English
+                // would survive.
+                let gainedText: LocalizedStringResource =
+                    "\(gained) new blocks since the last check."
+                // A dedicated key, not the bare "%@ %@" a plain interpolation would
+                // mint: a generic key is shared by any future pair of substituted
+                // strings anywhere in the app, and a translator could never give this
+                // join its own wording — including languages whose sentence join is
+                // not a space.
+                text = LocalizedStringResource(
+                    "run.summary.with-gain",
+                    defaultValue: "\(text) \(gainedText)",
+                    comment: "Joins the run's status sentence to its blocks-gained sentence. The space is the sentence separator — adjust or replace for languages that join sentences differently.")
+            }
+            if let verdict = syncVerdict(syncEnding) {
+                // The verdict comes last — the run's history before what it
+                // concluded. Same dedicated-key join as `with-gain`, for the
+                // same reason: the seam itself is a key translators own.
+                text = LocalizedStringResource(
+                    "run.summary.with-ending",
+                    defaultValue: "\(text) \(verdict)",
+                    comment: "Joins the run's summary so far to its sync-ending sentence. The space is the sentence separator — adjust or replace for languages that join sentences differently.")
+            }
+            return text
         }
+    }
+
+    /// The sentence a real sync ending appends — `nil` for `notMeasured`,
+    /// which has nothing to add, and for `nodeStopped`, whose ending is
+    /// carried by the rewritten lead-in instead.
+    private static func syncVerdict(
+        _ ending: SyncEnding
+    ) -> LocalizedStringResource? {
+        switch ending {
+        case .notMeasured, .nodeStopped:
+            return nil
+        case .caughtUp:
+            // A watch that saw the catch-up earned the ending; a gate that
+            // found the node already there did not catch anything up.
+            return "Caught up with the tip."
+        case .alreadyAtTip:
+            return "Already at the tip."
+        case .stillSyncing:
+            // The budget figure stays out: naming it invites a question the
+            // sentence cannot answer, and "the run's time ran out" is honest.
+            return "Still syncing — the run's time ran out."
+        case let .noProgress(silentFor):
+            // The silence the state measured, not a fixed phrase — a watch
+            // that waited four minutes says so.
+            if let silentFor {
+                return "Made no progress for \(silentFor, format: summarySilenceFormat), so the watch ended."
+            }
+            return "Made no progress, so the watch ended."
+        case let .conditionsChanged(refusal):
+            guard let refusal else {
+                // An unnamed condition still owes the frame: mid-watch a
+                // drift ended the watch.
+                return "Conditions changed, so the watch ended."
+            }
+            return conditionVerdict(refusal, watched: true)
+        case let .watchRefused(refusal):
+            guard let refusal else {
+                // At the weigh-in nothing changed — the watch just never
+                // began.
+                return "Conditions did not allow the watch to start."
+            }
+            return conditionVerdict(refusal, watched: false)
+        }
+    }
+
+    /// The appended sentence a `conditionsChanged` ending names — each refusal
+    /// worded for the watch's own context (plan §3.6): `Refusal.message`'s
+    /// "so the node did not start" is a lie here, since the node did start,
+    /// is running, and is left running.
+    ///
+    /// `watched` picks the frame. A weigh-in refusal means the watch never
+    /// began — the condition reads present-tense ("is metered") because it
+    /// stands now. A mid-watch drift ended a watch that was running — the
+    /// condition reads as an event ("turned metered"). Thermal wording stays
+    /// level-agnostic: the weigh-in refuses at `.serious`, drift ends only
+    /// at `.critical`, and "too warm" is true of both.
+    private static func conditionVerdict(
+        _ refusal: NodePreflight.Refusal, watched: Bool
+    ) -> LocalizedStringResource {
+        switch refusal {
+        case .filesNotReadable:
+            return watched
+                ? "The node's files stopped being readable, so the watch ended."
+                : "The node's files cannot be read, so the watch did not start."
+        case .chainFolderMissing:
+            return watched
+                ? "There was nowhere left to write the chain data, so the watch ended."
+                : "There is nowhere to write the chain data, so the watch did not start."
+        case let .notEnoughDisk(freeBytes):
+            // The same platform formatting `Refusal.message` uses, for the same
+            // reason: the figure the device's storage screen shows, rendered in
+            // the dialog's own locale.
+            return watched
+                ? "Only \(freeBytes, format: .byteCount(style: .file)) of free space was left, so the watch ended."
+                : "Only \(freeBytes, format: .byteCount(style: .file)) of free space is left, so the watch did not start."
+        case .meteredNetwork:
+            return watched
+                ? "The network turned metered, so the watch ended."
+                : "The network is metered, so the watch did not start."
+        case .dataRestrictedNetwork:
+            return watched
+                ? "Low Data Mode came on, so the watch ended."
+                : "Low Data Mode is on, so the watch did not start."
+        case .overheating:
+            return watched
+                ? "The device got too warm, so the watch ended."
+                : "The device is too warm, so the watch did not start."
+        case .lowPowerMode:
+            return watched
+                ? "Low Power Mode switched on, so the watch ended."
+                : "Low Power Mode is on, so the watch did not start."
+        }
+    }
+
+    /// The card's detail line while the watch runs — one composed line per
+    /// state rather than two clauses competing for it (FR-003, plan §3.4).
+    /// The position clause always shows; the caller supplies `silentFor`
+    /// once the flat stretch is worth naming, and its presence both selects
+    /// the line and supplies the duration — when silence becomes worth a
+    /// clause is a leash decision, which stays out of the wording.
+    ///
+    /// A `LocalizedStringResource` like `summary(...)`: heights go in as raw
+    /// integers so the resolver applies the locale's digit grouping at
+    /// display time ("Block 843,210 of 915,000"), and the duration goes in
+    /// typed so the platform renders it in the dialog's own locale ("last
+    /// gain 3 min ago"). Seconds stay out of the unit set on purpose: the
+    /// clause exists only past a two-minute silence, where a seconds figure
+    /// would churn on every pass.
+    static func watchDetail(
+        height: Int, headers: Int, silentFor: Duration?
+    ) -> LocalizedStringResource {
+        if let silentFor {
+            return "Block \(height) of \(headers), last gain \(silentFor, format: detailSilenceFormat) ago"
+        }
+        return "Block \(height) of \(headers)"
     }
 
     // MARK: - The watch-entry gate
@@ -528,6 +751,104 @@ enum NodeAutomation {
         /// budget, or found a self-defined chain — where "still syncing" is
         /// ill-defined, so nothing is claimed rather than something vacuous.
         case notMeasured
+    }
+
+    /// How the run's sync question was answered — the full ending, exactly
+    /// once per run.
+    ///
+    /// The richer sibling of `SyncResult`: where the public axis collapses
+    /// the two frames a watch-adjacent ending can arrive in, this one keeps
+    /// them distinct — `caughtUp` (a watch saw the catch-up happen) versus
+    /// `alreadyAtTip` (the entry gate found the node there, no watch ran),
+    /// `conditionsChanged` (a condition ended a running watch) versus
+    /// `watchRefused` (the entry weigh-in said no — the watch never began).
+    /// The endings that need data carry it, so a combination that makes no
+    /// sense — a silence on `caughtUp`, a condition on `stillSyncing` —
+    /// cannot be constructed, and `watched` is derived rather than passed.
+    enum SyncEnding: Equatable {
+        /// The watch ran and saw the node reach the tip.
+        case caughtUp
+        /// The entry gate found the node already at the tip — no watch ran.
+        case alreadyAtTip
+        /// The run's budget ran out mid-watch with the node still behind.
+        case stillSyncing
+        /// Nothing advanced past a leash; carries the silence the state
+        /// measured, `nil` when no measured duration exists.
+        case noProgress(silentFor: Duration?)
+        /// The node was stopped from the app while the watch ran.
+        case nodeStopped
+        /// A device condition ended a running watch — the refusal that
+        /// caused it, `nil` when none is named.
+        case conditionsChanged(NodePreflight.Refusal?)
+        /// The entry weigh-in refused the watch — it never began.
+        case watchRefused(NodePreflight.Refusal?)
+        /// The run has no sync answer to give — see `SyncResult.notMeasured`.
+        case notMeasured
+
+        /// The ending on the public, Shortcuts-facing axis.
+        ///
+        /// The two frames of `caughtUp` and `conditionsChanged` collapse —
+        /// the public report's six cases — while the internal value keeps
+        /// them apart so the wording can say which actually happened.
+        var result: SyncResult {
+            switch self {
+            case .caughtUp, .alreadyAtTip: .caughtUp
+            case .stillSyncing: .stillSyncing
+            case .noProgress: .noProgress
+            case .nodeStopped: .nodeStopped
+            case .conditionsChanged, .watchRefused: .conditionsChanged
+            case .notMeasured: .notMeasured
+            }
+        }
+
+        /// Whether the run's watch actually ran. Derived from the ending
+        /// itself — never passed — so the card and the sentence can never
+        /// disagree about whether a watch happened.
+        var watched: Bool {
+            switch self {
+            case .caughtUp, .stillSyncing, .noProgress, .nodeStopped,
+                 .conditionsChanged:
+                true
+            case .alreadyAtTip, .watchRefused, .notMeasured:
+                false
+            }
+        }
+
+        /// The honest reading of a bare public `SyncResult` — used only for
+        /// a report that arrived without its ending (the `init()` path the
+        /// AppIntents machinery takes), which should never happen. Where a
+        /// non-watch variant exists the mapping picks it, so a fallthrough
+        /// understates rather than claims a watch that did not run.
+        init(collapsed result: SyncResult) {
+            switch result {
+            case .caughtUp: self = .alreadyAtTip
+            case .stillSyncing: self = .stillSyncing
+            case .noProgress: self = .noProgress(silentFor: nil)
+            case .nodeStopped: self = .nodeStopped
+            case .conditionsChanged: self = .watchRefused(nil)
+            case .notMeasured: self = .notMeasured
+            }
+        }
+    }
+
+    /// Whether an outcome and a sync ending can truthfully coexist in one
+    /// report.
+    ///
+    /// A real ending requires a run that measured a node: `.declined`,
+    /// `.didNotComeUp` and `.noAnswer` each claim no measurement was made,
+    /// which is false for any watch — a watch that stalls ends on the
+    /// *measured* report it already had, never a blanked `.noAnswer`
+    /// (FR-008, the plan's stop checklist). Enforced where the pair is
+    /// committed (`NodeRunReport`'s init) and where the wording is
+    /// produced, so the report's fields, the sentence and the card are
+    /// guarded by the same rule.
+    static func isCoherent(outcome: Outcome, ending: SyncEnding) -> Bool {
+        switch outcome {
+        case .started, .alreadyRunning:
+            return true
+        case .declined, .didNotComeUp, .noAnswer:
+            return ending == .notMeasured
+        }
     }
 
     /// What the first live reading says about the watch that could follow it.

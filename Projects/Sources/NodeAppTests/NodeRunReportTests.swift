@@ -64,7 +64,7 @@ struct NodeRunReportTests {
         // rendering, while `summary` is the resolved `String` a following
         // automation step compares against — both must read the same words.
         let report = NodeRunReport(
-            outcome: .started, syncResult: .notMeasured,
+            outcome: .started, syncEnding: .notMeasured,
             chain: "main", blockHeight: 900_000, blocksGainedThisRun: nil,
             dialogTemplate: "Node running on Mainnet at block \(900_000).")
         // The height is resolved through the device's locale, so the expected
@@ -176,7 +176,7 @@ struct NodeRunReportTests {
         // saying nobody watched — the same "absent means not measured" rule
         // every other number on the report follows.
         let declined = NodeRunReport(
-            outcome: .declined, syncResult: .notMeasured,
+            outcome: .declined, syncEnding: .notMeasured,
             chain: nil, blockHeight: nil, blocksGainedThisRun: nil,
             dialogTemplate: "The node did not start.")
         #expect(declined.syncResult == .notMeasured)
@@ -188,7 +188,7 @@ struct NodeRunReportTests {
         // Zero is a claim of its own — "watched, and nothing arrived" — which
         // must never read the same as an unwatched run's absent count.
         let watchedZero = NodeRunReport(
-            outcome: .alreadyRunning, syncResult: .noProgress,
+            outcome: .alreadyRunning, syncEnding: .noProgress(silentFor: nil),
             chain: "signet", blockHeight: 910, blocksGainedThisRun: 0,
             dialogTemplate: "A node was already running.")
         #expect(watchedZero.blocksGainedThisRun == 0)
@@ -201,13 +201,45 @@ struct NodeRunReportTests {
         // run watched arrive. A watch that found the node mid-recovery reports
         // both honestly: ten since the last check, three while watching.
         let report = NodeRunReport(
-            outcome: .alreadyRunning, syncResult: .stillSyncing,
+            outcome: .alreadyRunning, syncEnding: .stillSyncing,
             chain: "signet", blockHeight: 910,
             blocksSinceLastCheck: 10, blocksGainedThisRun: 3,
             dialogTemplate: "A node was already running.")
         #expect(report.syncResult == .stillSyncing)
         #expect(report.blocksSinceLastCheck == 10)
         #expect(report.blocksGainedThisRun == 3)
+    }
+
+    @Test("the report derives its public result from the stored ending")
+    func reportDerivesResultFromEnding() {
+        // One value flows in; the Shortcuts-facing collapse and the card's
+        // ending both read it — they cannot disagree about the frame.
+        let report = NodeRunReport(
+            outcome: .alreadyRunning, syncEnding: .watchRefused(.meteredNetwork),
+            chain: "main", blockHeight: 900_000, blocksGainedThisRun: nil,
+            dialogTemplate: "A node was already running.")
+        #expect(report.syncResult == .conditionsChanged)
+        #expect(report.syncEnding == .watchRefused(.meteredNetwork))
+    }
+
+    @Test("a report without an ending understates rather than claims a watch")
+    func syncEndingFallbackUnderstates() {
+        // The bare `init()` path is the AppIntents machinery's — a report
+        // that never stored its ending maps the public result to the
+        // variant that does not claim a watch ran.
+        var report = NodeRunReport()
+        report.syncResult = .caughtUp
+        #expect(report.syncEnding == .alreadyAtTip)
+        report.syncResult = .conditionsChanged
+        #expect(report.syncEnding == .watchRefused(nil))
+        report.syncResult = .stillSyncing
+        #expect(report.syncEnding == .stillSyncing)
+        report.syncResult = .noProgress
+        #expect(report.syncEnding == .noProgress(silentFor: nil))
+        report.syncResult = .nodeStopped
+        #expect(report.syncEnding == .nodeStopped)
+        report.syncResult = .notMeasured
+        #expect(report.syncEnding == .notMeasured)
     }
 }
 

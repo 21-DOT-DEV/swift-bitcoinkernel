@@ -383,13 +383,64 @@ results. Every task lands standalone.
   sweep, and the assembled reading → fraction → band chain (~150) ·
   `Sources/NodeApp/NodeAutomation.swift`,
   `Sources/NodeAppTests/NodeAutomationTests.swift` · needs T008
-- [ ] T015 Ending sentences and card wording — the five endings, the
+- [x] T015 Ending sentences and card wording — the five endings, the
   position clause always, the staleness clause once flat past the leash;
   every count-bearing sentence plural-aware (catalog variants or grammar
   agreement, never a hand-suffixed `s`), durations via `Duration.formatted` /
-  `RelativeDateTimeFormatter` (FR-003; verifies FR-003) (~150) ·
-  `Sources/NodeApp/NodeAutomation.swift`,
-  `Sources/NodeAppTests/NodeAutomationTests.swift` · needs T004
+  `RelativeDateTimeFormatter` (FR-003; verifies FR-003). Landed as: the
+  sync axis is one value, `NodeAutomation.SyncEnding` — eight cases where
+  each frame is a distinct case (`caughtUp` a watch saw it happen,
+  `alreadyAtTip` the entry gate found it; `conditionsChanged` mid-watch,
+  `watchRefused` the weigh-in) and the endings that name a detail carry
+  it (`noProgress`'s measured `silentFor`, the conditions' `Refusal`), so
+  a pairing that makes no sense cannot be constructed. `result` collapses
+  to the public six-case `SyncResult`, `watched` derives — neither is
+  passed anywhere. `NodeRunReport` stores the ending (optional beside
+  `dialogTemplate`), derives `syncResult` from it, and its `syncEnding`
+  accessor falls back through `init(collapsed:)` — mapped to the variants
+  that do not claim a watch ran — for the bare `init()` path. `isCoherent`
+  is the single rule — real endings require a measured outcome, an
+  unmeasured outcome carries only `notMeasured` — asserted at report init
+  with a `notMeasured` fallback rather than a trap (a crash takes the
+  node down, FR-009) and in `summary`/`ending` for direct calls; the
+  intent hands the card the same ending the sentence was built from.
+  Wording: real endings append a whole sentence at a sentence boundary
+  through the `run.summary.with-ending` join key, history first, verdict
+  last; `nodeStopped` alone rewrites the lead-in ("Node running" is a lie
+  once the app stops it — "last measured" instead). `notMeasured` keeps
+  the pre-watch sentence byte-identical (SC-005). `stillSyncing` omits
+  the budget figure; `noProgress` names the measured silence via typed
+  `Duration` (`summarySilenceFormat` — shared `static`s so tests cannot
+  drift from production); conditions worded per-case for the watch's own
+  context, weigh-in ("did not start", present-tense) vs mid-watch
+  ("ended", event-tense), since `Refusal.message`'s "so the node did not
+  start" is a lie mid-watch (plan §3.6). The card names the sync ending
+  (Caught up / Synced to tip / Still syncing / No progress / Node stopped
+  / Conditions changed / Watch not started) and fills iff `caughtUp`,
+  else the `notMeasured` outcome rule stands; titles stay plain `String`s
+  per the existing convention — the whole-set catalog pass is T035's.
+  `watchDetail(height:headers:silentFor:)` — one whole-line key per state,
+  `localizedAdditionalDescription`-terse ("Block 843,210 of 915,000" /
+  "…, last gain 3 min ago", `detailSilenceFormat`) — and `watchingTitle`
+  = plan §3.4's pinned "Syncing the Bitcoin node". All three
+  behind-count keys carry `%#@behind@` plural substitutions — identical
+  English, the count-bound slot a translator needs. Tests: each ending,
+  both `caughtUp` and conditions frames, every `Refusal` named in both
+  frames (incl. the typed `notEnoughDisk` figure) plus the unnamed
+  fallback in both, `nodeStopped` truthfulness, verdict ordering, the
+  byte-identical notMeasured regression, card titles and fill rule,
+  detail line both states and long-silence rendering, the
+  `SyncEnding`→`SyncResult`/`watched` mappings, the full
+  outcome×ending coherence table, and the report's conservative
+  fallback — all locale-free expectations via `formatted()` and the
+  shared styles (~300) ·
+  `Sources/NodeApp/NodeAutomation.swift`, `Sources/NodeApp/NodeRun.swift`,
+  `Sources/NodeApp/NodeRunReport.swift`,
+  `Sources/NodeApp/SyncNodeLongRunningIntent.swift`,
+  `Sources/NodeAppTests/NodeAutomationTests.swift`,
+  `Sources/NodeAppTests/NodeRunReportTests.swift`,
+  `Sources/NodeAppTests/ProgressMeterTests.swift`,
+  `Resources/NodeApp/Localizable.xcstrings` · needs T004
 - [ ] T016 Entry weigh-in `refusal(for:)` — the one-time full conditions
   check on paths that skipped preflight (`reportExistingNode`,
   `waitForStartingNode`); `filesReadable`/`chainFolderExists` inferred from
@@ -588,7 +639,14 @@ experiment landed.
   `String(localized:)`; `summary` stays `String`; count-bearing keys take
   String Catalog plural variants (or automatic grammar agreement); verify
   whether `AppShortcut` phrases need a dedicated `AppShortcuts.xcstrings` —
-  if so that follow-up is its own file (FR-003) (~200) ·
+  if so that follow-up is its own file. Includes every card title, which
+  T015 deliberately kept as plain `String`s per the existing convention —
+  one coherent pass, not a two-tier mix: "Node running", "Node already
+  running", "Node still starting", "Node did not answer", "Node not
+  started", and the ending titles "Caught up", "Synced to tip", "Still
+  syncing", "No progress", "Node stopped", "Conditions changed", "Watch
+  not started", plus the headlines "Syncing the Bitcoin node" /
+  "Checking the Bitcoin node" and the timed-out card (FR-003) (~200) ·
   `Sources/NodeApp/`, `Resources/NodeApp/` · needs T004, T015, T030
 
 **Checkpoint:** the action is wired end to end — constants, card text,
