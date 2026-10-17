@@ -196,10 +196,14 @@ non-network failure exits on the first attempt.
   probe both run inside the workspace, where repo-local config applies
   to the traced request.
 - **FR-008** The auth action emits a `::warning::` annotation — without
-  failing the job — when the job's `GITHUB_TOKEN` reports write access to
-  the repository (`permissions.push`), because only `contents: read` jobs
-  are meant to adopt it; an absent field or a failed API call is
-  inconclusive — a `::notice::`, never a misleading warning.
+  failing the job — when the job's `GITHUB_TOKEN` can push to the
+  repository (probed by `push --dry-run`: receive-pack ref-discovery is
+  the call every push makes first, run through the configured
+  extraheader — the capability itself, not a reporting field), because
+  only `contents: read` jobs are meant to adopt it; a probe that fails
+  without a push-permission refusal (unreachable, or the credential
+  absent/unacceptable — the 401 channel) is inconclusive — a
+  `::notice::`, never a misleading warning.
 - **FR-009** A static workflow lint — run by the ubuntu-only
   `workflow-lint` workflow (triggered on `.github/workflows/**`,
   `.github/actions/**`, and `.github/actionlint.yaml`) at PR time —
@@ -262,8 +266,8 @@ non-network failure exits on the first attempt.
   `GH_REPO` is set so `gh release upload` resolves the repo without
   one.
 - **A write-scoped job wired to auth by mistake** — the action warns
-  (`::warning::`) and continues; exclusion is by wiring, the
-  `permissions.push` check is the tripwire for drift.
+  (`::warning::`) and continues; exclusion is by wiring, the push-probe
+  check is the tripwire for drift.
 - **A second checkout or step adds another extraheader** — two
   `Authorization` headers make github.com answer a bare 400; checkout v6
   stores its credential in a separate repo-local file, so the count runs
@@ -274,10 +278,15 @@ non-network failure exits on the first attempt.
   checkout's own fetch carries both headers and fails with a 400 outright,
   not a warning: the pairing rule requires auth to *follow* every checkout
   in the job, not merely coexist with it.
-- **The `permissions.push` check can't determine the scope** — the field may
-  be absent for installation tokens, and the API call itself can fail on a
-  flaky network; either produces an inconclusive `::notice::`, never a
-  warning and never a failure.
+- **The scope probe can't determine the scope** — a `push --dry-run` can
+  fail without a push-permission refusal: flaky network or DNS, an image
+  whose git behaves differently, or a credential absent/unacceptable to
+  begin with (the 401 channel — git's `could not read`/`authentication
+  failed`). Any of these produces an inconclusive `::notice::`,
+  never a warning and never a failure. The repo object's
+  `permissions.push` field was rejected as the sensor: it reports a
+  *user's* rights and is structurally all-false for a job `GITHUB_TOKEN`
+  (an app installation token), so it could never report write.
 - **`docker-builds` fetches inside the container** — runner-level global
   git configuration cannot reach in-container clones, so the workflow is
   outside the auth layer's scope; `--disable-dependency-cache` still
