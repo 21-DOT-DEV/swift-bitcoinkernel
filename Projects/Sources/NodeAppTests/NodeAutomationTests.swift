@@ -1394,4 +1394,153 @@ struct NodeAutomationTests {
                 nodeStopped: false, caughtUp: false, conditionsChanged: false,
                 noProgress: false, budgetSpent: false) == nil)
     }
+
+    // MARK: - The bar's fraction and bands
+
+    /// Fractions are asserted against a small tolerance, not bitwise equality:
+    /// the band edges (0.10, 0.95) and the multiplied positions between them
+    /// are not exact in binary floating point.
+    private func approximately(_ a: Double, _ b: Double) -> Bool {
+        abs(a - b) < 0.000_001
+    }
+
+    @Test("the fraction is the distance this run closed toward the live tip")
+    func syncFractionMeasuresDistanceClosed() {
+        // Entered at 800,000, now at 800,050 of a live tip at 800,200: the run
+        // closed 50 of the 200 it had remaining — a quarter of the distance.
+        #expect(
+            approximately(
+                NodeAutomation.syncFraction(
+                    height: 800_050, baselineHeight: 800_000, liveHeaders: 800_200),
+                0.25))
+    }
+
+    @Test("the fraction is zero where the run began")
+    func syncFractionIsZeroAtEntry() {
+        #expect(
+            NodeAutomation.syncFraction(
+                height: 800_000, baselineHeight: 800_000, liveHeaders: 800_400) == 0)
+    }
+
+    @Test("the fraction is one when the height reaches the live tip")
+    func syncFractionIsOneAtTheTip() {
+        #expect(
+            NodeAutomation.syncFraction(
+                height: 800_200, baselineHeight: 800_000, liveHeaders: 800_200) == 1)
+    }
+
+    @Test("fresh headers grow the denominator — the same gain reads smaller")
+    func liveDenominatorShrinksTheFraction() {
+        // The tip is re-read each poll, so a denominator that moves mid-watch
+        // pulls the true fraction down rather than freezing at entry's size.
+        let before = NodeAutomation.syncFraction(
+            height: 800_050, baselineHeight: 800_000, liveHeaders: 800_200)
+        let after = NodeAutomation.syncFraction(
+            height: 800_050, baselineHeight: 800_000, liveHeaders: 800_400)
+        #expect(after < before)
+    }
+
+    @Test("a reorg below the entry height clamps the numerator at zero")
+    func reorgBelowBaselineClampsAtZero() {
+        // The height went backwards past where the run started — the run
+        // closed nothing, never a negative distance.
+        #expect(
+            NodeAutomation.syncFraction(
+                height: 799_950, baselineHeight: 800_000, liveHeaders: 800_400) == 0)
+    }
+
+    @Test("a node that has learned no gap yet reads zero — the floored denominator covers the cold-IBD window")
+    func noGapYetReadsZero() {
+        // Before the first headers arrive, `headers` still equals the entry
+        // height: the denominator floors at one and the bar holds at the band
+        // floor rather than dividing by nothing.
+        #expect(
+            NodeAutomation.syncFraction(
+                height: 800_000, baselineHeight: 800_000, liveHeaders: 800_000) == 0)
+    }
+
+    @Test("a height past headers reports the raw arithmetic — display clamping is the band's job")
+    func heightPastHeadersReportsRaw() {
+        // `headers < blocks` cannot come from a real node, but the function
+        // reports the arithmetic it was given — more than everything known —
+        // rather than silently clamping a measurement the caller may want to
+        // see.
+        #expect(
+            NodeAutomation.syncFraction(
+                height: 800_050, baselineHeight: 800_000, liveHeaders: 800_000) == 50)
+    }
+
+    @Test("the bands are the spec's start-up ~10% and working ceiling ~95%")
+    func bandEdgesAreTheSpecFigures() {
+        #expect(NodeAutomation.startUpBandEnd == 0.1)
+        #expect(NodeAutomation.watchBandEnd == 0.95)
+    }
+
+    @Test("every pre-watch write compresses into the start-up band")
+    func startUpBandCompressesWrites() {
+        // The milestones and the ramp alike map into the first tenth of the
+        // bar — the first-answer plateau's 0.9 lands at ~0.09, and a
+        // completion-equivalent 1.0 reaches the band's end, not the full bar.
+        #expect(NodeAutomation.startUpBand(0) == 0)
+        #expect(approximately(NodeAutomation.startUpBand(0.6), 0.06))
+        #expect(approximately(NodeAutomation.startUpBand(0.9), 0.09))
+        #expect(approximately(NodeAutomation.startUpBand(1), 0.1))
+    }
+
+    @Test("a stray pre-watch write is clamped inside the band")
+    func startUpBandClampsStrayWrites() {
+        #expect(NodeAutomation.startUpBand(-0.5) == 0)
+        #expect(approximately(NodeAutomation.startUpBand(1.5), 0.1))
+    }
+
+    @Test("the watch band's floor is where start-up left the bar")
+    func watchBandStartsWhereStartUpEnds() {
+        // A distance of zero parks the bar at the band floor — the honest
+        // display while the node has learned no gap yet.
+        #expect(
+            approximately(
+                NodeAutomation.watchBand(0), NodeAutomation.startUpBandEnd))
+    }
+
+    @Test("the watch band's top is the working ceiling, never the full bar")
+    func watchBandStopsAtTheCeiling() {
+        // A finished distance stops at ~95%: the last stretch is the reserve
+        // only an earned ending may fill.
+        #expect(approximately(NodeAutomation.watchBand(1), NodeAutomation.watchBandEnd))
+        #expect(NodeAutomation.watchBand(1) < 1)
+    }
+
+    @Test("the watch fraction sweeps the band in order")
+    func watchBandSweepsInOrder() {
+        #expect(approximately(NodeAutomation.watchBand(0.5), 0.525))
+        #expect(
+            NodeAutomation.watchBand(0.25) < NodeAutomation.watchBand(0.5)
+                && NodeAutomation.watchBand(0.5) < NodeAutomation.watchBand(0.75))
+    }
+
+    @Test("a fraction above one clamps at the ceiling, not past it")
+    func watchBandClampsPastOne() {
+        // The corrupt-reading fraction `syncFraction` can report lands at the
+        // ceiling — "more than everything known" displays as the band's top.
+        #expect(approximately(NodeAutomation.watchBand(50), NodeAutomation.watchBandEnd))
+    }
+
+    @Test("the assembled chain — a reading's sync fraction lands inside the watch band")
+    func fractionFeedsTheWatchBand() {
+        // Half the distance closed displays halfway through the band; the
+        // cold-IBD window (height and headers still at the entry figure)
+        // holds the bar at the band floor.
+        #expect(
+            approximately(
+                NodeAutomation.watchBand(
+                    NodeAutomation.syncFraction(
+                        height: 800_100, baselineHeight: 800_000, liveHeaders: 800_200)),
+                0.525))
+        #expect(
+            approximately(
+                NodeAutomation.watchBand(
+                    NodeAutomation.syncFraction(
+                        height: 800_000, baselineHeight: 800_000, liveHeaders: 800_000)),
+                NodeAutomation.startUpBandEnd))
+    }
 }
