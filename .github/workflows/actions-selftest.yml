@@ -1,0 +1,171 @@
+name: Actions self-test
+
+# Proves the local composite actions still detect what they claim to detect —
+# a gate that has only ever been green is unproven.
+#
+#   auth-smoke      — healthy path on both runner labels: the action's verdict
+#                     outputs are asserted AND the same facts re-derived
+#                     independently (an output contract can regress silently;
+#                     the measurable state cannot).
+#   write-scope     — canary granted contents: write so the scope probe's
+#                     can-push arm stays exercised; exempted from the
+#                     auth-lint write-scope rule via AUTH_LINT_EXEMPT.
+#   double-header   — adversarial: injects a repo-local second extraheader —
+#                     the state a checkout with persisted credentials produces —
+#                     and asserts the action reports it.
+#
+# Triggers: PRs and pushes to main that touch the actions or this file — the
+# only runs whose outcome speaks to a change — plus workflow_dispatch and a
+# weekly schedule: the send-path assertions parse git's trace format, which
+# only moves when a runner image does, and a scheduled run converts "the next
+# actions PR goes mysteriously red" into a proactive signal.
+#
+# If this workflow is ever added as a required check, the paths filters must
+# go — a required check skipped by path filtering stays Pending and blocks
+# unrelated PRs.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/actions/**
+      - .github/workflows/actions-selftest.yml
+  push:
+    branches: [main]
+    paths:
+      - .github/actions/**
+      - .github/workflows/actions-selftest.yml
+  workflow_dispatch:
+  schedule:
+    - cron: '17 6 * * 1'   # Monday 06:17 UTC — runner-image drift canary
+
+permissions: {}
+
+jobs:
+  auth-smoke:
+    name: Auth smoke (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-26, xcode-27]
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Authenticate github.com
+        id: auth
+        uses: ./.github/actions/github-git-auth
+        with:
+          token: ${{ github.token }}
+
+      - name: Assert action verdicts
+        env:
+          HEADER_COUNT: ${{ steps.auth.outputs.header_count }}
+          PROBE_STATUS: ${{ steps.auth.outputs.probe_status }}
+          SCOPE: ${{ steps.auth.outputs.scope }}
+        run: |
+          test "$HEADER_COUNT" = 1 || { echo "::error::header_count=$HEADER_COUNT, expected 1"; exit 1; }
+          test "$PROBE_STATUS" = ok || { echo "::error::probe_status=$PROBE_STATUS, expected ok"; exit 1; }
+          test "$SCOPE" = read-only || { echo "::error::scope=$SCOPE, expected read-only"; exit 1; }
+          echo "action verdicts: header_count=$HEADER_COUNT probe_status=$PROBE_STATUS scope=$SCOPE"
+
+      - name: Assert observables independently
+        run: |
+          COUNT=$(git config --includes --get-all http.https://github.com/.extraheader | grep -c . || true)
+          test "$COUNT" = 1 || { echo "::error::effective extraheader count $COUNT, expected 1"; exit 1; }
+          set +e
+          TRACE=$(GIT_TRACE_CURL=1 GIT_TRACE_CURL_NO_DATA=1 GIT_TERMINAL_PROMPT=0 \
+            git ls-remote "https://github.com/$GITHUB_REPOSITORY" HEAD 2>&1 >/dev/null)
+          RC=$?
+          set -e
+          test "$RC" = 0 || { echo "::error::independent ls-remote probe failed (rc=$RC)"; exit 1; }
+          REQUESTS=$(grep -cE '=> Send header: (GET|POST) ' <<<"$TRACE" || true)
+          AUTH_SENT=$(grep -ci '=> Send header: authorization:' <<<"$TRACE" || true)
+          test "$REQUESTS" -ge 1 || { echo "::error::trace captured no requests — inconclusive"; exit 1; }
+          test "$AUTH_SENT" = "$REQUESTS" || { echo "::error::$AUTH_SENT auth header(s) over $REQUESTS request(s)"; exit 1; }
+          echo "independently verified: $AUTH_SENT auth header(s) over $REQUESTS request(s)"
+
+  write-scope-canary:
+    name: Write-scope canary
+    runs-on: ubuntu-latest
+    # A write-capable job token must never reach a fork PR's code.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: write
+    env:
+      AUTH_LINT_EXEMPT: "deliberate write-scope canary — exercises the scope probe's can-push arm (FR-008)"
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Authenticate github.com
+        id: auth
+        uses: ./.github/actions/github-git-auth
+        with:
+          token: ${{ github.token }}
+
+      - name: Assert write-scope verdict
+        env:
+          SCOPE: ${{ steps.auth.outputs.scope }}
+          HEADER_COUNT: ${{ steps.auth.outputs.header_count }}
+          PROBE_STATUS: ${{ steps.auth.outputs.probe_status }}
+        run: |
+          test "$SCOPE" = can-push || { echo "::error::scope=$SCOPE, expected can-push — the probe's write arm is unproven"; exit 1; }
+          test "$HEADER_COUNT" = 1 || { echo "::error::header_count=$HEADER_COUNT, expected 1"; exit 1; }
+          test "$PROBE_STATUS" = ok || { echo "::error::probe_status=$PROBE_STATUS, expected ok"; exit 1; }
+          echo "scope canary: $SCOPE (the ::warning:: above is expected)"
+
+  double-header:
+    name: Double-header detection (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-26, xcode-27]
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Inject a second github.com credential
+        run: |
+          # The real footgun — a checkout with persisted credentials — lands a
+          # repo-local extraheader next to the action's global one. Reproduced
+          # deterministically: same observable state (effective count 2, two
+          # Authorization headers on the wire, github.com's bare 400) while
+          # this file's own checkout stays persist-credentials: false.
+          # Fidelity note: checkout v6 stores its credential in a separate file
+          # via a conditional include; this writes .git/config directly. Both
+          # land in the effective --includes view the count check reads, so
+          # detection is identical today — if a future checkout ever stores
+          # its credential where --includes can't see it, the count check
+          # itself is blind, not this test.
+          git config --local --add \
+            "http.https://github.com/.extraheader" \
+            "AUTHORIZATION: basic $(printf 'x-access-token:%s' 'selftest-bogus' | base64)"
+
+      - name: Authenticate github.com
+        id: auth
+        uses: ./.github/actions/github-git-auth
+        with:
+          token: ${{ github.token }}
+
+      - name: Assert the bad state is detected
+        env:
+          HEADER_COUNT: ${{ steps.auth.outputs.header_count }}
+          PROBE_STATUS: ${{ steps.auth.outputs.probe_status }}
+        run: |
+          test "$HEADER_COUNT" = 2 || { echo "::error::header_count=$HEADER_COUNT, expected 2 — injected duplicate undetected"; exit 1; }
+          test -n "$PROBE_STATUS" || { echo "::error::probe_status empty — the detector died before reporting"; exit 1; }
+          test "$PROBE_STATUS" != ok || { echo "::error::probe_status=$PROBE_STATUS — duplicate header passed the wire probe"; exit 1; }
+          echo "detection verified: header_count=$HEADER_COUNT probe_status=$PROBE_STATUS (warnings above are expected)"

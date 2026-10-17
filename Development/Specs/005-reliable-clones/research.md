@@ -411,8 +411,9 @@ proves the token is accepted, not that git sends the header, so a
 misconfigured key passes it; dropping the probe entirely — the bug class is
 silent degradation (anonymous and authenticated clones look identical until
 throttled), and warn-only annotations are the only signal that doesn't
-couple job health to the probe. A third warn-only check — the job token's
-write scope via `permissions.push` — is specified and justified in §9.
+couple job health to the probe. A third warn-only check — whether the
+job token can push, probed by `push --dry-run` in `verify-scope.sh` —
+is specified and justified in §9.
 
 ## 8. Hosting and slicing — local composite actions, seven prepare/apply PRs
 
@@ -434,7 +435,7 @@ the RELIABLE-CLONE shape this spec exists to correct.
 
 ## 9. Token scope — write-scoped jobs excluded, warn-guard as tripwire (FR-008)
 
-**Chosen: exclusion by wiring + a warn-only `permissions.push` check in the
+**Chosen: exclusion by wiring + a warn-only push-discovery probe in the
 action.** Spec review surfaced that `docc-release.yml`'s `release` job holds
 `contents: write` (for `gh release upload`) while fetching nothing — wiring
 auth into it would persist a write-scoped token in `~/.gitconfig` for the
@@ -446,17 +447,23 @@ API- or env-driven (`gh release upload`, `download-artifact`, version
 echoes), so the checkout's only effect today is persisting the write token
 via checkout's repo-local credential. Runtime detection is heuristic by necessity: GitHub
 exposes no token-permission introspection endpoint (security tooling like
-`patdown` exists specifically to probe that gap), so the action warns when
-`gh api repos/{repo}` `permissions.push` reports true — the repo object's
-`permissions` field is the effective-permission proxy. Fidelity for a
-job-scoped token is verified on the T008 branch by temporarily granting a
-throwaway job `contents: write`; if the field proves unreliable, the
-exclusion and pairing rule stand alone — the check degrades to a missed
-annotation, never a failure. Review added two edges: installation tokens
-may omit `permissions` entirely, and the API call itself can fail on a
-flaky network — either way the outcome is an inconclusive `::notice::`,
-never a misleading `::warning::` (a warning is emitted only on an
-affirmative `push == true`). With the checkout gone, `gh release upload`
+`patdown` exists specifically to probe that gap). The repo object's
+`permissions.push` field was the first sensor considered — and rejected:
+the field reports a *user's* rights on the repo and is structurally
+all-false for an app installation token, which every job `GITHUB_TOKEN`
+is, so it can never report write (semantic-release/github#182 hit the
+same wall). The probe instead measures the capability directly:
+`verify-scope.sh` runs `git push --dry-run` against the repo URL —
+receive-pack ref-discovery, the call every push makes first, performed
+through the extraheader the action just configured — and classifies
+success as `can-push` (warning), an auth refusal (403/denied) as
+`read-only`, and anything else as `inconclusive` (notice — never a
+misleading warning, never a failure; the exclusion and pairing rule
+stand alone regardless). The verdict publishes as the action's `scope`
+output, and `actions-selftest.yml`'s write-scope canary holds the write
+arm honest continuously — a same-repo-only job granted `contents: write`
+asserts `can-push` while the read-scoped jobs assert `read-only`, so
+wrong probe semantics fail loudly rather than silently. With the checkout gone, `gh release upload`
 needs repo context: current `gh` falls back to `GITHUB_REPOSITORY`, but
 `GH_REPO` is set explicitly — deterministic across gh versions (cli/cli#3557
 added the fallback; the explicit var works everywhere). Review also surfaced

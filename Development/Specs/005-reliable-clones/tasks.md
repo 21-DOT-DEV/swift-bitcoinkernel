@@ -25,14 +25,19 @@ is green; the index lists feature 005.
   `http.lowSpeedLimit`/`lowSpeedTime`, and a warn-only verify step per
   FR-007/FR-008 (the conditions those requirements own) (FR-001, FR-007,
   FR-008) · `.github/actions/github-git-auth/action.yml`
-- [ ] T009 `actions-selftest` workflow (runs on PRs touching
-  `.github/actions/**` *or the workflow file itself* — a path filter that
-  excludes `actions-selftest.yml` would leave its own edits unchecked —
+- [ ] T009 `actions-selftest` workflow (on PRs and pushes to `main`
+  touching `.github/actions/**` *or the workflow file itself* — a path
+  filter that excludes `actions-selftest.yml` would leave its own edits
+  unchecked — plus `workflow_dispatch` and a weekly `schedule`: the
+  send-path assertions parse git's trace format, which only moves when a
+  runner image does, so the scheduled run is the drift canary;
   matrix over `macos-26` *and* `xcode-27`, the two runner labels the
   actions actually serve: their git-version-dependent behavior is the
   thing under test) with the auth
   smoke case: `uses:` the auth action
-  on a real runner, then asserts FR-001/FR-007 observables — effective
+  on a real runner, then asserts FR-001/FR-007 observables two ways —
+  the action's declared verdict outputs (`header_count`, `probe_status`,
+  `scope`) and an independent re-derivation: effective
   `--includes` count of 1 and, in a step-scoped `GIT_TRACE_CURL`
   `ls-remote`, `=> Send header: authorization:` lines matching the
   `=> Send header: (GET|POST) ` request-line count with the request
@@ -40,8 +45,9 @@ is green; the index lists feature 005.
   emits two requests — GET `info/refs`, POST `git-upload-pack` —
   logs the header name exactly as configured, and HTTP/2 adds `==
   Info:` copies).
-  A second job granted `contents: write` asserts the FR-008 warning
-  fires — gated on `head.repo.full_name == github.repository` so it
+  A second job granted `contents: write` asserts the action's `scope`
+  output reports `can-push` — gated on `head.repo.full_name ==
+  github.repository` (non-PR events always qualify) so it
   runs only where the grant can take effect (fork tokens stay
   read-only regardless of the block, and an unconditional job would
   red every fork PR) — and carries `AUTH_LINT_EXEMPT` with a reason
@@ -49,16 +55,21 @@ is green; the index lists feature 005.
   (the checkout checks still apply to it). Its own
   checkout follows the FR-002 pairing it exercises.
   Workflow-level `permissions: {}` + job `contents: read` per the repo's
-  least-privilege convention. Before these assertions are written, a
-  throwaway scratch run settles two unknowns: `gh api repos/{repo}
-  --jq .permissions` in one read-scoped and one write-scoped job —
-  if the field is absent for a `GITHUB_TOKEN`, the canary assertion
-  degrades per research §9 rather than blocking the PR — and a stub
-  composite action whose inner step writes `attempts` to
-  `$GITHUB_OUTPUT` then exits nonzero, read by a later
-  `if: always()` step through `steps.<id>.outputs`, proving composite
-  outputs publish across an inner failure (T006's negative cases
-  depend on it).
+  least-privilege convention. A standing `double-header` job on the same
+  matrix replaces the planned red-first ceremony — the action already
+  exists on `main`, so no commit ordering produces red — by injecting a
+  repo-local second extraheader before the auth step and asserting the
+  verdict outputs report the bad state (`header_count=2`, `probe_status`
+  non-ok): the exact observable a persisted checkout credential produces,
+  reproduced while this file's own checkout stays
+  `persist-credentials: false`. The action gains the declared outputs
+  for this, and the scope check moves into `verify-scope.sh` so the
+  selftest can exercise it directly; FR-008's sensor is a
+  `push --dry-run` capability probe — the repo object's `permissions`
+  field is all-false for a job token and could never report write. The
+  composite-outputs-after-failure question is T006's: its own negative
+  cases are the experiment, with `$GITHUB_ENV`/temp-file evidence as
+  fallback if outputs don't publish across an inner failure.
   `.github/actionlint.yaml` gains `self-hosted-runner.labels:
   [xcode-27]` (a custom label actionlint's built-in list doesn't know
   — verified: `runner-label` errors on `flake-hunt:45` and the four
@@ -71,15 +82,17 @@ is green; the index lists feature 005.
   as clone failures downstream). Also,
   two pre-existing findings are fixed so the gate is green: drop the
   always-empty `${{ matrix.suffix }}` from `tuist-apps:13` (renders
-  identical names) and resolve `docc-release:195`'s SC2012 (fixed known
+  identical names) and resolve `docc-release`'s SC2012 (fixed known
   path — a `# shellcheck disable` comment, not a `find` rewrite). Lands
-  inside PR 2 — workflow commit pushed alone first so CI observes red
-  with the action missing (CI only ever tests the tip; one push of both
-  commits never shows red), action commit second (green) — plus the
-  `.github/AGENTS.md` inventory row (verifies FR-001, FR-007
+  inside PR 2 — green evidence is the workflow's own run, and the
+  `double-header` job is the standing proof the detectors detect — plus
+  the `.github/AGENTS.md` inventory row (verifies FR-001, FR-007
   mechanically) · `.github/workflows/actions-selftest.yml`,
   `.github/actionlint.yaml`, `.github/AGENTS.md`,
-  `workflows/{tuist-apps,docc-release}.yml` (lint fixes). Also the
+  `workflows/{tuist-apps,docc-release}.yml` (lint fixes),
+  `actions/github-git-auth/action.yml` (declared outputs; scope via
+  `verify-scope.sh`), `actions/github-git-auth/verify-scope.sh`, plus the
+  in-place FR-008 corrections across the 005 spec docs. Also the
   code-side pilot: run the Specs-README delta sweep on this PR's diff
   before it merges and record whether it caught anything the executable
   gates missed — that result decides if the rule earns a
@@ -203,8 +216,10 @@ git requests carry the Authorization header" line after checkout.
   `steps.<id>.outcome` under `always()` — `'failure'` on the negative
   cases AND `'success'` on the positives, since continue-on-error
   forces conclusion to success and outcome is the only real signal —
-  and the scratch-run pre-flight in T009 proves composite outputs
-  publish across an inner failure before these cases are written; an
+  and these negative cases are themselves the experiment proving
+  composite outputs publish across an inner failure, with
+  `$GITHUB_ENV` or a `$RUNNER_TEMP` file as the fallback channel if
+  they don't; an
   attempt-2+ success also
   emits `::warning::`
   and a summary line so retry frequency is measurable — and PR 5 also
@@ -350,7 +365,7 @@ invoke the action; logs show the attempt group format.
   | Token masking | auth step's log | FR-001's masking half | `***` wherever token material would print |
   | Effective header | step-scoped `GIT_TRACE_CURL`/`GIT_TRACE_CURL_NO_DATA` `ls-remote` probe plus an effective extraheader count via `--includes` inside the workspace | FR-001, FR-002, FR-007 | `Send header: Authorization` seen; count exactly 1 |
   | Auth teeth on the real call path | dedicated canary job carrying its own `timeout-minutes` (two generates plus resolves): checkout with `persist-credentials: false` → real auth step → normal `tuist generate` under `TUIST_CLONED_SOURCE_PACKAGES_DIR` → pin-check that `.derivedData/SourcePackages/checkouts` is non-empty → `git config --global --replace-all` swaps a bogus value into the same URL-scoped key → `git ls-remote` on the repo's own github.com remote must fail (control) → wipe only `$DERIVED_DATA/SourcePackages` → re-run the SAME `tuist generate` (the real call — a hand-invoked xcodebuild would prove only what nobody doubts) | the coverage premise behind FR-001's xcodebuild clause | run 2 fails auth-shaped in the workspace-resolution phase — read by log and pinned dir, not exit code alone: green is ambiguous (repopulated `checkouts/` → the chain ignores the config → the canary fails the design; stayed empty → inconclusive, investigate, don't count); a plugin-phase failure means the warm-resolution assumption broke — run one's plugin phase warms `.build` deliberately |
-  | Warn-guard | throwaway job temporarily granted `contents: write` | FR-008 | warning fires iff the job's token reports write, including whether the field is present; absent field → `::notice::` |
+  | Warn-guard | `actions-selftest.yml`'s write-scope canary — a standing same-repo job granted `contents: write`, asserting the action's `scope` output | FR-008 | `scope=can-push` on every run where the canary executes (skipped on fork PRs by design); a probe that fails without a push-permission refusal → `inconclusive`/`::notice::` |
   | Flag acceptance | `swift test`/`generate-documentation`/xcodebuild in the wired jobs | FR-003 mechanically | all accept their cache and provider flags — the manifest's argument propagation into the internal resolve is the load-bearing half |
   | `.build`-local clones | generate log | FR-003 | clones write under `.build`, not the shared cache |
   | Retry-then-success | counter-file case: attempt 1 signature-fails, attempt 2 exits 0 | FR-005, FR-006 | `outputs.attempts == '2'`, step green |

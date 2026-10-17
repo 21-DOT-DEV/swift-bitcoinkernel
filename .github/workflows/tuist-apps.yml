@@ -10,7 +10,7 @@ permissions: {}
 
 jobs:
   apps:
-    name: ${{ matrix.app }} (${{ matrix.platform }})${{ matrix.suffix }}
+    name: ${{ matrix.app }} (${{ matrix.platform }})
     # The xcode-27 image (public preview) is the only runner carrying the iOS 27
     # SDK — the toolchain the long-running action needs to compile at all.
     # Xcode 27 is the demo apps' declared minimum toolchain: there is no

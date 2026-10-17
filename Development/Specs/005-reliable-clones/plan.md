@@ -86,9 +86,10 @@ Three independent mechanisms, one per layer of the failure:
    extraheader (masked), sets `http.lowSpeedLimit 1024` / `lowSpeedTime 60`
    (dead transfers self-abort instead of crawling), then a warn-only
    verification per FR-007/FR-008 — workspace-local extraheader count,
-   `GIT_TRACE_CURL` send-path probe, and a write-scope check via
-   `permissions.push` (GitHub has no token-introspection endpoint; the
-   field is the effective-permission proxy). The token is masked in both
+   `GIT_TRACE_CURL` send-path probe, and a write-scope check via a
+   `push --dry-run` capability probe (GitHub has no token-introspection
+   endpoint, and the repo object's `permissions.push` is all-false for a
+   job token — the probe measures the capability itself). The token is masked in both
    forms per FR-001.
    Pairing per FR-002 and its edge cases:
    `persist-credentials: false` on every checkout and the auth step after
@@ -165,8 +166,10 @@ architecture.
       fail auth-shaped in its workspace-resolve phase — proving the
       whole chain (env hops → manifest args → selected provider) reads
       the config file rather than ignoring it (SC-001)
-- [ ] The write-scope check behaves per FR-008 — verified once against a
-      throwaway job temporarily granted `contents: write` (SC-001)
+- [ ] The write-scope check behaves per FR-008 — verified continuously by
+      `actions-selftest.yml`'s same-repo `contents: write` canary, which
+      asserts `scope=can-push` while the read-scoped jobs assert
+      `read-only` (SC-001)
 - [ ] An attempt failing with a fetch signature is retried and a later
       attempt leaves the step green, per SC-002's evidence (SC-002)
 - [ ] A generate step failing on a non-network error exits on attempt 1 with

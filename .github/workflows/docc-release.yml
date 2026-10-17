@@ -200,6 +200,7 @@ jobs:
             echo ""
             echo "- **Release**: \`$RELEASE_TAG\`"
             for target in Bitcoin BitcoinKernel; do
+              # shellcheck disable=SC2012
               SIZE=$(ls -lh docs/${target}.doccarchive.zip | awk '{print $5}')
               SHA=$(shasum -a 256 docs/${target}.doccarchive.zip | awk '{print $1}')
               echo ""
