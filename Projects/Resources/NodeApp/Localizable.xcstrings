@@ -64,7 +64,35 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "A node was already running on %1$@ at block %2$lld, %3$lld behind."
+            "value" : "A node was already running on %1$@ at block %2$lld, %#@behind@."
+          },
+          "substitutions" : {
+            "behind" : {
+              "argNum" : 3,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "new",
+                      "value" : "%arg behind"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "new",
+                      "value" : "%arg behind"
+                    }
+                  },
+                  "zero" : {
+                    "stringUnit" : {
+                      "state" : "new",
+                      "value" : "%arg behind"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -83,6 +111,17 @@
     "Accept Inbound Connections" : {
 
     },
+    "Already at the tip." : {
+      "comment" : "Appended to the run's sentence when the entry gate found the node already at the tip — no watch ran.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Already at the tip."
+          }
+        }
+      }
+    },
     "Already running" : {
 
     },
@@ -91,6 +130,28 @@
     },
     "Best block" : {
 
+    },
+    "Block %lld of %lld" : {
+      "comment" : "The progress card's detail line while the watch runs. %1$lld is the node's block height, %2$lld the best header height — the live tip it is catching up to.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Block %1$lld of %2$lld"
+          }
+        }
+      }
+    },
+    "Block %lld of %lld, last gain %@ ago" : {
+      "comment" : "Detail line while the watch runs, once nothing has advanced for a while. %3$@ is a formatted duration (e.g. \"3 min\").",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Block %1$lld of %2$lld, last gain %3$@ ago"
+          }
+        }
+      }
     },
     "Block data" : {
 
@@ -113,6 +174,17 @@
     "Caught up" : {
 
     },
+    "Caught up with the tip." : {
+      "comment" : "Appended to the run's sentence when the watch saw the node reach the tip.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Caught up with the tip."
+          }
+        }
+      }
+    },
     "Chain" : {
 
     },
@@ -124,6 +196,28 @@
     },
     "Conditions changed" : {
 
+    },
+    "Conditions changed, so the watch ended." : {
+      "comment" : "Appended to the run's sentence when device conditions ended or refused the watch and no specific condition was reported.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Conditions changed, so the watch ended."
+          }
+        }
+      }
+    },
+    "Conditions did not allow the watch to start." : {
+      "comment" : "Appended to the run's sentence when the entry weigh-in refused the watch on unnamed conditions — the watch never began.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Conditions did not allow the watch to start."
+          }
+        }
+      }
     },
     "Configuration" : {
 
@@ -207,11 +301,77 @@
     "Logs" : {
 
     },
+    "Low Data Mode came on, so the watch ended." : {
+      "comment" : "Appended to the run's sentence when Low Data Mode switched on mid-watch.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Low Data Mode came on, so the watch ended."
+          }
+        }
+      }
+    },
     "Low Data Mode is on for this network, so the node did not start." : {
 
     },
+    "Low Data Mode is on, so the watch did not start." : {
+      "comment" : "Appended to the run's sentence when Low Data Mode was already on at the entry weigh-in — the watch never began.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Low Data Mode is on, so the watch did not start."
+          }
+        }
+      }
+    },
     "Low Power Mode is on, so the node did not start." : {
 
+    },
+    "Low Power Mode is on, so the watch did not start." : {
+      "comment" : "Appended to the run's sentence when Low Power Mode was already on at the entry weigh-in — the watch never began.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Low Power Mode is on, so the watch did not start."
+          }
+        }
+      }
+    },
+    "Low Power Mode switched on, so the watch ended." : {
+      "comment" : "Appended to the run's sentence when Low Power Mode switched on mid-watch.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Low Power Mode switched on, so the watch ended."
+          }
+        }
+      }
+    },
+    "Made no progress for %@, so the watch ended." : {
+      "comment" : "Appended to the run's sentence when nothing advanced long enough to end the watch. %1$@ is a formatted duration (e.g. \"4 minutes\") — how long nothing advanced.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Made no progress for %1$@, so the watch ended."
+          }
+        }
+      }
+    },
+    "Made no progress, so the watch ended." : {
+      "comment" : "Appended to the run's sentence when nothing advanced long enough to end the watch and no measured duration is available.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Made no progress, so the watch ended."
+          }
+        }
+      }
     },
     "Max Connections" : {
 
@@ -258,7 +418,35 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Node running on %1$@ at block %2$lld, %3$lld behind."
+            "value" : "Node running on %1$@ at block %2$lld, %#@behind@."
+          },
+          "substitutions" : {
+            "behind" : {
+              "argNum" : 3,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "new",
+                      "value" : "%arg behind"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "new",
+                      "value" : "%arg behind"
+                    }
+                  },
+                  "zero" : {
+                    "stringUnit" : {
+                      "state" : "new",
+                      "value" : "%arg behind"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -286,8 +474,30 @@
     "Not measured" : {
 
     },
+    "Only %@ of free space is left, so the watch did not start." : {
+      "comment" : "Appended to the run's sentence when the entry weigh-in refused the watch for lack of disk. %1$@ is the formatted free-space figure.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Only %1$@ of free space is left, so the watch did not start."
+          }
+        }
+      }
+    },
     "Only %@ of free space is left, which is too little to sync safely, so the node did not start." : {
       "comment" : "Refusal dialog when the disk has too little room to start a node. %@ is the free space, formatted by the platform (e.g. '400 MB')."
+    },
+    "Only %@ of free space was left, so the watch ended." : {
+      "comment" : "Appended to the run's sentence when free space ran out mid-watch. %1$@ is the formatted free-space figure.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Only %1$@ of free space was left, so the watch ended."
+          }
+        }
+      }
     },
     "Outcome" : {
 
@@ -343,6 +553,18 @@
         }
       }
     },
+    "run.summary.with-ending" : {
+      "comment" : "Joins the run's summary so far to its sync-ending sentence. The space is the sentence separator — adjust or replace for languages that join sentences differently.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ %2$@"
+          }
+        }
+      }
+    },
     "run.summary.with-gain" : {
       "comment" : "Joins the run's status sentence to its blocks-gained sentence. The space is the sentence separator — adjust or replace for languages that join sentences differently.",
       "extractionState" : "extracted_with_value",
@@ -388,6 +610,17 @@
     "Still syncing" : {
 
     },
+    "Still syncing — the run's time ran out." : {
+      "comment" : "Appended to the run's sentence when the run's time budget ran out with the node still behind.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Still syncing — the run's time ran out."
+          }
+        }
+      }
+    },
     "Stop Node" : {
 
     },
@@ -418,8 +651,52 @@
     "The current network is metered — cellular, or a link shared from another phone — and syncing can use gigabytes, so the node did not start." : {
 
     },
+    "The device got too warm, so the watch ended." : {
+      "comment" : "Appended to the run's sentence when the device's temperature ended the watch mid-run.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The device got too warm, so the watch ended."
+          }
+        }
+      }
+    },
     "The device is too warm to sync right now, so the node did not start." : {
 
+    },
+    "The device is too warm, so the watch did not start." : {
+      "comment" : "Appended to the run's sentence when the device was already too warm at the entry weigh-in — the watch never began.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The device is too warm, so the watch did not start."
+          }
+        }
+      }
+    },
+    "The network is metered, so the watch did not start." : {
+      "comment" : "Appended to the run's sentence when a metered network refused the watch at the entry weigh-in — the watch never began.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The network is metered, so the watch did not start."
+          }
+        }
+      }
+    },
+    "The network turned metered, so the watch ended." : {
+      "comment" : "Appended to the run's sentence when the network became metered mid-watch.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The network turned metered, so the watch ended."
+          }
+        }
+      }
     },
     "The node did not answer, so nothing was measured." : {
       "comment" : "Dialog sentence when a background run could not get a usable answer from the node — including an answer discarded because the run was stopped or the node shut down mid-question."
@@ -430,8 +707,80 @@
     "The node had not come up yet, so nothing was measured." : {
       "comment" : "Dialog sentence when a background run ended while the node was still starting. Deliberately does not say who started it."
     },
+    "The node was stopped from the app — last measured on %@ at block %lld, %lld behind." : {
+      "comment" : "The whole lead-in when the node was stopped from the app mid-watch — replaces the 'running' sentence, which would no longer be true. %1$@ is the chain's display name, %2$lld the last measured block height, %3$lld how many headers were still ahead.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The node was stopped from the app — last measured on %1$@ at block %2$lld, %#@behind@."
+          },
+          "substitutions" : {
+            "behind" : {
+              "argNum" : 3,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "new",
+                      "value" : "%arg behind"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "new",
+                      "value" : "%arg behind"
+                    }
+                  },
+                  "zero" : {
+                    "stringUnit" : {
+                      "state" : "new",
+                      "value" : "%arg behind"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "The node was stopped from the app — last measured on %@ at block %lld." : {
+      "comment" : "The whole lead-in when the node was stopped from the app mid-watch, with nothing left to download. %1$@ is the chain's display name, %2$lld the last measured block height.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The node was stopped from the app — last measured on %1$@ at block %2$lld."
+          }
+        }
+      }
+    },
     "The node's files are not readable until the phone is unlocked once after a restart, so the node did not start." : {
 
+    },
+    "The node's files cannot be read, so the watch did not start." : {
+      "comment" : "Appended to the run's sentence when the node's files were unreadable at the entry weigh-in — the watch never began.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The node's files cannot be read, so the watch did not start."
+          }
+        }
+      }
+    },
+    "The node's files stopped being readable, so the watch ended." : {
+      "comment" : "Appended to the run's sentence when the node's files became unreadable mid-watch.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The node's files stopped being readable, so the watch ended."
+          }
+        }
+      }
     },
     "The private network was not ready, so the node did not start. It is being established now; try again shortly." : {
       "comment" : "Refusal dialog when a background run needed Tor but it was still starting. The 'being established' clause is only shown while the Tor setting is still on."
@@ -441,6 +790,28 @@
     },
     "There is nowhere to write the blockchain data, so the node did not start." : {
 
+    },
+    "There is nowhere to write the chain data, so the watch did not start." : {
+      "comment" : "Appended to the run's sentence when there was no chain folder at the entry weigh-in — the watch never began.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "There is nowhere to write the chain data, so the watch did not start."
+          }
+        }
+      }
+    },
+    "There was nowhere left to write the chain data, so the watch ended." : {
+      "comment" : "Appended to the run's sentence when the chain folder became unwritable mid-watch.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "There was nowhere left to write the chain data, so the watch ended."
+          }
+        }
+      }
     },
     "Tip age" : {
 
