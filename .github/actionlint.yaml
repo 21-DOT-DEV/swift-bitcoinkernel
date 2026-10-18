@@ -12,3 +12,10 @@ paths:
   .github/workflows/docc-release.yml:
     ignore:
       - 'specifying action "\$/[^"]*" in invalid format'
+
+# `xcode-27` is this repo's GitHub-hosted larger-runner label, not a built-in
+# one — without this, every `runs-on: xcode-27` is flagged as an unknown
+# self-hosted label.
+self-hosted-runner:
+  labels:
+    - xcode-27

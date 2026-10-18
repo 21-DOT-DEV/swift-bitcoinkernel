@@ -33,6 +33,17 @@ inputs:
     description: Token used to authenticate github.com git requests (pass github.token)
     required: true
 
+outputs:
+  header_count:
+    description: 'Effective github.com extraheader count observed in-workspace via --includes (healthy: 1).'
+    value: ${{ steps.verify.outputs.header_count }}
+  probe_status:
+    description: 'Send-path probe verdict: ok | mismatch | inconclusive | failed.'
+    value: ${{ steps.verify.outputs.probe_status }}
+  scope:
+    description: 'Job-token scope verdict from verify-scope.sh: can-push | read-only | inconclusive.'
+    value: ${{ steps.verify.outputs.scope }}
+
 runs:
   using: composite
   steps:
@@ -72,9 +83,8 @@ runs:
     # step exists to catch. A failure in one check must not skip the rest, so
     # every read is individually guarded.
     - name: Verify
+      id: verify
       shell: bash
-      env:
-        GH_TOKEN: ${{ inputs.token }}
       run: |
         echo "::group::Effective header count"
         # Two counts, two scopes. Effective (--includes, inside the workspace)
@@ -85,15 +95,21 @@ runs:
         # run anonymous) — also expect 1.
         GLOBAL_COUNT=$(git config --global --get-all \
           "http.https://github.com/.extraheader" 2>/dev/null | grep -c . || true)
-        HEADERS=$(git -C "$GITHUB_WORKSPACE" config --includes --show-origin \
-          --get-all "http.https://github.com/.extraheader" 2>/dev/null || true)
+        # --get-regexp --name-only: print which scope/file each entry lives in
+        # — the diagnostic that matters — and never the credential values; a
+        # foreign credential in config would otherwise print unmasked in the
+        # log. (--name-only pairs with --get-regexp, not --get-all.)
+        HEADERS=$(git -C "$GITHUB_WORKSPACE" config --includes \
+          --show-scope --show-origin --name-only \
+          --get-regexp '^http\.https://github\.com/\.extraheader$' 2>/dev/null || true)
         COUNT=$(grep -c . <<<"$HEADERS" || true)
+        echo "header_count=$COUNT" >> "$GITHUB_OUTPUT"
         if [ "$COUNT" -ne 1 ]; then
           echo "::warning::expected exactly 1 effective github.com extraheader, found $COUNT — zero means clones run anonymous; two or more means github.com answers a bare 400"
-          [ -n "$HEADERS" ] && printf 'configured values:\n%s\n' "$HEADERS"
+          [ -n "$HEADERS" ] && printf 'configured at:\n%s\n' "$HEADERS"
         elif [ "$GLOBAL_COUNT" -ne 1 ]; then
           echo "::warning::effective count is 1 but the GLOBAL count is $GLOBAL_COUNT — the only header lives in repo-local config, so out-of-repo clones run anonymous"
-          printf 'configured values:\n%s\n' "$HEADERS"
+          printf 'configured at:\n%s\n' "$HEADERS"
         else
           printf 'exactly 1 effective github.com extraheader\n'
         fi
@@ -119,27 +135,35 @@ runs:
           echo "::warning::probe ls-remote failed (rc=$PROBE_RC) — cannot confirm the header reached the wire"
         fi
         if [ "$REQUESTS" -eq 0 ]; then
+          PROBE_STATUS=inconclusive
           echo "::warning::trace captured no requests — header check inconclusive"
         elif [ "$AUTH_SENT" -ne "$REQUESTS" ]; then
+          PROBE_STATUS=mismatch
           echo "::warning::$AUTH_SENT Authorization header(s) across $REQUESTS request(s) — expected exactly one per request"
+        elif [ "$PROBE_RC" -ne 0 ]; then
+          PROBE_STATUS=failed
         elif [ "$PROBE_RC" -eq 0 ]; then
+          PROBE_STATUS=ok
           echo "github.com git requests carry the Authorization header"
+        fi
+        echo "probe_status=$PROBE_STATUS" >> "$GITHUB_OUTPUT"
+        if [ "$PROBE_STATUS" != ok ]; then
+          echo "::group::ls-remote trace (non-ok: $PROBE_STATUS)"
+          # headers-only trace (NO_DATA), values redacted by git — evidence for
+          # the warning lands in the log instead of needing a re-run.
+          printf '%s\n' "$TRACE"
+          echo "::endgroup::"
         fi
         echo "::endgroup::"
 
         echo "::group::Token scope"
         # This action is meant for contents: read jobs; a write-scoped token
         # persisted in ~/.gitconfig is worth a tripwire. GitHub has no
-        # token-introspection endpoint — the repo object's permissions field is
-        # the effective-permission proxy. Warn ONLY on an affirmative write: an
-        # absent field or a failed call is inconclusive, not a violation.
-        if ! PUSH=$(gh api "repos/$GITHUB_REPOSITORY" --jq '.permissions.push' 2>/dev/null); then
-          echo "::notice::token scope check inconclusive — repository API call failed"
-        elif [ "$PUSH" = "true" ]; then
-          echo "::warning::job's GITHUB_TOKEN reports write access (permissions.push) — this action is meant for contents: read jobs"
-        elif [ "$PUSH" = "false" ]; then
-          echo "job token is read-scoped"
-        else
-          echo "::notice::token scope check inconclusive — permissions.push absent from repository response"
-        fi
+        # token-introspection endpoint and the repo object's permissions field
+        # reports a *user's* rights — structurally all-false for a job token,
+        # so it can never report write — so the probe asks git itself instead:
+        # `push --dry-run` performs receive-pack ref-discovery (the call every
+        # push makes first) through the extraheader just configured. Warn-only:
+        # inconclusive annotates, never fails.
+        "$GITHUB_ACTION_PATH/verify-scope.sh"
         echo "::endgroup::"
