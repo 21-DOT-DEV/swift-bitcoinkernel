@@ -94,6 +94,10 @@ enum NodePreflight {
         /// The single sentence a person sees, kept beside the case so adding a
         /// reason cannot compile without wording.
         ///
+        /// Every sentence ends "did not start" — true only on the decline
+        /// path. A `conditionsChanged` ending on a running node takes the
+        /// watch's own wording (plan §3.6), never these.
+        ///
         /// A template, not a rendered string: the actions hand it to
         /// `IntentDialog` unresolved, so the system's own rendering localizes it
         /// — the run's job is done in-process, but the sentence is read wherever
@@ -154,6 +158,12 @@ enum NodePreflight {
     /// Both network conditions are checked, and ahead of the two "makes things
     /// worse" conditions, because spending someone's mobile data allowance without
     /// asking is the one outcome here that costs them money rather than battery.
+    ///
+    /// Shared with the watch's entry weigh-in (`NodeAutomation.entryWeighIn`),
+    /// which calls this with `filesReadable`/`chainFolderExists` pinned
+    /// satisfied — an answering node already proved both — so the order and
+    /// thresholds here are the weigh-in's bar too: a budgeted run on an
+    /// already-answering node is refused for the same reasons a start is.
     static func refusal(
         for conditions: DeviceConditions,
         minimumFreeDiskBytes: Int64 = minimumFreeDiskBytes

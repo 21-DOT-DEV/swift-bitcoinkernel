@@ -921,6 +921,65 @@ enum NodeAutomation {
         return .decline(.caughtUp)
     }
 
+    // MARK: - The entry weigh-in
+
+    /// The one-time conditions check a run owes the paths that skipped
+    /// preflight — `reportExistingNode` and `waitForStartingNode` — once the
+    /// gate admits and before the watch commits (FR-012).
+    ///
+    /// Preflight's exemption — report or wait without weighing conditions —
+    /// was written for a quick read: a run that read an answering node and
+    /// left spent nothing the conditions guard. A run carrying a watch budget
+    /// is different: committing means up to ~15 minutes of polling while the
+    /// node keeps validating, so the weigh-in applies the same bar a start
+    /// would face — `NodePreflight.refusal(for:)`, unchanged, order and
+    /// thresholds alike — once, before the first watch pass. The unbudgeted
+    /// path never reaches it (FR-014).
+    ///
+    /// Two conditions are deliberately not re-read: `filesReadable` and
+    /// `chainFolderExists` are pinned satisfied because the weigh-in only ever
+    /// runs while holding a live reading — a node answering RPCs has already
+    /// proven it read the chain — so both are settled by position rather than
+    /// measured again, and `prepareChainFolder()`'s filesystem write is never
+    /// spent. The five facts that remain are the caller's to gather, actor-free:
+    /// `freeDiskBytes` read directly, `thermalState` and `lowPowerModeEnabled`
+    /// from `ProcessInfo`, and the network pair from
+    /// `NetworkCostMonitor.first()` bounded at ~2 s — never `current`, which
+    /// fails open exactly when the weigh-in runs, on a cold background launch
+    /// before the first report lands (research §5). No `UIApplication` read —
+    /// `isProtectedDataAvailable` is main-actor — which is what the deferred
+    /// non-isolated `perform()` needs (plan §3.6).
+    ///
+    /// Every refusal maps to one ending: `conditionsChanged` naming the
+    /// condition — never a `declined` report, since the node is already
+    /// running and stays running, and "did not start" would be a lie (FR-005).
+    /// Battery saver refuses here, exactly as preflight refuses a start under
+    /// it — FR-011's "already on at entry is accepted" is the drift check's
+    /// delta rule for a committed watch, not an admission: a watch is minutes
+    /// of sustained work the mode was switched on to avoid, and ending the run
+    /// is the one step that relieves it — the app suspends, which freezes the
+    /// in-process daemon.
+    static func entryWeighIn(
+        lowPowerModeEnabled: Bool,
+        networkIsMetered: Bool,
+        networkIsDataRestricted: Bool,
+        thermalState: ProcessInfo.ThermalState,
+        freeDiskBytes: Int64?,
+        minimumFreeDiskBytes: Int64 = NodePreflight.minimumFreeDiskBytes
+    ) -> NodePreflight.Refusal? {
+        NodePreflight.refusal(
+            for: .init(
+                // Settled by position, not measured: a run only reaches the
+                // weigh-in while holding the node's first answer.
+                filesReadable: true, chainFolderExists: true,
+                lowPowerModeEnabled: lowPowerModeEnabled,
+                networkIsMetered: networkIsMetered,
+                networkIsDataRestricted: networkIsDataRestricted,
+                thermalState: thermalState,
+                freeDiskBytes: freeDiskBytes),
+            minimumFreeDiskBytes: minimumFreeDiskBytes)
+    }
+
     // MARK: - The sync watch's memory
 
     /// The most a watch tolerates with no fresh reading — or flat readings that

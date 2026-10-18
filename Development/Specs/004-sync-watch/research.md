@@ -257,10 +257,12 @@ is dead peers, a lost network, a wedged validation thread.
 - **Metered network and Low Data Mode are absolute.** They spend money/data
   continuously and are never consented to anywhere in the app — a watch that
   finds one ends the same pass, entry included.
-- **Low Power Mode: entry-state vs. delta.** Already on at entry is a standing
-  preference — ending on it would silently remove the feature for everyone who
-  leaves it on, on every run. Switched on mid-watch is a drift and ends the
-  watch.
+- **Low Power Mode: entry-state vs. delta.** Already on when the watch
+  commits is a standing preference — ending on it would punish a committed
+  watch for a state it was admitted under. The entry weigh-in refuses the
+  mode outright, the same bar a start faces, so the preference only ever
+  arrives via the start path — the mode flipped on between preflight and the
+  commit. Switched on mid-watch is a drift and ends the watch.
 - **Thermal: `.critical` only.** `.serious` is reached routinely by fifteen
   minutes of validation on a locked phone — aborting there would make the
   headline behavior "runs four minutes, then stops because the phone got warm."

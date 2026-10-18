@@ -1171,6 +1171,140 @@ struct NodeAutomationTests {
                 within: .seconds(60)))
     }
 
+    // MARK: - The entry weigh-in
+
+    /// The weigh-in's healthy baseline — every parameter a measured fact the
+    /// gather supplies. The two file conditions have no parameter at all: a
+    /// node answering RPCs has already proven it read the chain, so the
+    /// weigh-in pins both satisfied rather than re-reading them (and never
+    /// spends `prepareChainFolder()`'s write).
+    private func weighIn(
+        lowPowerModeEnabled: Bool = false,
+        networkIsMetered: Bool = false,
+        networkIsDataRestricted: Bool = false,
+        thermalState: ProcessInfo.ThermalState = .nominal,
+        freeDiskBytes: Int64? = NodePreflight.minimumFreeDiskBytes * 8
+    ) -> NodePreflight.Refusal? {
+        NodeAutomation.entryWeighIn(
+            lowPowerModeEnabled: lowPowerModeEnabled,
+            networkIsMetered: networkIsMetered,
+            networkIsDataRestricted: networkIsDataRestricted,
+            thermalState: thermalState,
+            freeDiskBytes: freeDiskBytes)
+    }
+
+    @Test("a healthy device lets the run commit to the watch")
+    func weighInHealthyProceeds() {
+        #expect(weighIn() == nil)
+    }
+
+    @Test("a metered network refuses the watch, exactly as it refuses a start")
+    func weighInMetered() {
+        #expect(weighIn(networkIsMetered: true) == .meteredNetwork)
+    }
+
+    @Test("a data-restricted network refuses the watch even when it is not metered")
+    func weighInDataRestricted() {
+        #expect(weighIn(networkIsDataRestricted: true) == .dataRestrictedNetwork)
+    }
+
+    @Test("battery saver refuses the weigh-in — the start bar applies at watch entry")
+    func weighInLowPowerMode() {
+        // FR-011's "accepted" is the drift check's delta rule — a watch that
+        // committed is not punished for having had it on — not an admission.
+        // A watch is minutes of sustained work the mode was switched on to
+        // avoid, and ending the run is the one step that relieves it (the app
+        // suspends, freezing the in-process daemon).
+        #expect(weighIn(lowPowerModeEnabled: true) == .lowPowerMode)
+    }
+
+    @Test("the weigh-in refuses at serious heat — the entry bar, not the drift check's critical-only")
+    func weighInThermalEntryBar() {
+        for state: ProcessInfo.ThermalState in [.serious, .critical] {
+            #expect(weighIn(thermalState: state) == .overheating)
+        }
+        for state: ProcessInfo.ThermalState in [.nominal, .fair] {
+            #expect(weighIn(thermalState: state) == nil)
+        }
+    }
+
+    @Test("too little free space refuses the watch and reports how much is left")
+    func weighInNotEnoughDisk() {
+        let free = NodePreflight.minimumFreeDiskBytes / 2
+        #expect(weighIn(freeDiskBytes: free) == .notEnoughDisk(freeBytes: free))
+    }
+
+    @Test("free space at the floor commits, and unknown space never refuses")
+    func weighInDiskBoundary() {
+        #expect(weighIn(freeDiskBytes: NodePreflight.minimumFreeDiskBytes) == nil)
+        #expect(
+            weighIn(freeDiskBytes: NodePreflight.minimumFreeDiskBytes - 1)
+                == .notEnoughDisk(freeBytes: NodePreflight.minimumFreeDiskBytes - 1))
+        // The answering node proves the chain folder exists, but the disk read
+        // itself can still fail — unknown is never treated as too little.
+        #expect(weighIn(freeDiskBytes: nil) == nil)
+    }
+
+    @Test("the weigh-in keeps the preflight order — the most fundamental reason wins, battery saver last")
+    func weighInSharedPriority() {
+        // The order is `refusal(for:)`'s own — the weigh-in delegates rather
+        // than restating it, so the most-fundamental-first contract cannot
+        // drift between the two call sites.
+        #expect(
+            weighIn(networkIsMetered: true, freeDiskBytes: 0)
+                == .notEnoughDisk(freeBytes: 0))
+        #expect(
+            weighIn(lowPowerModeEnabled: true, thermalState: .serious)
+                == .overheating)
+        #expect(
+            weighIn(lowPowerModeEnabled: true, networkIsMetered: true)
+                == .meteredNetwork)
+    }
+
+    @Test("an answering node settles the file checks — the weigh-in is the start bar, verbatim")
+    func weighInFileConditionsUnreachable() {
+        // An exhaustive sweep: `filesReadable`/`chainFolderExists` are pinned
+        // satisfied inside the function, so across every input the weigh-in is
+        // exactly `refusal(for:)` on those synthesized conditions — the same
+        // bar a start faces, which is FR-012's whole point.
+        for thermal: ProcessInfo.ThermalState in [.nominal, .fair, .serious, .critical] {
+            for lowPower in [false, true] {
+                for metered in [false, true] {
+                    for restricted in [false, true] {
+                        for disk in [nil, 0, NodePreflight.minimumFreeDiskBytes] {
+                            #expect(
+                                weighIn(
+                                    lowPowerModeEnabled: lowPower,
+                                    networkIsMetered: metered,
+                                    networkIsDataRestricted: restricted,
+                                    thermalState: thermal,
+                                    freeDiskBytes: disk)
+                                    == NodePreflight.refusal(for: .init(
+                                        filesReadable: true, chainFolderExists: true,
+                                        lowPowerModeEnabled: lowPower,
+                                        networkIsMetered: metered,
+                                        networkIsDataRestricted: restricted,
+                                        thermalState: thermal,
+                                        freeDiskBytes: disk)))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test("the disk floor is injectable, like the preflight's")
+    func weighInDiskFloorInjection() {
+        let free = NodePreflight.minimumFreeDiskBytes * 2
+        #expect(
+            NodeAutomation.entryWeighIn(
+                lowPowerModeEnabled: false, networkIsMetered: false,
+                networkIsDataRestricted: false, thermalState: .nominal,
+                freeDiskBytes: free,
+                minimumFreeDiskBytes: free * 2)
+                == .notEnoughDisk(freeBytes: free))
+    }
+
     // MARK: - SyncWatchState
 
     /// A state entered on the given reading at `t0`; tests advance the clock by
