@@ -1305,6 +1305,115 @@ struct NodeAutomationTests {
                 == .notEnoughDisk(freeBytes: free))
     }
 
+    // MARK: - The mid-watch drift check
+
+    /// The drift check's healthy baseline — the three reads a pass gathers
+    /// (the monitor's `current` answer, the thermal level, Low Power Mode
+    /// now) plus the committed watch's snapshot of the last. Defaults
+    /// describe a device nothing has drifted on.
+    private func drift(
+        network: NetworkCost = .init(isMetered: false, isDataRestricted: false),
+        thermalState: ProcessInfo.ThermalState = .nominal,
+        lowPowerModeEnabled: Bool = false,
+        lowPowerModeAtEntry: Bool = false
+    ) -> NodePreflight.Refusal? {
+        NodeAutomation.driftedCondition(
+            network: network, thermalState: thermalState,
+            lowPowerModeEnabled: lowPowerModeEnabled,
+            lowPowerModeAtEntry: lowPowerModeAtEntry)
+    }
+
+    @Test("a clean pass keeps the watch running")
+    func driftHealthyKeepsWatching() {
+        #expect(drift() == nil)
+    }
+
+    @Test("an unanswered network report reads as not costly — the monitor's fail-open rule")
+    func driftUnknownNetworkKeepsWatching() {
+        // `current` never waits: before the first report lands it answers
+        // `.unknown`, and the drift check reads it as "not costly" — the
+        // deliberate fail-open, the same stance the weigh-in takes on
+        // unknown free space.
+        #expect(drift(network: .unknown) == nil)
+    }
+
+    @Test("a metered network ends the watch the pass it appears")
+    func driftMetered() {
+        #expect(
+            drift(network: .init(isMetered: true, isDataRestricted: false))
+                == .meteredNetwork)
+        // Money conditions are absolute — never weighed against the entry
+        // snapshot the power-mode delta uses.
+        #expect(
+            drift(
+                network: .init(isMetered: true, isDataRestricted: false),
+                lowPowerModeEnabled: true, lowPowerModeAtEntry: true)
+                == .meteredNetwork)
+    }
+
+    @Test("Low Data Mode ends the watch even when the network is not metered")
+    func driftDataRestricted() {
+        #expect(
+            drift(network: .init(isMetered: false, isDataRestricted: true))
+                == .dataRestrictedNetwork)
+    }
+
+    @Test("only critical heat ends the watch — serious is routine on a validating phone")
+    func driftThermalBarIsCriticalOnly() {
+        #expect(drift(thermalState: .critical) == .overheating)
+        // The mid-watch bar sits one level above the entry bar: the
+        // weigh-in refuses at `.serious`, the drift check does not.
+        for state: ProcessInfo.ThermalState in [.nominal, .fair, .serious] {
+            #expect(drift(thermalState: state) == nil)
+        }
+    }
+
+    @Test("Low Power Mode switched on mid-watch ends the run")
+    func driftLowPowerSwitchOn() {
+        #expect(drift(lowPowerModeEnabled: true) == .lowPowerMode)
+        // A sub-critical heat level standing on the same pass does not
+        // suppress the delta — `.serious` ends nothing and eats nothing.
+        #expect(
+            drift(thermalState: .serious, lowPowerModeEnabled: true)
+                == .lowPowerMode)
+    }
+
+    @Test("Low Power Mode already on at commit is a standing preference, not drift")
+    func driftLowPowerAtEntryIsAccepted() {
+        // Reachable only as a post-consent flip — the mode switched on in
+        // the window between whichever consent ran (preflight or the
+        // weigh-in) and the commit (research §5). A committed watch is not
+        // punished for it.
+        #expect(
+            drift(lowPowerModeEnabled: true, lowPowerModeAtEntry: true) == nil)
+    }
+
+    @Test("Low Power Mode switching off mid-watch is no condition to end on")
+    func driftLowPowerSwitchOff() {
+        #expect(
+            drift(lowPowerModeEnabled: false, lowPowerModeAtEntry: true) == nil)
+    }
+
+    @Test("when several conditions hold, the most fundamental is named — the weigh-in's order")
+    func driftSharedPriority() {
+        // Money before heat before the power preference — `refusal(for:)`'s
+        // relative order over the checked subset, so the named condition is
+        // the one that matters most.
+        #expect(
+            drift(
+                network: .init(isMetered: true, isDataRestricted: true),
+                thermalState: .critical, lowPowerModeEnabled: true)
+                == .meteredNetwork)
+        #expect(
+            drift(
+                network: .init(isMetered: false, isDataRestricted: true),
+                thermalState: .critical, lowPowerModeEnabled: true)
+                == .dataRestrictedNetwork)
+        #expect(
+            drift(thermalState: .critical, lowPowerModeEnabled: true)
+                == .overheating)
+    }
+
     // MARK: - SyncWatchState
 
     /// A state entered on the given reading at `t0`; tests advance the clock by

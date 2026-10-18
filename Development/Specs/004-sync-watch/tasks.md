@@ -436,11 +436,22 @@ results. Every task lands standalone.
   condition (FR-010, FR-011, FR-012; verifies FR-012) (~150) ·
   `Sources/NodeApp/NodeAutomation.swift`, `NodePreflight.swift`,
   `Sources/NodeAppTests/NodeAutomationTests.swift` · needs T009
-- [ ] T017 Per-pass drift — reads `NetworkCostMonitor.shared.current` (never
+- [x] T017 Per-pass drift — reads `NetworkCostMonitor.shared.current` (never
   waits), `thermalState`, `isLowPowerModeEnabled`, nothing else; metered and
   Low Data Mode are absolute, thermal only `.critical`, Low Power Mode only
   as a delta from the entry snapshot; returns the condition, not a sentence
-  (FR-010, FR-011; verifies FR-010, FR-011) (~120) ·
+  (FR-010, FR-011; verifies FR-010, FR-011). Landed as specced — the spike
+  never reached the watch, so nothing was re-derived; two calls the written
+  task left open were settled on review.
+  `driftedCondition(network:thermalState:lowPowerModeEnabled:lowPowerModeAtEntry:)`
+  takes the network pair whole as the `NetworkCost` `current` returns — the
+  weigh-in only split it to rebuild a `DeviceConditions`, which the drift
+  check deliberately never builds — and answers in `NodePreflight.Refusal`,
+  the vocabulary `SyncEnding.conditionsChanged` and `conditionVerdict`'s
+  mid-watch wording already speak; a narrower type would have bought
+  precision nobody consumes. The named condition follows `refusal(for:)`'s
+  relative order over the checked subset — money before heat before the
+  power preference (~160) ·
   `Sources/NodeApp/NodeAutomation.swift`,
   `Sources/NodeAppTests/NodeAutomationTests.swift` · needs T009
 
