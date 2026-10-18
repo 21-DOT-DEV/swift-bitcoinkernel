@@ -954,7 +954,7 @@ enum NodeAutomation {
     /// condition — never a `declined` report, since the node is already
     /// running and stays running, and "did not start" would be a lie (FR-005).
     /// Battery saver refuses here, exactly as preflight refuses a start under
-    /// it — FR-011's "already on at entry is accepted" is the drift check's
+    /// it — FR-011's "already on at entry is accepted" is `driftedCondition`'s
     /// delta rule for a committed watch, not an admission: a watch is minutes
     /// of sustained work the mode was switched on to avoid, and ending the run
     /// is the one step that relieves it — the app suspends, which freezes the
@@ -978,6 +978,55 @@ enum NodeAutomation {
                 thermalState: thermalState,
                 freeDiskBytes: freeDiskBytes),
             minimumFreeDiskBytes: minimumFreeDiskBytes)
+    }
+
+    // MARK: - The mid-watch drift check
+
+    /// The device condition that ends a running watch this pass, if any —
+    /// the drift half of the conditions pair `entryWeighIn` opens (FR-010,
+    /// FR-011).
+    ///
+    /// The gather is deliberately narrower than the weigh-in's: the caller
+    /// reads `NetworkCostMonitor.shared.current` — which never waits, and
+    /// whose `.unknown` answer fails open as "not costly" — plus
+    /// `thermalState` and `isLowPowerModeEnabled` off `ProcessInfo`, and
+    /// nothing else. No `first()` wait, no filesystem write, no disk read:
+    /// the once-per-run weigh-in can afford those, a ~180-pass watch cannot
+    /// (research §5). Files and disk stay preflight-only past entry.
+    ///
+    /// Three rules, each shaped differently from the entry bar where the
+    /// spec says so:
+    ///
+    /// - **Money conditions are absolute** — a metered link or Low Data
+    ///   Mode spends something continuously and is consented to nowhere, so
+    ///   either ends the run the pass it appears.
+    /// - **Thermal trips only at `.critical`** — `.serious` is routine on a
+    ///   phone that has been validating for minutes and ends nothing here;
+    ///   the weigh-in's `.serious` refusal is the entry bar, not this one.
+    /// - **Low Power Mode drifts only as a delta** — already on when the
+    ///   watch committed is a standing preference, not a change: every
+    ///   consent to the watch — preflight on the start path, the weigh-in
+    ///   on the others — refuses the mode outright, so it only ever arrives
+    ///   flipped on between that consent and the commit
+    ///   (`SyncWatchState.lowPowerModeAtEntry` is the snapshot the delta is
+    ///   measured against). Switched on mid-watch ends the run.
+    ///
+    /// The answer is the `Refusal` the ending names — `nil` keeps the watch
+    /// running. When several hold on one pass, the reported one follows
+    /// `refusal(for:)`'s relative order over the checked subset — money
+    /// before heat before the power preference — so the named condition is
+    /// the one that matters most.
+    static func driftedCondition(
+        network: NetworkCost,
+        thermalState: ProcessInfo.ThermalState,
+        lowPowerModeEnabled: Bool,
+        lowPowerModeAtEntry: Bool
+    ) -> NodePreflight.Refusal? {
+        if network.isMetered { return .meteredNetwork }
+        if network.isDataRestricted { return .dataRestrictedNetwork }
+        if thermalState == .critical { return .overheating }
+        if lowPowerModeEnabled && !lowPowerModeAtEntry { return .lowPowerMode }
+        return nil
     }
 
     // MARK: - The sync watch's memory
@@ -1055,9 +1104,9 @@ enum NodeAutomation {
         /// here.
         let baselineHeaders: Int
 
-        /// Low Power Mode as it read when the watch committed — the drift
-        /// check's baseline: already on at entry is a standing preference, so
-        /// only a mid-watch switch-on ends the watch.
+        /// Low Power Mode as it read when the watch committed —
+        /// `driftedCondition`'s baseline: already on at entry is a standing
+        /// preference, so only a mid-watch switch-on ends the watch.
         let lowPowerModeAtEntry: Bool
 
         /// The bounds the leashes trip at — the spec figures by default,
