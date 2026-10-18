@@ -123,7 +123,10 @@ struct ProgressMeterTests {
     func earnedFinishFills() {
         let (progress, meter) = makeMeter()
         meter.advance(to: 0.4)
-        meter.finish(NodeAutomation.ending(outcome: .started, summary: "read 42 blocks"))
+        meter.finish(
+            NodeAutomation.ending(
+                outcome: .started, syncEnding: .notMeasured,
+                summary: "read 42 blocks"))
         #expect(progress.completedUnitCount == 100)
         #expect(progress.localizedAdditionalDescription == "read 42 blocks")
     }
@@ -134,7 +137,9 @@ struct ProgressMeterTests {
         let (progress, meter) = makeMeter()
         meter.advance(to: 0.4)
         meter.finish(
-            NodeAutomation.ending(outcome: .declined, summary: "Low Power Mode is on."))
+            NodeAutomation.ending(
+                outcome: .declined, syncEnding: .notMeasured,
+                summary: "Low Power Mode is on."))
         #expect(progress.completedUnitCount == 40)
         #expect(progress.localizedDescription.isEmpty == false)
         #expect(progress.localizedAdditionalDescription == "Low Power Mode is on.")
@@ -158,7 +163,10 @@ struct ProgressMeterTests {
         // unable to drag the bar back — the rule is structural, not call order.
         let (progress, meter) = makeMeter()
         meter.tick()
-        meter.finish(NodeAutomation.ending(outcome: .started, summary: "done"))
+        meter.finish(
+            NodeAutomation.ending(
+                outcome: .started, syncEnding: .notMeasured,
+                summary: "done"))
         meter.tick()
         #expect(progress.completedUnitCount == 100)
     }

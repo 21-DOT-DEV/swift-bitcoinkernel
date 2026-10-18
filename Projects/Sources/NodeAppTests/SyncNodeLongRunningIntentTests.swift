@@ -42,7 +42,7 @@ struct SyncNodeLongRunningIntentTests {
         _ outcome: NodeRunOutcome, _ dialogTemplate: LocalizedStringResource
     ) -> NodeRunReport {
         NodeRunReport(
-            outcome: outcome, syncResult: .notMeasured,
+            outcome: outcome, syncEnding: .notMeasured,
             chain: "main", blockHeight: 42, blocksGainedThisRun: nil,
             dialogTemplate: dialogTemplate)
     }

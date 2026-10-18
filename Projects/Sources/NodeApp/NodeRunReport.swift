@@ -226,6 +226,12 @@ struct NodeRunReport: TransientAppEntity {
     /// contract keeps `summary` the resolved `String`. Absent only on a report
     /// built through `init()`, which the AppIntents machinery alone uses.
     var dialogTemplate: LocalizedStringResource?
+    /// The run's full sync ending, kept beside the collapsed `syncResult`
+    /// field so the summary sentence and the card read the same value —
+    /// whether a watch ran is not something either guesses at. Optional for
+    /// the same reason `dialogTemplate` is: the AppIntents machinery builds
+    /// the report through `init()`.
+    private var resolvedSyncEnding: NodeAutomation.SyncEnding?
 
     /// The text the actions put in `IntentDialog` — the stored template when
     /// the report carries one, else the already-resolved sentence passed
@@ -244,20 +250,31 @@ struct NodeRunReport: TransientAppEntity {
             comment: "Fallback for a report built by the AppIntents machinery: the summary arrives already rendered and passes through verbatim — there is nothing to translate.")
     }
 
+    /// The run's full sync ending — the same value the summary sentence was
+    /// built from, so the card can never disagree with it about whether a
+    /// watch ran. Every report the intents actually see comes from
+    /// `NodeRun`, so the fallback never runs; where it might, it maps the
+    /// public `syncResult` to the variant that does not claim a watch ran
+    /// (`caughtUp` → `alreadyAtTip`, `conditionsChanged` → `watchRefused`),
+    /// understating rather than inventing a watch.
+    var syncEnding: NodeAutomation.SyncEnding {
+        resolvedSyncEnding ?? .init(collapsed: syncResult.plain)
+    }
+
     var displayRepresentation: DisplayRepresentation {
         DisplayRepresentation(title: dialogText)
     }
 
     init() {}
 
-    /// `syncResult` and `blocksGainedThisRun` carry no defaults on purpose: a
-    /// producer that omitted one would still compile and report "not measured"
-    /// for a run that watched — plausible, and wrong. Requiring both is the
-    /// same compile-forcing `NodeRunOutcome`'s two-way mapping keeps for
-    /// endings: every report states its sync answer.
+    /// `syncEnding` and `blocksGainedThisRun` carry no defaults on purpose: a
+    /// producer that omitted one would still compile and report "not
+    /// measured" for a run that watched — plausible, and wrong. Requiring
+    /// both is the same compile-forcing `NodeRunOutcome`'s two-way mapping
+    /// keeps for endings: every report states its sync answer.
     init(
         outcome: NodeRunOutcome,
-        syncResult: NodeSyncResult,
+        syncEnding: NodeAutomation.SyncEnding,
         chain: String?,
         blockHeight: Int?,
         blocksBehind: Int? = nil,
@@ -267,8 +284,18 @@ struct NodeRunReport: TransientAppEntity {
         dialogTemplate: LocalizedStringResource
     ) {
         self.init()
+        var ending = syncEnding
+        if !NodeAutomation.isCoherent(outcome: outcome.plain, ending: ending) {
+            // A mismatch means a producer claimed a watch answer on a run
+            // that measured nothing. Loud in debug, silent in release:
+            // crashing here would take the process — and the node inside
+            // it — down (FR-009). Claiming nothing is the honest fallback.
+            assertionFailure("\(outcome) cannot carry \(ending)")
+            ending = .notMeasured
+        }
         self.outcome = outcome
-        self.syncResult = syncResult
+        self.syncResult = NodeSyncResult(ending.result)
+        self.resolvedSyncEnding = ending
         self.chain = chain
         self.blockHeight = blockHeight
         self.blocksBehind = blocksBehind

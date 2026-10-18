@@ -149,7 +149,12 @@ struct SyncNodeLongRunningIntent: LongRunningIntent, CancellableIntent {
             case .none where !Task.isCancelled:
                 meter.finish(
                     NodeAutomation.ending(
-                        outcome: report.outcome.plain, summary: report.summary))
+                        outcome: report.outcome.plain,
+                        // The ending the run stored — the same value the
+                        // summary sentence was built from, so the card can
+                        // never disagree with it about whether a watch ran.
+                        syncEnding: report.syncEnding,
+                        summary: report.summary))
             case .userCancelled:
                 // The person dismissed the card — it needs no epitaph.
                 break

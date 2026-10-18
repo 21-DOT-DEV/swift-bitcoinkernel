@@ -400,7 +400,8 @@ struct NodeAutomationTests {
         // one the way the system's dialog would.
         let text = String(
             localized: NodeAutomation.summary(
-                outcome: .declined, chain: "main", height: 5, blocksBehind: nil,
+                outcome: .declined, syncEnding: .notMeasured,
+                chain: "main", height: 5, blocksBehind: nil,
                 blocksSinceLastCheck: nil, declinedReason: "Low Power Mode is on."))
         #expect(text == "Low Power Mode is on.")
     }
@@ -409,7 +410,8 @@ struct NodeAutomationTests {
     func summaryDidNotComeUp() {
         let text = String(
             localized: NodeAutomation.summary(
-                outcome: .didNotComeUp, chain: "main", height: 5, blocksBehind: nil,
+                outcome: .didNotComeUp, syncEnding: .notMeasured,
+                chain: "main", height: 5, blocksBehind: nil,
                 blocksSinceLastCheck: nil, declinedReason: nil))
         #expect(text.contains("had not come up"))
         #expect(text.contains("nothing was measured"))
@@ -425,7 +427,8 @@ struct NodeAutomationTests {
         // question was in flight. Either way, nothing usable was measured.
         let text = String(
             localized: NodeAutomation.summary(
-                outcome: .noAnswer, chain: "main", height: 5, blocksBehind: nil,
+                outcome: .noAnswer, syncEnding: .notMeasured,
+                chain: "main", height: 5, blocksBehind: nil,
                 blocksSinceLastCheck: nil, declinedReason: nil))
         #expect(text.contains("did not answer"))
         #expect(text.contains("nothing was measured"))
@@ -438,7 +441,8 @@ struct NodeAutomationTests {
     func summaryStarted() {
         let text = String(
             localized: NodeAutomation.summary(
-                outcome: .started, chain: "main", height: 900_000, blocksBehind: 12,
+                outcome: .started, syncEnding: .notMeasured,
+                chain: "main", height: 900_000, blocksBehind: 12,
                 blocksSinceLastCheck: 3, declinedReason: nil))
         // The node's "main" wire name is mapped to the display name before a
         // person reads it.
@@ -448,8 +452,8 @@ struct NodeAutomationTests {
         // the grouped figure still fails if the code ever strings the number
         // through a fixed-locale formatter instead.
         #expect(text.contains(900_000.formatted()))
-        #expect(text.contains("12 behind"))
-        #expect(text.contains("3 new blocks"))
+        #expect(text.contains("\(12.formatted()) behind"))
+        #expect(text.contains("\(3.formatted()) new blocks"))
     }
 
     @Test("chain wire names map to display names; unknown ones pass through")
@@ -462,7 +466,8 @@ struct NodeAutomationTests {
         ] {
             let text = String(
                 localized: NodeAutomation.summary(
-                    outcome: .started, chain: wire, height: 10, blocksBehind: nil,
+                    outcome: .started, syncEnding: .notMeasured,
+                    chain: wire, height: 10, blocksBehind: nil,
                     blocksSinceLastCheck: nil, declinedReason: nil))
             #expect(text.contains("on \(display)"))
         }
@@ -470,14 +475,16 @@ struct NodeAutomationTests {
         // shown verbatim rather than dropped or mislabeled.
         let unknown = String(
             localized: NodeAutomation.summary(
-                outcome: .started, chain: "scalenet", height: 10, blocksBehind: nil,
+                outcome: .started, syncEnding: .notMeasured,
+                chain: "scalenet", height: 10, blocksBehind: nil,
                 blocksSinceLastCheck: nil, declinedReason: nil))
         #expect(unknown.contains("scalenet"))
         // "testnet4" is the tempting mislabel: *a* testnet, but not the
         // "Testnet" the settings picker offers — verbatim is honest.
         let testnet4 = String(
             localized: NodeAutomation.summary(
-                outcome: .started, chain: "testnet4", height: 10, blocksBehind: nil,
+                outcome: .started, syncEnding: .notMeasured,
+                chain: "testnet4", height: 10, blocksBehind: nil,
                 blocksSinceLastCheck: nil, declinedReason: nil))
         #expect(testnet4.contains("testnet4"))
         #expect(testnet4.contains("Testnet ") == false)
@@ -487,7 +494,8 @@ struct NodeAutomationTests {
     func summaryCaughtUp() {
         let text = String(
             localized: NodeAutomation.summary(
-                outcome: .started, chain: "main", height: 900_000, blocksBehind: 0,
+                outcome: .started, syncEnding: .notMeasured,
+                chain: "main", height: 900_000, blocksBehind: 0,
                 blocksSinceLastCheck: nil, declinedReason: nil))
         #expect(text.contains("behind") == false)
     }
@@ -496,11 +504,13 @@ struct NodeAutomationTests {
     func summaryZeroVersusUnknownGain() {
         let measuredZero = String(
             localized: NodeAutomation.summary(
-                outcome: .started, chain: "main", height: 10, blocksBehind: nil,
+                outcome: .started, syncEnding: .notMeasured,
+                chain: "main", height: 10, blocksBehind: nil,
                 blocksSinceLastCheck: 0, declinedReason: nil))
         let notMeasured = String(
             localized: NodeAutomation.summary(
-                outcome: .started, chain: "main", height: 10, blocksBehind: nil,
+                outcome: .started, syncEnding: .notMeasured,
+                chain: "main", height: 10, blocksBehind: nil,
                 blocksSinceLastCheck: nil, declinedReason: nil))
         // Zero rides the same catalog key as the counts — its `zero` plural
         // variant is what renders "No new blocks…".
@@ -513,18 +523,217 @@ struct NodeAutomationTests {
     func summarySingularBlock() {
         let text = String(
             localized: NodeAutomation.summary(
-                outcome: .started, chain: "main", height: 10, blocksBehind: nil,
+                outcome: .started, syncEnding: .notMeasured,
+                chain: "main", height: 10, blocksBehind: nil,
                 blocksSinceLastCheck: 1, declinedReason: nil))
-        #expect(text.contains("1 new block since"))
+        #expect(text.contains("\(1.formatted()) new block since"))
     }
 
     @Test("an already-running node is reported as found, not started")
     func summaryAlreadyRunning() {
         let text = String(
             localized: NodeAutomation.summary(
-                outcome: .alreadyRunning, chain: "main", height: 7, blocksBehind: nil,
+                outcome: .alreadyRunning, syncEnding: .notMeasured,
+                chain: "main", height: 7, blocksBehind: nil,
                 blocksSinceLastCheck: nil, declinedReason: nil))
         #expect(text.contains("already running"))
+    }
+
+    // MARK: - The watch's ending sentences
+
+    @Test("a watched catch-up appends its verdict after the outcome sentence")
+    func summaryWatchedCaughtUp() {
+        let text = String(
+            localized: NodeAutomation.summary(
+                outcome: .started, syncEnding: .caughtUp,
+                chain: "signet", height: 915_000, blocksBehind: 0,
+                blocksSinceLastCheck: nil, declinedReason: nil))
+        #expect(text.contains("Node running on Signet"))
+        #expect(text.contains("Caught up with the tip"))
+    }
+
+    @Test("an entry-gate decline says 'already at the tip', not 'caught up'")
+    func summaryGateDeclinedCaughtUp() {
+        // The node was at the tip when the run arrived — the watch never
+        // began, so nothing was caught up *by* the run. `watched` picks the
+        // wording; the outcome sentence stays truthful either way.
+        let text = String(
+            localized: NodeAutomation.summary(
+                outcome: .alreadyRunning, syncEnding: .alreadyAtTip,
+                chain: "main", height: 900_000, blocksBehind: 0,
+                blocksSinceLastCheck: nil, declinedReason: nil))
+        #expect(text.contains("Already at the tip"))
+        #expect(text.contains("Caught up") == false)
+    }
+
+    @Test("a spent budget ends still syncing without naming the budget")
+    func summaryStillSyncing() {
+        // The budget figure stays out — "the run's time ran out" is honest
+        // without inviting a question the sentence cannot answer.
+        let text = String(
+            localized: NodeAutomation.summary(
+                outcome: .started, syncEnding: .stillSyncing,
+                chain: "signet", height: 910_000, blocksBehind: 5_000,
+                blocksSinceLastCheck: nil, declinedReason: nil))
+        #expect(text.contains("Still syncing"))
+        #expect(text.contains("\(5_000.formatted()) behind"))
+    }
+
+    @Test("a stalled watch names how long nothing advanced")
+    func summaryNoProgressNamesTheSilence() {
+        // `silentFor` is the stall the state measured — rendered as a
+        // duration, not a fixed phrase, through the summary's shared style.
+        let silence = Duration.seconds(240)
+            .formatted(NodeAutomation.summarySilenceFormat)
+        let text = String(
+            localized: NodeAutomation.summary(
+                outcome: .started, syncEnding: .noProgress(silentFor: .seconds(240)),
+                chain: "signet", height: 910_000, blocksBehind: 5_000,
+                blocksSinceLastCheck: nil, declinedReason: nil))
+        #expect(text.contains("no progress for \(silence)"))
+        #expect(text.contains("watch ended"))
+    }
+
+    @Test("a no-progress ending without a measured silence still names the ending")
+    func summaryNoProgressWithoutDuration() {
+        // `silentFor` is optional — the honest generic ending stands rather
+        // than a fabricated figure.
+        let text = String(
+            localized: NodeAutomation.summary(
+                outcome: .started, syncEnding: .noProgress(silentFor: nil),
+                chain: "signet", height: 910_000, blocksBehind: 5_000,
+                blocksSinceLastCheck: nil, declinedReason: nil))
+        #expect(text.contains("no progress"))
+        #expect(text.contains("watch ended"))
+    }
+
+    @Test("a stopped node does not claim to be running — the lead-in is rewritten")
+    func summaryNodeStoppedTellsTheTruth() {
+        // "Node running" would be a lie once the app has stopped it: the
+        // verdict needs its own lead-in, and the last measured position is
+        // what survives.
+        let text = String(
+            localized: NodeAutomation.summary(
+                outcome: .started, syncEnding: .nodeStopped,
+                chain: "signet", height: 910_000, blocksBehind: 5_000,
+                blocksSinceLastCheck: nil, declinedReason: nil))
+        #expect(text.contains("running on") == false)
+        #expect(text.contains("stopped from the app"))
+        #expect(text.contains("last measured on Signet at block \(910_000.formatted())"))
+        #expect(text.contains("\(5_000.formatted()) behind"))
+    }
+
+    @Test("a mid-watch drift names the condition that ended the watch")
+    func summaryDriftedConditionNamesIt() {
+        // `notEnoughDisk`'s figure is interpolated typed — assert the
+        // platform-formatted figure itself made it into the sentence.
+        let diskFigure = Int64(3_000_000_000).formatted(.byteCount(style: .file))
+        for (refusal, name) in [
+            (NodePreflight.Refusal.filesNotReadable, "files stopped being readable"),
+            (.chainFolderMissing, "nowhere left to write the chain data"),
+            (.notEnoughDisk(freeBytes: 3_000_000_000), "Only \(diskFigure) of free space was left"),
+            (.meteredNetwork, "network turned metered"),
+            (.dataRestrictedNetwork, "Low Data Mode came on"),
+            (.overheating, "device got too warm"),
+            (.lowPowerMode, "Low Power Mode switched on"),
+        ] as [(NodePreflight.Refusal, String)] {
+            let text = String(
+                localized: NodeAutomation.summary(
+                    outcome: .started, syncEnding: .conditionsChanged(refusal),
+                    chain: "main", height: 900_000, blocksBehind: 100,
+                    blocksSinceLastCheck: nil, declinedReason: nil))
+            #expect(text.contains(name), "\(refusal) should name \(name)")
+            // The watch was running, so the frame is "ended", never
+            // "did not start" — `Refusal.message`'s tail would be a lie here.
+            #expect(text.contains("the watch ended"), "\(refusal)")
+            #expect(text.contains("did not start") == false, "\(refusal)")
+        }
+    }
+
+    @Test("an entry weigh-in refusal names the condition that kept the watch from starting")
+    func summaryWeighInConditionNamesIt() {
+        // The weigh-in happens before the watch commits: the frame is
+        // "did not start", and the condition reads present-tense because it
+        // stands now.
+        let diskFigure = Int64(3_000_000_000).formatted(.byteCount(style: .file))
+        for (refusal, name) in [
+            (NodePreflight.Refusal.filesNotReadable, "files cannot be read"),
+            (.chainFolderMissing, "nowhere to write the chain data"),
+            (.notEnoughDisk(freeBytes: 3_000_000_000), "Only \(diskFigure) of free space is left"),
+            (.meteredNetwork, "network is metered"),
+            (.dataRestrictedNetwork, "Low Data Mode is on"),
+            (.overheating, "device is too warm"),
+            (.lowPowerMode, "Low Power Mode is on"),
+        ] as [(NodePreflight.Refusal, String)] {
+            let text = String(
+                localized: NodeAutomation.summary(
+                    outcome: .alreadyRunning, syncEnding: .watchRefused(refusal),
+                    chain: "main", height: 900_000, blocksBehind: 100,
+                    blocksSinceLastCheck: nil, declinedReason: nil))
+            #expect(text.contains(name), "\(refusal) should name \(name)")
+            #expect(text.contains("the watch did not start"), "\(refusal)")
+            // The node is still running — the outcome lead-in stays true.
+            #expect(text.contains("already running"), "\(refusal)")
+        }
+    }
+
+    @Test("a weigh-in refusal without a named condition does not claim the watch ended")
+    func summaryUnnamedWeighInRefusal() {
+        // Same frame rule as the named refusals: the watch never began, so
+        // "ended" would be a lie.
+        let text = String(
+            localized: NodeAutomation.summary(
+                outcome: .started, syncEnding: .watchRefused(nil),
+                chain: "signet", height: 190_000, blocksBehind: 10,
+                blocksSinceLastCheck: nil,
+                declinedReason: nil))
+        #expect(text.hasSuffix("Conditions did not allow the watch to start."))
+    }
+
+    @Test("a drifted run without a named condition still ends honestly")
+    func summaryConditionsChangedUnnamed() {
+        let text = String(
+            localized: NodeAutomation.summary(
+                outcome: .started, syncEnding: .conditionsChanged(nil),
+                chain: "main", height: 900_000, blocksBehind: 100,
+                blocksSinceLastCheck: nil, declinedReason: nil))
+        #expect(text.contains("Conditions changed"))
+        #expect(text.contains("watch ended"))
+    }
+
+    @Test("the verdict comes last — history before what the run concluded")
+    func summaryVerdictComesLast() {
+        let text = String(
+            localized: NodeAutomation.summary(
+                outcome: .started, syncEnding: .caughtUp,
+                chain: "signet", height: 915_000, blocksBehind: 0,
+                blocksSinceLastCheck: 3, declinedReason: nil))
+        // Status → what arrived since → the ending, in that order.
+        let running = text.range(of: "Node running")
+        let gained = text.range(of: "3 new blocks")
+        let verdict = text.range(of: "Caught up")
+        #expect(running != nil && gained != nil && verdict != nil)
+        if let running, let gained, let verdict {
+            #expect(running.lowerBound < gained.lowerBound)
+            #expect(gained.lowerBound < verdict.lowerBound)
+        }
+    }
+
+    @Test("notMeasured adds no verdict — the unmeasured sentence is unchanged")
+    func summaryNotMeasuredAddsNothing() {
+        // SC-005: the short action's output must be byte-identical to what it
+        // was before the sync axis existed — exact equality, not fragments.
+        // The figures go through the locale's grouping like any `%lld`, so
+        // the expected text is built the same way rather than pinned to
+        // en_US digits.
+        let text = String(
+            localized: NodeAutomation.summary(
+                outcome: .started, syncEnding: .notMeasured,
+                chain: "main", height: 900_000, blocksBehind: 12,
+                blocksSinceLastCheck: 3, declinedReason: nil))
+        #expect(
+            text
+                == "Node running on Mainnet at block \(900_000.formatted()), \(12.formatted()) behind. \(3.formatted()) new blocks since the last check.")
     }
 
     // MARK: - answerIsStillWanted(...)
@@ -567,16 +776,26 @@ struct NodeAutomationTests {
     func endingFillsBarOnlyOnSuccess() {
         // Regression: the bar used to be filled for every ending, so a run refused
         // because the network was metered still showed a completed bar.
-        #expect(NodeAutomation.ending(outcome: .started, summary: "x").fillsProgressBar)
-        #expect(NodeAutomation.ending(outcome: .alreadyRunning, summary: "x").fillsProgressBar)
         #expect(
-            NodeAutomation.ending(outcome: .declined, summary: "x").fillsProgressBar == false)
+            NodeAutomation.ending(
+                outcome: .started, syncEnding: .notMeasured,
+                summary: "x").fillsProgressBar)
         #expect(
-            NodeAutomation.ending(outcome: .didNotComeUp, summary: "x").fillsProgressBar
-                == false)
+            NodeAutomation.ending(
+                outcome: .alreadyRunning, syncEnding: .notMeasured,
+                summary: "x").fillsProgressBar)
         #expect(
-            NodeAutomation.ending(outcome: .noAnswer, summary: "x").fillsProgressBar
-                == false)
+            NodeAutomation.ending(
+                outcome: .declined, syncEnding: .notMeasured,
+                summary: "x").fillsProgressBar == false)
+        #expect(
+            NodeAutomation.ending(
+                outcome: .didNotComeUp, syncEnding: .notMeasured,
+                summary: "x").fillsProgressBar == false)
+        #expect(
+            NodeAutomation.ending(
+                outcome: .noAnswer, syncEnding: .notMeasured,
+                summary: "x").fillsProgressBar == false)
     }
 
     @Test("the card's detail line is the run's own summary sentence")
@@ -584,17 +803,30 @@ struct NodeAutomationTests {
         // The summary is the one piece of text in the feature written to be read by a
         // person; the card must not paraphrase it into something that could disagree.
         let sentence = "Low Power Mode is on, so the node did not start."
-        #expect(NodeAutomation.ending(outcome: .declined, summary: sentence).detail == sentence)
+        #expect(
+            NodeAutomation.ending(
+                outcome: .declined, syncEnding: .notMeasured,
+                summary: sentence).detail == sentence)
     }
 
     @Test("every ending has a headline, and they tell the five apart")
     func endingTitles() {
         let titles = [
-            NodeAutomation.ending(outcome: .started, summary: "x").title,
-            NodeAutomation.ending(outcome: .alreadyRunning, summary: "x").title,
-            NodeAutomation.ending(outcome: .declined, summary: "x").title,
-            NodeAutomation.ending(outcome: .didNotComeUp, summary: "x").title,
-            NodeAutomation.ending(outcome: .noAnswer, summary: "x").title,
+            NodeAutomation.ending(
+                outcome: .started, syncEnding: .notMeasured,
+                summary: "x").title,
+            NodeAutomation.ending(
+                outcome: .alreadyRunning, syncEnding: .notMeasured,
+                summary: "x").title,
+            NodeAutomation.ending(
+                outcome: .declined, syncEnding: .notMeasured,
+                summary: "x").title,
+            NodeAutomation.ending(
+                outcome: .didNotComeUp, syncEnding: .notMeasured,
+                summary: "x").title,
+            NodeAutomation.ending(
+                outcome: .noAnswer, syncEnding: .notMeasured,
+                summary: "x").title,
         ]
         #expect(titles.allSatisfy { $0.isEmpty == false })
         #expect(Set(titles).count == titles.count)
@@ -602,17 +834,200 @@ struct NodeAutomationTests {
 
     @Test("a run that was refused does not describe itself as running")
     func endingDeclinedDoesNotClaimRunning() {
-        let declined = NodeAutomation.ending(outcome: .declined, summary: "x").title
-        let didNotComeUp = NodeAutomation.ending(outcome: .didNotComeUp, summary: "x").title
-        let noAnswer = NodeAutomation.ending(outcome: .noAnswer, summary: "x").title
+        let declined = NodeAutomation.ending(
+            outcome: .declined, syncEnding: .notMeasured,
+            summary: "x").title
+        let didNotComeUp = NodeAutomation.ending(
+            outcome: .didNotComeUp, syncEnding: .notMeasured,
+            summary: "x").title
+        let noAnswer = NodeAutomation.ending(
+            outcome: .noAnswer, syncEnding: .notMeasured,
+            summary: "x").title
         #expect(declined.contains("running") == false)
         #expect(didNotComeUp.contains("running") == false)
         #expect(noAnswer.contains("running") == false)
     }
 
+    @Test("a watched run's card names the sync ending, not the node outcome")
+    func endingTitlesNameTheSyncEnding() {
+        // With a real sync answer the card's job is to say how *syncing*
+        // ended — the whole sentence keeps the outcome detail.
+        #expect(
+            NodeAutomation.ending(
+                outcome: .started, syncEnding: .caughtUp,
+                summary: "x").title == "Caught up")
+        #expect(
+            NodeAutomation.ending(
+                outcome: .started, syncEnding: .stillSyncing,
+                summary: "x").title == "Still syncing")
+        #expect(
+            NodeAutomation.ending(
+                outcome: .started, syncEnding: .noProgress(silentFor: nil),
+                summary: "x").title == "No progress")
+        #expect(
+            NodeAutomation.ending(
+                outcome: .started, syncEnding: .nodeStopped,
+                summary: "x").title == "Node stopped")
+        #expect(
+            NodeAutomation.ending(
+                outcome: .started, syncEnding: .conditionsChanged(nil),
+                summary: "x").title == "Conditions changed")
+    }
+
+    @Test("a weigh-in refusal card does not claim conditions changed")
+    func endingGateConditionsTitle() {
+        // The condition stood when the watch weighed in — nothing changed,
+        // and the card must not say otherwise. The run itself measured and
+        // kept a running node — the watch is what never began, so the
+        // outcome stays `.alreadyRunning`; pairing the ending with
+        // `.declined` would fail coherence.
+        #expect(
+            NodeAutomation.ending(
+                outcome: .alreadyRunning, syncEnding: .watchRefused(nil),
+                summary: "x").title == "Watch not started")
+    }
+
+    @Test("a gate-declined catch-up card says 'Synced to tip', not 'Caught up'")
+    func endingGateCaughtUpTitle() {
+        // Nothing was caught up *by* the run — the entry gate found the node
+        // already there.
+        #expect(
+            NodeAutomation.ending(
+                outcome: .alreadyRunning, syncEnding: .alreadyAtTip,
+                summary: "x").title == "Synced to tip")
+    }
+
+    @Test("only a caught-up ending fills the bar on a watched run")
+    func endingFillsBarOnlyOnCaughtUp() {
+        // "Keep it syncing" is finished only when the node reached the tip —
+        // every other watch ending leaves work undone, so the bar must not
+        // claim the run completed it.
+        for ending: NodeAutomation.SyncEnding in [
+            .stillSyncing, .noProgress(silentFor: nil), .nodeStopped,
+            .conditionsChanged(nil),
+        ] {
+            #expect(
+                NodeAutomation.ending(
+                    outcome: .started, syncEnding: ending,
+                    summary: "x").fillsProgressBar == false,
+                "\(ending) must not fill")
+        }
+        #expect(
+            NodeAutomation.ending(
+                outcome: .started, syncEnding: .caughtUp,
+                summary: "x").fillsProgressBar)
+        // A gate-declined catch-up is just as complete — the node was at the
+        // tip when the run arrived.
+        #expect(
+            NodeAutomation.ending(
+                outcome: .alreadyRunning, syncEnding: .alreadyAtTip,
+                summary: "x").fillsProgressBar)
+    }
+
+    @Test("every ending collapses to the right public result and watch claim")
+    func syncEndingMappings() {
+        // `result` is the public collapse; `watched` is derived, never
+        // passed — a gate ending and its mid-watch twin share the public
+        // case but not the claim.
+        let cases: [(NodeAutomation.SyncEnding, NodeAutomation.SyncResult, Bool)] = [
+            (.caughtUp, .caughtUp, true),
+            (.alreadyAtTip, .caughtUp, false),
+            (.stillSyncing, .stillSyncing, true),
+            (.noProgress(silentFor: nil), .noProgress, true),
+            (.noProgress(silentFor: .seconds(60)), .noProgress, true),
+            (.nodeStopped, .nodeStopped, true),
+            (.conditionsChanged(nil), .conditionsChanged, true),
+            (.watchRefused(nil), .conditionsChanged, false),
+            (.notMeasured, .notMeasured, false),
+        ]
+        for (ending, result, watched) in cases {
+            #expect(ending.result == result, "\(ending)")
+            #expect(ending.watched == watched, "\(ending)")
+        }
+    }
+
+    @Test("an outcome and a sync ending must agree about whether anything was measured")
+    func outcomeEndingCoherence() {
+        // The rule the report enforces: real endings ride only on a measured
+        // run; a declined, unstarted, or unanswered run claims nothing — a
+        // stall ends on the measured report it already had, never a blanked
+        // `noAnswer`.
+        let realEndings: [NodeAutomation.SyncEnding] = [
+            .caughtUp, .alreadyAtTip, .stillSyncing,
+            .noProgress(silentFor: nil), .noProgress(silentFor: .seconds(240)),
+            .nodeStopped, .conditionsChanged(nil), .conditionsChanged(.meteredNetwork),
+            .watchRefused(nil), .watchRefused(.lowPowerMode),
+        ]
+        for outcome in [NodeAutomation.Outcome.declined, .didNotComeUp, .noAnswer] {
+            for ending in realEndings {
+                #expect(
+                    !NodeAutomation.isCoherent(outcome: outcome, ending: ending),
+                    "\(outcome) cannot carry \(ending)")
+            }
+            #expect(
+                NodeAutomation.isCoherent(outcome: outcome, ending: .notMeasured),
+                "\(outcome) carries only notMeasured")
+        }
+        for outcome in [NodeAutomation.Outcome.started, .alreadyRunning] {
+            for ending in realEndings + [.notMeasured] {
+                #expect(
+                    NodeAutomation.isCoherent(outcome: outcome, ending: ending),
+                    "\(outcome) may carry \(ending)")
+            }
+        }
+    }
+
     @Test("the in-progress headline is set")
     func inProgressTitleExists() {
         #expect(NodeAutomation.inProgressTitle.isEmpty == false)
+    }
+
+    @Test("the watching headline is the plan's pinned wording, distinct from the checking one")
+    func watchingTitleIsPinned() {
+        // FR-003 / plan §3.4: once a watch commits, "checking" becomes
+        // "syncing" — the honest verb for the one thing the run is doing.
+        #expect(NodeAutomation.watchingTitle == "Syncing the Bitcoin node")
+        #expect(NodeAutomation.watchingTitle != NodeAutomation.inProgressTitle)
+    }
+
+    // MARK: - The in-watch detail line
+
+    @Test("the watch detail line reports absolute position with grouped digits")
+    func watchDetailPosition() {
+        // Apple's `localizedAdditionalDescription` convention is terse
+        // status text — "Block 843,210 of 915,000" in en_US — and the
+        // figures go through the locale's grouping, so the expectations
+        // are built the same way rather than pinned to one locale.
+        let text = String(
+            localized: NodeAutomation.watchDetail(
+                height: 843_210, headers: 915_000, silentFor: nil))
+        #expect(text.contains(843_210.formatted()))
+        #expect(text.contains(915_000.formatted()))
+        #expect(text.contains("last gain") == false)
+    }
+
+    @Test("the detail line gains a staleness clause once the caller names the silence")
+    func watchDetailStalenessClause() {
+        // `silentFor` selects the second whole-line key and supplies the
+        // duration — rendered abbreviated on the status line ("3 min").
+        let silence = Duration.seconds(180)
+            .formatted(NodeAutomation.detailSilenceFormat)
+        let text = String(
+            localized: NodeAutomation.watchDetail(
+                height: 843_210, headers: 915_000, silentFor: .seconds(180)))
+        #expect(text.contains("\(843_210.formatted()) of \(915_000.formatted())"))
+        #expect(text.contains("last gain \(silence) ago"))
+    }
+
+    @Test("the staleness clause renders longer silences in hours and minutes")
+    func watchDetailLongStaleness() {
+        let text = String(
+            localized: NodeAutomation.watchDetail(
+                height: 100, headers: 200, silentFor: .seconds(4_800)))
+        #expect(
+            text.contains(
+                Duration.seconds(4_800)
+                    .formatted(NodeAutomation.detailSilenceFormat)))
     }
 
     // MARK: - Watch entry
