@@ -58,7 +58,7 @@ result — verifiable end-to-end on a locked device without any other feature.
    `.critical`, **when** the next poll reads conditions, **then** the run ends
    `conditionsChanged` naming the condition; `.serious` thermal mid-watch
    changes nothing (at entry it refuses, as today), and Low Power Mode already
-   on at entry is accepted — covers FR-011.
+   on when the watch commits is accepted — covers FR-011.
 10. **Given** the private network is not ready, **when** the run carries a
     grace, **then** it waits through Tor bootstrap inside the grace, re-decides
     on a live snapshot, and never starts on a direct connection — covers
@@ -175,8 +175,8 @@ result — verifiable end-to-end on a locked device without any other feature.
   on any pass ends the run `conditionsChanged` immediately.
 - **FR-011** Thermal `.serious` or hotter refuses at entry, as the preflight
   gate does today; once the watch commits, only `.critical` ends the run —
-  mid-watch `.serious` never does. Low Power Mode already on at entry is
-  accepted; switched on mid-watch ends `conditionsChanged`.
+  mid-watch `.serious` never does. Low Power Mode already on when the watch
+  commits is accepted; switched on mid-watch ends `conditionsChanged`.
 - **FR-012** Paths that skipped preflight (already-running node, still-starting
   node) take a one-time full conditions weigh-in before the watch commits — a
   refusal ends `conditionsChanged` with the condition named.

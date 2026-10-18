@@ -386,25 +386,7 @@ results. Every task lands standalone.
 - [x] T015 Ending sentences and card wording — the five endings, the
   position clause always, the staleness clause once flat past the leash;
   every count-bearing sentence plural-aware (catalog variants or grammar
-  agreement, never a hand-suffixed `s`), durations via `Duration.formatted` /
-  `RelativeDateTimeFormatter` (FR-003; verifies FR-003). Landed as: the
-  sync axis is one value, `NodeAutomation.SyncEnding` — eight cases where
-  each frame is a distinct case (`caughtUp` a watch saw it happen,
-  `alreadyAtTip` the entry gate found it; `conditionsChanged` mid-watch,
-  `watchRefused` the weigh-in) and the endings that name a detail carry
-  it (`noProgress`'s measured `silentFor`, the conditions' `Refusal`), so
-  a pairing that makes no sense cannot be constructed. `result` collapses
-  to the public six-case `SyncResult`, `watched` derives — neither is
-  passed anywhere. `NodeRunReport` stores the ending (optional beside
-  `dialogTemplate`), derives `syncResult` from it, and its `syncEnding`
-  accessor falls back through `init(collapsed:)` — mapped to the variants
-  that do not claim a watch ran — for the bare `init()` path. `isCoherent`
-  is the single rule — real endings require a measured outcome, an
-  unmeasured outcome carries only `notMeasured` — asserted at report init
-  with a `notMeasured` fallback rather than a trap (a crash takes the
-  node down, FR-009) and in `summary`/`ending` for direct calls; the
-  intent hands the card the same ending the sentence was built from.
-  Wording: real endings append a whole sentence at a sentence boundary
+  agreement, never a hand-suffixed `s`), durations via `Duration.formatted` / `RelativeDateTimeFormatter` (FR-003; verifies FR-003). Landed as: the sync axis is one value, `NodeAutomation.SyncEnding` — eight cases where each frame is a distinct case (`caughtUp` a watch saw it happen, `alreadyAtTip` the entry gate found it; `conditionsChanged` mid-watch, `watchRefused` the weigh-in) and the endings that name a detail carry it (`noProgress`'s measured `silentFor`, the conditions' `Refusal`), so a pairing that makes no sense cannot be constructed. `result` collapses to the public six-case `SyncResult`, `watched` derives — neither is passed anywhere. `NodeRunReport` stores the ending (optional beside `dialogTemplate`), derives `syncResult` from it, and its `syncEnding` accessor falls back through `init(collapsed:)` — mapped to the variants that do not claim a watch ran — for the bare `init()` path. `isCoherent` is the single rule — real endings require a measured outcome, an unmeasured outcome carries only `notMeasured` — asserted at report init with a `notMeasured` fallback rather than a trap (a crash takes the node down, FR-009) and in `summary`/`ending` for direct calls; the intent hands the card the same ending the sentence was built from.Wording: real endings append a whole sentence at a sentence boundary
   through the `run.summary.with-ending` join key, history first, verdict
   last; `nodeStopped` alone rewrites the lead-in ("Node running" is a lie
   once the app stops it — "last measured" instead). `notMeasured` keeps
@@ -441,7 +423,10 @@ results. Every task lands standalone.
   `Sources/NodeAppTests/NodeRunReportTests.swift`,
   `Sources/NodeAppTests/ProgressMeterTests.swift`,
   `Resources/NodeApp/Localizable.xcstrings` · needs T004
-- [ ] T016 Entry weigh-in `refusal(for:)` — the one-time full conditions
+  `RelativeDateTimeFormatter` (FR-003; verifies FR-003) (~150) ·
+  `Sources/NodeApp/NodeAutomation.swift`,
+  `Sources/NodeAppTests/NodeAutomationTests.swift` · needs T004
+- [x] T016 Entry weigh-in `refusal(for:)` — the one-time full conditions
   check on paths that skipped preflight (`reportExistingNode`,
   `waitForStartingNode`); `filesReadable`/`chainFolderExists` inferred from
   the answering node, `prepareChainFolder()` skipped, actor-free (no

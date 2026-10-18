@@ -413,9 +413,12 @@ Mid-watch, two kinds of condition get two rules (rationale in [research
 
 - **Money conditions** — metered, Low Data Mode — absolute, checked every pass:
   they spend something continuously and are never consented to anywhere.
-- **Power conditions** — Low Power Mode already on at entry is a standing
-  preference (ends the watch only if switched on mid-watch); thermal is
-  absolute only at `.critical` (`.serious` is routine on a validating phone).
+- **Power conditions** — Low Power Mode already on when the watch commits is
+  a standing preference (ends the watch only if switched on mid-watch); the
+  weigh-in itself refuses the mode outright, the same bar a start faces, so
+  a committed watch only ever carries it from the start path — the mode
+  flipped on between preflight and the commit. Thermal is absolute only at
+  `.critical` (`.serious` is routine on a validating phone).
 
 The per-poll read is a narrow gather, deliberately not `readConditions()` —
 that routine writes the filesystem and waits on a network read behind a
@@ -581,16 +584,17 @@ device-check group (T038–T040) in [tasks.md](./tasks.md):
      no confirmation is no evidence.
 - [ ] Network pulled mid-watch: ends `noProgress` ~2 minutes after the last gain —
      the designed ending, not a generic system timeout. (SC-003)
-- [ ] Node already running on a metered link — or a device under the disk
-     floor — when the long action fires: the `reportExistingNode` path consults
-     no preflight, so the entry weigh-in ends it `conditionsChanged` before the
-     watch commits, node left running.
+- [ ] Node already running on a metered link, under the disk floor, or in
+     Low Power Mode when the long action fires: the `reportExistingNode` path
+     consults no preflight, so the entry weigh-in ends it `conditionsChanged`
+     before the watch commits, node left running.
 - [ ] Handoff to a metered link mid-watch: early `conditionsChanged` end,
      honest wording, node running.
 - [ ] Device warms mid-watch: `.serious` changes nothing, `.critical` ends
-     `conditionsChanged`; Low Power Mode already on at entry changes nothing,
-     switched on mid-watch ends it `conditionsChanged`; wording names the
-     condition, node left running.
+     `conditionsChanged`; Low Power Mode switched on mid-watch ends it
+     `conditionsChanged`, while the mode already on when the watch commits —
+     reachable only as flipped-on during start-up — is carried; wording names
+     the condition, node left running.
 - [ ] A run ending `stillSyncing`/`noProgress`/`conditionsChanged`: the card
      resolves as ended rather than hanging at ~95% — `Progress.isFinished`
      stays false by design on these endings, and if the card sticks, the
