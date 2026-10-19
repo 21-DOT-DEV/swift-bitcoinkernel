@@ -12,6 +12,9 @@ jobs:
   macos:
     name: macOS (${{ matrix.name }})
     runs-on: macos-26
+    # ~4x the slowest observed run (~8 min) — every job in this workflow
+    # carries a bound; GitHub's 360-min default is never the operating limit.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -49,20 +52,26 @@ jobs:
       # suite in its own process — it holds the global BCLog logger open and can't
       # share a process with kernel LoggingConnection tests (the original
       # `--traits wallet` SIGABRT). See `.github/AGENTS.md`.
+      # --disable-dependency-cache on every swift-family step below: clones go
+      # to .build, never the shared repo cache whose mid-fetch death is fatal
+      # (swiftlang/swift-package-manager#9037); the cache buys nothing on a
+      # fresh runner anyway.
       - name: Test — package (parallel; kernel-state tests gated in-process)
-        run: swift test --skip 'BitcoinTests\.BitcoinTests/' ${{ matrix.traits && format('--traits {0}', matrix.traits) || '' }}
+        run: swift test --disable-dependency-cache --skip 'BitcoinTests\.BitcoinTests/' ${{ matrix.traits && format('--traits {0}', matrix.traits) || '' }}
       - name: Test — Bitcoin Integration daemon (isolated process)
-        run: swift test --filter 'BitcoinTests\.BitcoinTests/' ${{ matrix.traits && format('--traits {0}', matrix.traits) || '' }}
+        run: swift test --disable-dependency-cache --filter 'BitcoinTests\.BitcoinTests/' ${{ matrix.traits && format('--traits {0}', matrix.traits) || '' }}
       - name: Validate DocC catalog (Bitcoin)
         if: matrix.name == 'default'
-        run: swift package generate-documentation --target Bitcoin --analyze --warnings-as-errors
+        run: swift package --disable-dependency-cache generate-documentation --target Bitcoin --analyze --warnings-as-errors
       - name: Validate DocC catalog (BitcoinKernel)
         if: matrix.name == 'default'
-        run: swift package generate-documentation --target BitcoinKernel --analyze --warnings-as-errors
+        run: swift package --disable-dependency-cache generate-documentation --target BitcoinKernel --analyze --warnings-as-errors
 
   ios:
     name: iOS
     runs-on: macos-26
+    # ~4x observed — see the macOS job's cap note.
+    timeout-minutes: 30
     permissions:
       contents: read
     env:
@@ -81,11 +90,18 @@ jobs:
         uses: ./.github/actions/github-git-auth
         with:
           token: ${{ github.token }}
+      # The flag pair rides EVERY xcodebuild call in an auth-using job
+      # (.github/AGENTS.md): -scmProvider system puts package clones on the
+      # git that reads the auth ~/.gitconfig (the built-in provider's config
+      # handling is never relied on); -disablePackageRepositoryCache is the
+      # xcodebuild-side shared-cache bypass. Inert where unused.
       - name: Build for iOS
         run: |
           xcrun xcodebuild \
             -skipMacroValidation \
             -skipPackagePluginValidation \
+            -scmProvider system \
+            -disablePackageRepositoryCache \
             build \
             -scheme "$SCHEME" \
             -destination generic/platform=iOS
@@ -93,6 +109,8 @@ jobs:
   visionos:
     name: visionOS
     runs-on: macos-26
+    # ~4x observed — see the macOS job's cap note.
+    timeout-minutes: 30
     permissions:
       contents: read
     env:
@@ -111,11 +129,14 @@ jobs:
         uses: ./.github/actions/github-git-auth
         with:
           token: ${{ github.token }}
+      # Flag pair — see the iOS job's note.
       - name: Build for visionOS
         run: |
           xcrun xcodebuild \
             -skipMacroValidation \
             -skipPackagePluginValidation \
+            -scmProvider system \
+            -disablePackageRepositoryCache \
             build \
             -scheme "$SCHEME" \
             -destination generic/platform=visionOS
@@ -123,6 +144,8 @@ jobs:
   tvos:
     name: tvOS (BitcoinKernel)
     runs-on: macos-26
+    # ~4x observed — see the macOS job's cap note.
+    timeout-minutes: 30
     permissions:
       contents: read
     env:
@@ -143,11 +166,14 @@ jobs:
         uses: ./.github/actions/github-git-auth
         with:
           token: ${{ github.token }}
+      # Flag pair — see the iOS job's note.
       - name: Build BitcoinKernel for tvOS
         run: |
           xcrun xcodebuild \
             -skipMacroValidation \
             -skipPackagePluginValidation \
+            -scmProvider system \
+            -disablePackageRepositoryCache \
             build \
             -scheme "$SCHEME" \
             -destination generic/platform=tvOS

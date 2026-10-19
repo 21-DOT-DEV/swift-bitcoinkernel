@@ -20,10 +20,11 @@ jobs:
     # not repointing `runner:` at macos-26 — that toolchain can no longer
     # build these sources.
     runs-on: ${{ matrix.runner }}
-    # GitHub's default is 6 hours; the slowest passing run to date was ~22
-    # minutes (including a 10-minute post-test diagnostics tail). A real hang
-    # now dies inside the hour instead of burning the full default.
-    timeout-minutes: 45
+    # GitHub's default is 6 hours; the slowest observed run is ~26 min. 75 =
+    # the worst-legit retried generate (~30 min — the step's timeout-minutes
+    # bounds the whole fetch-flake retry loop) plus ~25 min build/test/upload,
+    # with slack. A real hang still dies inside the hour-and-a-quarter.
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
@@ -78,8 +79,11 @@ jobs:
       # moving target — when a run goes newly red or green, this is the line
       # that says whether the image or the change did it.
       - name: Record toolchain
+        # The flag pair rides EVERY xcodebuild call in an auth-using job —
+        # -version included; a uniform rule needs no per-call judgment
+        # (see .github/AGENTS.md).
         run: |
-          xcodebuild -version
+          xcodebuild -version -scmProvider system -disablePackageRepositoryCache
           swift --version
 
       # Generate the Xcode workspace from the Tuist manifest. Kept separate so a
@@ -91,8 +95,16 @@ jobs:
       # xcodebuild's single-dash flags, because SwiftPM's own CLI parser reads
       # `-workspace`/`-scheme` as short-flag clusters and the `-c` inside grabs
       # the value (and `--` leaks through to xcodebuild). See `.github/AGENTS.md`.
+      # Two fetch-flake defenses on top of the authenticated header above.
+      # --disable-dependency-cache fetches straight into .build/repositories —
+      # a clone dying mid-fetch into SwiftPM's shared repo cache is fatal
+      # (swiftlang/swift-package-manager#9037, observed killing KernelApp (ios)
+      # in run 38030982512) — and the cache buys nothing on a fresh runner
+      # anyway. The 30-min bound covers the whole retry loop this step gains
+      # under the retry wiring — ≈3 attempts at incident scale plus backoffs.
       - name: Generate workspace
-        run: swift package --disable-sandbox tuist generate -p Projects/ --no-open
+        timeout-minutes: 30
+        run: swift package --disable-sandbox --disable-dependency-cache tuist generate -p Projects/ --no-open
 
       # macOS is a fixed destination; for the iOS Simulator we resolve an
       # available iPhone by UDID at runtime, which is robust against
@@ -176,8 +188,13 @@ jobs:
         run: |
           XCACTION=build
           if [ "$ACTION" = "test" ]; then XCACTION=build-for-testing; fi
+          # The flag pair rides every xcodebuild call in an auth-using job —
+          # see apple-builds.yml's iOS job (provider pins clones onto the git
+          # that reads the auth config; the cache flag bypasses the shared
+          # repo cache). Inert once packages are warm.
           xcodebuild "$XCACTION" \
             -skipMacroValidation -skipPackagePluginValidation \
+            -scmProvider system -disablePackageRepositoryCache \
             -workspace "$WORKSPACE" -scheme "$SCHEME" \
             -destination "$DESTINATION" -derivedDataPath "$DERIVED_DATA" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
@@ -224,6 +241,7 @@ jobs:
             set +e
             xcodebuild test-without-building \
               -skipMacroValidation -skipPackagePluginValidation \
+              -scmProvider system -disablePackageRepositoryCache \
               -workspace "$WORKSPACE" -scheme "$SCHEME" \
               -destination "$DESTINATION" -derivedDataPath "$DERIVED_DATA" \
               -resultBundlePath "$RESULTS/$SCHEME-$PLATFORM-attempt-$attempt.xcresult" \

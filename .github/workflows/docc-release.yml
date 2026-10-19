@@ -20,6 +20,9 @@ jobs:
   build:
     name: Build package
     runs-on: macos-26
+    # ~4x a normal package build — release-tag builds get no retries, so a
+    # stall should fail fast; the 360-min default is never the operating limit.
+    timeout-minutes: 30
     permissions:
       contents: read
     env:
@@ -48,8 +51,10 @@ jobs:
         with:
           token: ${{ github.token }}
 
+      # Clones go to .build, bypassing the shared SwiftPM cache whose
+      # mid-fetch death is fatal (swiftlang/swift-package-manager#9037).
       - name: Build package
-        run: swift build
+        run: swift build --disable-dependency-cache
 
   docc:
     name: ${{ matrix.target }}
@@ -96,6 +101,7 @@ jobs:
         run: |
           mkdir -p docs
           swift package \
+            --disable-dependency-cache \
             --allow-writing-to-directory ./docs \
             generate-documentation \
             --target ${{ matrix.target }} \
@@ -149,6 +155,9 @@ jobs:
     name: Upload to Release
     needs: [build, docc]
     runs-on: macos-26
+    # ~5x expected — artifact downloads and `gh release upload` are the whole
+    # job; the 360-min default is never the operating limit.
+    timeout-minutes: 15
     permissions:
       contents: write  # for gh release upload
     env:

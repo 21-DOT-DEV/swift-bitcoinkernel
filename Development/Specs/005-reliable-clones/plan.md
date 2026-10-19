@@ -45,8 +45,9 @@ the action warns when it detects one) on a public repo; plaintext in
 `jobs.<id>.steps[*].timeout-minutes` on the calling step plus git's own
 `http.lowSpeedLimit`/`lowSpeedTime` — no process supervisor. **Exclusions**:
 `docker-builds.yml` — clone *auth* can't reach inside the container where
-fetches happen (the cache-disabling flag is a plain CLI arg and does reach
-it, so it applies there); the `release` job in
+fetches happen (the cache-disabling flag is a plain CLI arg and reaches
+it, as do `GIT_HTTP_LOW_SPEED_*` env bounds — the same stall-killer the
+runner config sets — and a job-level `timeout-minutes`); the `release` job in
 `docc-release.yml` — holds `contents: write` for `gh release upload` and
 fetches nothing, so auth would only persist a bigger token; its unused
 checkout step is deleted (nothing in the job reads the repo — the checkout's
@@ -110,7 +111,13 @@ Three independent mechanisms, one per layer of the failure:
    ~21-min worst-legit path (one incident-scale ~10-min crawl plus two
    ~5-min retries and backoffs); and the `tuist-apps` job cap rises 45 → 75
    so the worst-legit generate+build+test path can't be cancelled by the
-   job-level ceiling it now fits under.
+   job-level ceiling it now fits under. Every remaining uncapped job
+   gains a `timeout-minutes` sized from its observed run plus headroom
+   for its variance legs in the same PR (`apple-builds` 30,
+   `development-docs` 15, `docker-builds` 45, `docc-release` `build` 30 /
+   `release` 15 — each key's comment names its leg) — the uncapped-job
+   gap the review surfaced is closed now, not deferred; `docc`'s raise
+   to 45 still travels with T010's step-bound arithmetic.
 3. **Retry** — `.github/actions/retry-on-fetch-flake`: a pure-bash loop that
    re-runs the command — bounded by FR-005's three attempts total —
    **only** when the attempt's log matches a
@@ -233,11 +240,6 @@ architecture.
   is the closer-fitting fetch-suppression flag, and neither's behavior
   with missing checkouts is documented — both await a flag experiment;
   revisit if a mid-build fetch flake is ever observed.
-- **Job-level `timeout-minutes` on the jobs that lack one**
-  (`apple-builds`, `development-docs`, `docker-builds`, and `docc-release`'s
-  `build`/`release` jobs — its `docc` job carries 45 after T010) — a pre-existing
-  gap surfaced by this review; `tuist-apps`'s cap is raised here only
-  because this feature's step bound changes its arithmetic.
 
 ## Division of labor
 
