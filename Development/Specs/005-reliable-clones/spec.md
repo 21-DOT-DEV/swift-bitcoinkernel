@@ -94,15 +94,23 @@ non-network failure exits on the first attempt.
 - **FR-003** Every `swift`-family step in CI that resolves package
   dependencies does so with SwiftPM's shared repository cache disabled
   (`--disable-dependency-cache` — including the Dockerfile's in-container
-  `RUN` invocations, which the flag reaches as a plain CLI arg);
-  every xcodebuild invocation carries `-disablePackageRepositoryCache`
-  for the equivalent effect — including the resolve `tuist generate`
-  performs internally, which no workflow flag can reach: the manifest's
-  `additionalPackageResolutionArguments` passes it there.
+  `RUN` invocations, which the flag reaches as a plain CLI arg; those
+  clones stay anonymous, so `GIT_HTTP_LOW_SPEED_*` env bounds bound them —
+  the same stall-killer the runner config sets, reachable in-container);
+  every xcodebuild invocation in an auth-using job carries
+  `-disablePackageRepositoryCache` for the equivalent effect — including
+  the resolve `tuist generate` performs internally, which no workflow flag
+  can reach: the manifest's `additionalPackageResolutionArguments` passes
+  it there.
 - **FR-004** Every step whose purpose includes resolving package
   dependencies declares an explicit `timeout-minutes` bound — `tuist
   generate` counts: it resolves twice over — and for a step wrapped by
-  the retry action the bound covers the whole retry loop.
+  the retry action the bound covers the whole retry loop; every job
+  also carries a `timeout-minutes` sized from its observed duration plus
+  headroom for its variance legs — ~3–4× steady-state, larger where a
+  named leg dominates (`brew install`, base-image pull, release
+  uploads), the rationale recorded in a comment at the key
+  (GitHub's 360-minute default is never the operating limit).
 - **FR-005** A fetch step wrapped by the retry action retries a failed
   attempt — up to three attempts total — only when the attempt's output
   matches a signature from the table below; otherwise it exits immediately
@@ -290,7 +298,10 @@ non-network failure exits on the first attempt.
 - **`docker-builds` fetches inside the container** — runner-level global
   git configuration cannot reach in-container clones, so the workflow is
   outside the auth layer's scope; `--disable-dependency-cache` still
-  applies there as a plain CLI arg. Runner auth for Docker is deferred.
+  applies as a plain CLI arg, and `GIT_HTTP_LOW_SPEED_LIMIT`/
+  `GIT_HTTP_LOW_SPEED_TIME` env bounds the anonymous clones the auth
+  can't reach — the same stall-killer the runner config sets, plus a
+  job-level `timeout-minutes`. Runner auth for Docker is deferred.
 - **A stall converted to failure by `lowSpeed`** — the abort text is part of
   the retry signature, so the failure is retried, not terminal.
 - **A retry attempt fails on a different signature-free error** — the step

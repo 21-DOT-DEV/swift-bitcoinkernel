@@ -21,6 +21,9 @@ jobs:
     # small package (two remote dependencies fetched on every run), not the
     # project itself.
     runs-on: macos-26
+    # ~10x the observed ~1-min run — `brew install vale` is the variable leg;
+    # GitHub's 360-min default is never the operating limit.
+    timeout-minutes: 15
     # contents: read is actions/checkout's minimum on a private repo; kept on
     # this public one — least-privilege costs nothing and survives a
     # visibility flip.
@@ -44,11 +47,13 @@ jobs:
         with:
           token: ${{ github.token }}
 
+      # Clones go to .build, bypassing the shared SwiftPM cache whose
+      # mid-fetch death is fatal (swiftlang/swift-package-manager#9037).
       - name: Unit-test the checker
-        run: swift test --package-path Development/Tools
+        run: swift test --disable-dependency-cache --package-path Development/Tools
 
       - name: Validate frontmatter and index freshness
-        run: swift run --package-path Development/Tools plans --check
+        run: swift run --disable-dependency-cache --package-path Development/Tools plans --check
 
       - name: Install Vale
         run: brew install vale

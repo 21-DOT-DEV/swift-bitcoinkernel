@@ -66,8 +66,12 @@ jobs:
         with:
           token: ${{ github.token }}
 
+      # Same defenses as tuist-apps.yml's generate step — see that comment:
+      # --disable-dependency-cache keeps clones out of the shared SwiftPM
+      # cache; the bound covers the retry loop this step gains under T007.
       - name: Generate workspace
-        run: swift package --disable-sandbox tuist generate -p Projects/ --no-open
+        timeout-minutes: 30
+        run: swift package --disable-sandbox --disable-dependency-cache tuist generate -p Projects/ --no-open
 
       # Mirrors tuist-apps.yml's destination resolution: a device under the
       # NEWEST installed iOS runtime, picked by parsing simctl's JSON rather
@@ -114,12 +118,16 @@ jobs:
               echo "::error::unhandled platform '$PLATFORM' — add a -destination case"; exit 1 ;;
           esac
 
+      # The flag pair rides every xcodebuild call in an auth-using job — see
+      # apple-builds.yml's iOS job: the provider pins clones onto the git that
+      # reads the auth config; the cache flag bypasses the shared repo cache.
       - name: Build ${{ inputs.app }} (${{ inputs.platform }})
         env:
           SCHEME: ${{ inputs.app }}
         run: |
           xcodebuild build-for-testing \
             -skipMacroValidation -skipPackagePluginValidation \
+            -scmProvider system -disablePackageRepositoryCache \
             -workspace "$WORKSPACE" -scheme "$SCHEME" \
             -destination "$DESTINATION" -derivedDataPath "$DERIVED_DATA" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
@@ -163,6 +171,7 @@ jobs:
           echo "Running $ITERATIONS iterations (stop_early=$STOP_EARLY)"
           xcodebuild test-without-building \
             -skipMacroValidation -skipPackagePluginValidation \
+            -scmProvider system -disablePackageRepositoryCache \
             -workspace "$WORKSPACE" -scheme "$SCHEME" \
             -destination "$DESTINATION" -derivedDataPath "$DERIVED_DATA" \
             -test-iterations "$ITERATIONS" "$@" \

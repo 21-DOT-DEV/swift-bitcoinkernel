@@ -154,25 +154,34 @@ git requests carry the Authorization header" line after checkout.
 
 ## Phase 3 — Close the fatal cache path and bound the fetch
 
-- [ ] T005 Add `--disable-dependency-cache` to every `swift`-family step
+- [x] T005 Add `--disable-dependency-cache` to every `swift`-family step
   that resolves packages (the `tuist generate` calls, `swift
   test`/`run`/`build` — docc-release's `build` job runs `swift build` —
   `generate-documentation`, and the Dockerfile `RUN` lines — the flag is a
   plain CLI arg that reaches in-container where clone auth cannot),
   `-disablePackageRepositoryCache` and `-scmProvider system` on every
   xcodebuild invocation in each auth-using job — `build`,
-  `build-for-testing`, `test-without-building` alike: the flags are
-  global and inert where unused, and any action that loads package
-  state can trigger a drift-resolve, so uniform coverage beats a
-  per-action guess (the provider flag pins them onto the git that
-  reads the config file; the internal resolve inside `tuist generate`
+  `build-for-testing`, `test-without-building`, and `-version` alike: the
+  flags are global and inert where unused, and any action that loads
+  package state can trigger a drift-resolve, so uniform coverage beats a
+  per-invocation judgment call (the provider flag pins them onto the git
+  that reads the config file; the internal resolve inside `tuist generate`
   is reached separately by T007's manifest args, the one call a
-  workflow flag cannot attach to),
-  `timeout-minutes: 30` to the generate steps,
-  and raise the `tuist-apps` job cap 45 → 75 so the worst-legit retry path
+  workflow flag cannot attach to), the Dockerfile's anonymous in-container
+  clones bounded by `GIT_HTTP_LOW_SPEED_LIMIT 1024` /
+  `GIT_HTTP_LOW_SPEED_TIME 60` env — the auth-independent stall-killer,
+  the same bounds github-git-auth writes on the runner —
+  `timeout-minutes: 30` on the generate steps, the deferred job-level
+  caps folded in here sized from observed durations plus
+  headroom for each job's named variance leg (`apple-builds` 30,
+  `development-docs` 15, `docker-builds` 45, `docc-release` `build` 30 /
+  `release` 15 — `docc` stays 20, T010 owns its raise), the flag-pairing
+  and bounds conventions recorded in `.github/AGENTS.md`, and the
+  `tuist-apps` job cap raised 45 → 75 so the worst-legit retry path
   fits under it (FR-003, FR-004) ·
-  `.github/workflows/{apple-builds,development-docs,docc-release,flake-hunt,
-  tuist-apps}.yml`, `Dockerfile`
+  `.github/workflows/{apple-builds,development-docs,docker-builds,
+  docc-release,flake-hunt,tuist-apps}.yml`, `Dockerfile`,
+  `.github/AGENTS.md`
 
 **Checkpoint:** a `tuist generate` log shows clones writing under
 `.build/repositories`, not `~/Library/Caches/org.swift.swiftpm`.
@@ -388,7 +397,7 @@ invoke the action; logs show the attempt group format.
 | 1 | [x] | The plan documents | T001 | ~1,450 prose | — |
 | 2 | [x] | `github-git-auth` action, inert + `actions-selftest` + `workflow-lint` workflows + `xcode-27` label config in `actionlint.yaml` + pre-existing lint fixes | T002, T009, T011 | ~190 | — |
 | 3 | [x] | Auth wired into fetch jobs across five workflows, `release`-job checkout removed, pairing rule + `$/` variant in `.github/AGENTS.md`, `actionlint.yaml` created with the `$/` ignore | T003, T004's prose | ~230 | — |
-| 4 | [ ] | Cache flags on all fetch steps + `timeout-minutes: 30` + job-cap bump | T005 | ~55 | — |
+| 4 | [ ] | Cache flags on all fetch steps + generate-step bounds + deferred job caps + Dockerfile stall-killer + AGENTS.md conventions | T005 | ~110 | — |
 | 5 | [ ] | `retry-on-fetch-flake` action, inert + selftest retry cases | T006 | ~100 | PR 2 (selftest workflow) |
 | 6 | [ ] | Retry wired into the two generate steps + `Tuist.swift` clone-path pin + routing rule | T007 | ~50 | PR 5 |
 | 7 | [ ] | Dedicated resolve steps under retry in the remaining fetch jobs + docc job-cap raise | T010 | ~95 | PRs 3, 5 |
@@ -414,9 +423,10 @@ touch apple-builds' xcodebuild lines, so whichever lands second rebases
 action or workflow PRs. T008 is validation, not a PR — it runs on a
 throwaway branch carrying PR 6 and 7's changes before either merges, and
 the branch is deleted after. Between PR 4 and PR 7 the implicit-fetch
-steps (`swift test`/`build`, `generate-documentation`) stay unbounded —
-a gap that pre-exists this feature, closed when T010's dedicated resolve
-steps land; FR-004's bound is measured on the final tree.
+steps (`swift test`/`build`, `generate-documentation`) stay without a
+dedicated *step* bound — the job-level caps PR 4 lands cover the
+whole-job stall meanwhile — closed when T010's dedicated resolve
+steps land; FR-004's step bound is measured on the final tree.
 
 Post-landing review amendments to the four documents travel as an
 additional prose-only PR outside the numbered sequence — the table
@@ -435,8 +445,10 @@ tracks the code-change and validation work.
   re-runs build/test work, not just
   the fetch; their coverage is auth + the widened cache flags, plus warm
   reuse for the app jobs under T007's clone-path pin.
-- Job-level `timeout-minutes` on uncapped jobs — see plan.md's Deferred
-  work item for the authoritative job list; a pre-existing gap — the
-  caps that change here are `tuist-apps`' (45 → 75, T005) and
-  `docc-release`'s `docc` job (20 → 45, T010), each because a new step
-  bound changed its arithmetic.
+- Job-level `timeout-minutes` gaps — closed in T005: every job now
+  carries a bound sized from its observed duration plus headroom for
+  its named variance leg (the previously
+  uncapped set — `apple-builds`, `development-docs`, `docker-builds`,
+  `docc-release`'s `build`/`release`). The remaining raises are
+  `tuist-apps`' 45 → 75 (T005) and `docc-release`'s `docc` 20 → 45
+  (T010), each because a new step bound changed its arithmetic.
