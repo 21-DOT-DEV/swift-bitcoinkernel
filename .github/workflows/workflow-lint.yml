@@ -1,0 +1,215 @@
+name: Workflow lint
+
+# Static gates on the CI configuration itself, all on ubuntu-latest — the
+# cheapest runner the checks can run on:
+#
+#   lint      — actionlint over every workflow (it auto-loads
+#               .github/actionlint.yaml and runs shellcheck on each `run:`
+#               block when the binary is on PATH) plus shellcheck over the
+#               local actions' standalone scripts.
+#   auth-lint — the mechanical half of FR-009: parses every workflow with yq
+#               and fails when a job that uses github-git-auth carries a
+#               write-capable effective permission, a checkout without
+#               persist-credentials: false, a checkout ordered after the auth
+#               step, or an AUTH_LINT_EXEMPT marker in any file but
+#               actions-selftest.yml.
+#
+# Triggers: PRs and pushes to main that touch the workflows, the actions, or
+# actionlint's config — the only runs whose outcome speaks to a change — plus
+# workflow_dispatch (a manual full-tree audit) and a weekly schedule: yq and
+# apt's shellcheck drift with the runner image, so the scheduled run converts
+# "the next .github PR goes mysteriously red" into a proactive signal.
+#
+# If this workflow is ever added as a required check, the paths filters must
+# go — a required check skipped by path filtering stays Pending and blocks
+# unrelated PRs.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/**
+      - .github/actions/**
+      - .github/actionlint.yaml
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/**
+      - .github/actions/**
+      - .github/actionlint.yaml
+  workflow_dispatch:
+  schedule:
+    - cron: '41 5 * * 1'   # Monday 05:41 UTC — runner-image drift canary
+
+permissions: {}
+
+jobs:
+  lint:
+    name: actionlint + shellcheck
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      # shellcheck is image-bundled; if the image ever drops it, take the
+      # distro package rather than fail a fixable absence. It must precede
+      # actionlint: installed on PATH, actionlint runs it over every `run:`
+      # block in the workflows.
+      - name: Ensure shellcheck
+        run: |
+          command -v shellcheck >/dev/null && exit 0
+          sudo apt-get update && sudo apt-get install -y shellcheck
+
+      # Pinned tarball + checksum — the supply-chain posture this repo holds
+      # for CI tooling. The `$/` ignore in .github/actionlint.yaml stays
+      # required: ≤1.7.12 cannot parse self-repository uses: (rhysd/actionlint#732
+      # is still open), and this is the newest release.
+      - name: Install actionlint (pinned)
+        env:
+          ACTIONLINT_VERSION: "1.7.12"
+          ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/actionlint.tar.gz" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "$ACTIONLINT_SHA256  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Lint workflows
+        run: actionlint -color
+
+      - name: Shellcheck action scripts
+        run: |
+          shopt -s globstar nullglob
+          scripts=(.github/actions/**/*.sh)
+          [ "${#scripts[@]}" -eq 0 ] && exit 0
+          shellcheck "${scripts[@]}"
+
+  auth-lint:
+    name: Auth wiring lint (FR-009)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      # yq is image-bundled — mikefarah's, and the check's query syntax is
+      # provider-specific (the Python yq would not parse it). If the image
+      # ever drops it, fall back to a pinned binary rather than fail a
+      # fixable absence.
+      - name: Ensure yq
+        env:
+          YQ_VERSION: "4.53.6"
+          YQ_SHA256: "c5f056448f973ae7d39b5401949648a78f2dc1947d6a8eb65be60d5c504b9385"
+        run: |
+          command -v yq >/dev/null && exit 0
+          curl -sSfL -o "$RUNNER_TEMP/yq" \
+            "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64"
+          echo "$YQ_SHA256  $RUNNER_TEMP/yq" | sha256sum -c -
+          sudo install -m 0755 "$RUNNER_TEMP/yq" /usr/local/bin/yq
+
+      # All checks collect violations then exit once, so a red run reports
+      # every broken rule at once rather than the first one.
+      - name: Check auth wiring (FR-009)
+        run: |
+          fail=0
+
+          for f in .github/workflows/*.yml .github/workflows/*.yaml; do
+            [ -e "$f" ] || continue
+            base=${f##*/}
+
+            # AUTH_LINT_EXEMPT may exist only in actions-selftest.yml (the
+            # deliberate FR-008 write-scope canary). Detected via parsed env
+            # keys at workflow/job/step level — never grep: this file's own
+            # run: text names the marker and must not self-flag.
+            if [ "$base" != actions-selftest.yml ]; then
+              markers=$(yq '([.env // {} | keys | .[]]
+                + [.jobs // {} | .[].env // {} | keys | .[]]
+                + [.jobs // {} | .[].steps // [] | .[].env // {} | keys | .[]]
+                | map(select(. == "AUTH_LINT_EXEMPT")) | length)' "$f")
+              if [ "$markers" -gt 0 ]; then
+                echo "::error file=$f::AUTH_LINT_EXEMPT declared outside actions-selftest.yml — the deliberate write-scope exemption belongs to the selftest canary only"
+                fail=1
+              fi
+            fi
+
+            # The remaining rules bind per job — but only jobs whose steps
+            # actually uses: the action (./ or $/ form alike); a checkout
+            # alone (docker-builds) or no checkout at all (docc-release's
+            # release job) is outside FR-009's scope by design.
+            # (Var+guard, not `while read` over process substitution: yq
+            # emits a bare newline for a zero-element select, which read
+            # would otherwise take as one blank row.)
+            jobs=$(yq '(.jobs // {}) | keys | .[]' "$f")
+            [ -z "$jobs" ] && continue
+            while IFS= read -r job; do
+              auth_idx=$(yq ".jobs[\"$job\"].steps // [] | to_entries
+                | map(select((.value.uses // \"\") | test(\"github-git-auth\")) | .key)
+                | .[0] // -1" "$f")
+              [ "$auth_idx" = "-1" ] && continue
+
+              # Write-scope rule: effective permissions are the job's block if
+              # declared, else the workflow's; write-all or any scope granted
+              # write fails — and no block at either level fails too, since
+              # the token then inherits the repo default, which may be write.
+              # AUTH_LINT_EXEMPT (job env, or workflow env applying to all
+              # jobs) lifts ONLY this rule — the checkout checks still apply.
+              exempt=$(yq "([.jobs[\"$job\"].env // {} | keys | .[]]
+                + [.env // {} | keys | .[]]
+                | map(select(. == \"AUTH_LINT_EXEMPT\")) | length)" "$f")
+              if [ "$exempt" -eq 0 ]; then
+                ptag=$(yq ".jobs[\"$job\"].permissions | tag" "$f")
+                [ "$ptag" = "!!null" ] && ptag=$(yq ".permissions | tag" "$f")
+                case "$ptag" in
+                  !!null)
+                    echo "::error file=$f::job '$job' uses github-git-auth but declares no permissions at job or workflow level — the token inherits the repo default, which may be write"
+                    fail=1 ;;
+                  !!str)
+                    pval=$(yq ".jobs[\"$job\"].permissions // .permissions" "$f")
+                    if [ "$pval" = "write-all" ]; then
+                      echo "::error file=$f::job '$job' uses github-git-auth with permissions: write-all — the action is meant for contents: read jobs"
+                      fail=1
+                    fi ;;
+                  !!map)
+                    writes=$(yq "(.jobs[\"$job\"].permissions // .permissions)
+                      | to_entries | map(select(.value == \"write\")) | length" "$f")
+                    if [ "$writes" -gt 0 ]; then
+                      echo "::error file=$f::job '$job' uses github-git-auth with a write-capable permission — the action is meant for contents: read jobs"
+                      fail=1
+                    fi ;;
+                esac
+              fi
+
+              # Checkout rules — apply to exempt jobs too: every checkout in
+              # an auth-using job must set persist-credentials to the literal
+              # false (absent or an expression counts as a violation — the
+              # pairing rule is a static fact, not a computed one), and none
+              # may sit after the first auth step: a later checkout's own
+              # fetch carries both Authorization headers and dies on
+              # github.com's bare 400.
+              checkouts=$(yq ".jobs[\"$job\"].steps // [] | to_entries | .[]
+                | select((.value.uses // \"\") | test(\"^actions/checkout@\"))
+                | [.key, (.value.with[\"persist-credentials\"] | tostring)] | @tsv" "$f")
+              [ -z "$checkouts" ] && continue
+              while IFS=$'\t' read -r idx pc; do
+                if [ "$pc" != "false" ]; then
+                  echo "::error file=$f::job '$job' checkout (step $((idx + 1))) lacks persist-credentials: false — github.com answers two Authorization headers with a bare 400"
+                  fail=1
+                fi
+                if [ "$idx" -gt "$auth_idx" ]; then
+                  echo "::error file=$f::job '$job' checkout (step $((idx + 1))) runs after github-git-auth — the auth step must follow every checkout in the job"
+                  fail=1
+                fi
+              done <<< "$checkouts"
+            done <<< "$jobs"
+          done
+
+          [ "$fail" -eq 0 ] && echo "auth wiring checks passed (FR-009)"
+          exit "$fail"

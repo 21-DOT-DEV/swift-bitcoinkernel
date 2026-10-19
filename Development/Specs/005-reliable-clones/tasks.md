@@ -25,7 +25,7 @@ is green; the index lists feature 005.
   `http.lowSpeedLimit`/`lowSpeedTime`, and a warn-only verify step per
   FR-007/FR-008 (the conditions those requirements own) (FR-001, FR-007,
   FR-008) · `.github/actions/github-git-auth/action.yml`
-- [ ] T009 `actions-selftest` workflow (on PRs and pushes to `main`
+- [x] T009 `actions-selftest` workflow (on PRs and pushes to `main`
   touching `.github/actions/**` *or the workflow file itself* — a path
   filter that excludes `actions-selftest.yml` would leave its own edits
   unchecked — plus `workflow_dispatch` and a weekly `schedule`: the
@@ -97,7 +97,7 @@ is green; the index lists feature 005.
   before it merges and record whether it caught anything the executable
   gates missed — that result decides if the rule earns a
   `.github/AGENTS.md` variant
-- [ ] T011 `workflow-lint` workflow — ubuntu-only, triggered on
+- [x] T011 `workflow-lint` workflow — ubuntu-only, triggered on
   `.github/workflows/**`, `.github/actions/**`, and
   `.github/actionlint.yaml` (so every workflow edit is linted and its
   own edits re-trigger it) — running `actionlint` and `shellcheck`
@@ -127,7 +127,7 @@ is green; the index lists feature 005.
   "private repository" (the repo is public)
   (FR-001, FR-002) · `.github/workflows/{apple-builds,development-docs,
   docc-release,flake-hunt,tuist-apps}.yml`
-- [ ] T004 Record the pairing rule (FR-002 and its edge cases — the
+- [x] T004 Record the pairing rule (FR-002 and its edge cases — the
   mechanisms, and auth *after* every checkout) in `.github/AGENTS.md`;
   `docker-builds` and the write-scoped `release` job are the documented
   exceptions, and a `$/`-reference variant covers jobs whose checkout
@@ -386,8 +386,8 @@ invoke the action; logs show the attempt group format.
 | # | Landed | Pull request | Tasks | Changed lines | Depends on |
 |---|---|---|---|---|---|
 | 1 | [x] | The plan documents | T001 | ~1,450 prose | — |
-| 2 | [ ] | `github-git-auth` action, inert + `actions-selftest` + `workflow-lint` workflows + `xcode-27` label config in `actionlint.yaml` + pre-existing lint fixes | T002, T009, T011 | ~190 | — |
-| 3 | [ ] | Auth wired into fetch jobs across five workflows, `release`-job checkout removed, pairing rule + `$/` variant in `.github/AGENTS.md`, `actionlint.yaml` created with the `$/` ignore | T003, T004's prose | ~230 | — |
+| 2 | [x] | `github-git-auth` action, inert + `actions-selftest` + `workflow-lint` workflows + `xcode-27` label config in `actionlint.yaml` + pre-existing lint fixes | T002, T009, T011 | ~190 | — |
+| 3 | [x] | Auth wired into fetch jobs across five workflows, `release`-job checkout removed, pairing rule + `$/` variant in `.github/AGENTS.md`, `actionlint.yaml` created with the `$/` ignore | T003, T004's prose | ~230 | — |
 | 4 | [ ] | Cache flags on all fetch steps + `timeout-minutes: 30` + job-cap bump | T005 | ~55 | — |
 | 5 | [ ] | `retry-on-fetch-flake` action, inert + selftest retry cases | T006 | ~100 | PR 2 (selftest workflow) |
 | 6 | [ ] | Retry wired into the two generate steps + `Tuist.swift` clone-path pin + routing rule | T007 | ~50 | PR 5 |
