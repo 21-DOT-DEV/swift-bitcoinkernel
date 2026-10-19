@@ -232,7 +232,7 @@ enum NodeAutomation {
     ///
     /// The run feeds it the snapshot's `torEnabled` and a live re-read of the
     /// `tor_enabled` flag — one of two live reads of that flag the run is
-    /// allowed, the other being `NodeSession.startTorIfStillEnabled()`'s.
+    /// allowed, the other being `NodeSession.startTorIfStillEnabled(reading:)`'s.
     /// `startArguments` weighs the same pair to decline the turned-off split —
     /// a second decision on the same read, not a third read. Every other key
     /// stays frozen in the snapshot.
@@ -257,7 +257,7 @@ enum NodeAutomation {
         /// switched off means nothing is being established — and "being
         /// established now" would then be a false sentence. The deliberate
         /// wait-for-it path feeds it the live flag from
-        /// `startTorIfStillEnabled()`; the launch boundary reports the case
+        /// `startTorIfStillEnabled(reading:)`; the launch boundary reports the case
         /// `startArguments` threw instead — it already holds the
         /// snapshot/live split, so it skips the picker.
         init(stillEnabled: Bool) {

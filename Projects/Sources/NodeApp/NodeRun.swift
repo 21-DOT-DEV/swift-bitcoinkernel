@@ -18,6 +18,184 @@ import os.log
 
 import UIKit
 
+/// The session a run sees: the process-owned node and private-network
+/// controllers, the connection it asks questions through, and the device
+/// readings its conditions gathers consult.
+///
+/// `NodeSession.shared` is the only production conformer — its members forward
+/// to `NodeViewModel` and `TorViewModel`. The seam exists so a test can drive
+/// `perform` against states a real `NodeSession` cannot be put into — a
+/// private network that never readies, or a node that stops mid-question —
+/// because its node and Tor state are read-only views of live controllers.
+/// The surface is deliberately the flat list of facts the run consults rather
+/// than the controllers' own shapes: a run asks "is the node still up" and "is
+/// the private network usable", never "is a view-model flag set".
+@MainActor
+protocol RunSession {
+
+    /// The node's lifecycle state, re-read each time it is consulted: a run
+    /// watches for a stopped node coming up — and for a running one going
+    /// down — while it waits.
+    var nodeState: NodeState { get }
+
+    /// Whether the private network is usable right now — bootstrapped and
+    /// holding a SOCKS endpoint — rather than merely switched on.
+    var torIsReady: Bool { get }
+
+    /// The private network's `host:port` SOCKS address, handed to the node's
+    /// arguments only while `torIsReady` holds.
+    var torProxyAddress: String? { get }
+
+    /// The private-network session identifier passed to the node start, so
+    /// the daemon's lifecycle can be tied to the Tor session that spawned it.
+    var torSessionID: UUID? { get }
+
+    /// The SOCKS port the node is started against when privacy is required.
+    var torSocksPort: UInt16? { get }
+
+    /// The connection the run asks questions through — which chain, what
+    /// height, how many peers.
+    var reader: any DashboardDataSource { get }
+
+    /// The device the run's conditions gathers read — protected data, power,
+    /// heat, disk, network cost. The raw readings only; how they combine into
+    /// a gather's answer stays in `NodeRun`, where a scripted adapter can
+    /// watch them be used.
+    var device: any DeviceReadings { get }
+
+    /// Starts the node with the given daemon arguments.
+    ///
+    /// - Returns: whether the start was accepted. The concrete node refuses
+    ///   anything but `.stopped`, so `false` means the state moved under the
+    ///   run — another run, the app's own Start button, or a restart.
+    func startNode(arguments: [String], torSession: UUID?, torSocksPort: UInt16?) -> Bool
+
+    /// Starts the private network only if its setting is still on right now.
+    ///
+    /// - Parameter defaults: the store the still-on check reads — the same one
+    ///   the run's snapshot came from, so a test's throwaway store is the
+    ///   setting this method consults too.
+    /// - Returns: whether the setting is still on. The wait-for-it path uses
+    ///   it to word the decline honestly — "being established now" is only
+    ///   true while the network is actually wanted.
+    @discardableResult
+    func startTorIfStillEnabled(reading defaults: UserDefaults) -> Bool
+}
+
+/// The raw device readings a run's conditions gathers ask for.
+///
+/// One member per system call — no decision lives here. Which readings a
+/// gather asks for, in what order, and how long the network answer may wait
+/// stay in `NodeRun`, where a scripted adapter can watch them be used.
+/// `LiveDeviceReadings` is the production conformer: every one of its lines
+/// touches an Apple framework or the filesystem, none of which can be
+/// exercised by automated checks — which is why the type exists and why it
+/// contains nothing else.
+@MainActor
+protocol DeviceReadings: Sendable {
+
+    /// Ensures the network-cost watcher is running, so the reads below have
+    /// an answer ready. Idempotent — the watcher, once started, is never
+    /// stopped.
+    func startWatchingNetworkCost()
+
+    /// Whether protected data is readable — false only before the first
+    /// unlock after a restart.
+    var protectedDataAvailable: Bool { get }
+
+    /// Whether Low Power Mode is on.
+    var lowPowerModeEnabled: Bool { get }
+
+    /// The system's thermal pressure.
+    var thermalState: ProcessInfo.ThermalState { get }
+
+    /// Creates the chain folder if needed — a write, so a gather attempts it
+    /// only after finding files readable — reporting whether it is there.
+    func prepareChainFolder() -> Bool
+
+    /// Free space for important work on the chain volume, or `nil` if the
+    /// system could not say.
+    func freeDiskBytes() -> Int64?
+
+    /// The network's first cost report, waiting for it — deliberately
+    /// unbounded here: how long it may wait is the caller's call, bounded on
+    /// the run's own clock where a test can drive it.
+    ///
+    /// `nonisolated` because its only caller is a `withHardTimeout`
+    /// operation — a detached task kept off every actor on purpose — and the
+    /// monitor's own poll is actor-free beneath it. A `@MainActor` member
+    /// would make the one wait that stays off the main actor hop through it.
+    nonisolated func networkFirst() async -> NetworkCost
+
+    /// The latest network-cost answer without waiting — `.unknown` until the
+    /// watcher has reported. Nothing reads it yet: it exists for T024's
+    /// mid-watch drift check, which re-weighs conditions on a change the
+    /// first-report wait cannot see.
+    var networkCurrent: NetworkCost { get }
+}
+
+/// The production `DeviceReadings`: each member forwards one system call and
+/// nothing more — the seam exists precisely because these lines are the ones
+/// no test can drive.
+@MainActor
+struct LiveDeviceReadings: DeviceReadings {
+
+    private static let log = Logger(subsystem: "dev.21.NodeApp", category: "Shortcut")
+
+    func startWatchingNetworkCost() {
+        NetworkCostMonitor.shared.start()
+    }
+
+    var protectedDataAvailable: Bool {
+        UIApplication.shared.isProtectedDataAvailable
+    }
+
+    var lowPowerModeEnabled: Bool {
+        ProcessInfo.processInfo.isLowPowerModeEnabled
+    }
+
+    var thermalState: ProcessInfo.ThermalState {
+        ProcessInfo.processInfo.thermalState
+    }
+
+    /// The request to keep the folder out of backups is best-effort inside
+    /// `DaemonConfig.prepareDataDirectory` — a folder that exists but is
+    /// unmarked is perfectly writable, and unattended there is nobody to
+    /// notice backups growing, which is why that failure is only ever logged.
+    func prepareChainFolder() -> Bool {
+        do {
+            try DaemonConfig.prepareDataDirectory(at: DaemonConfig.dataDirectory)
+            return true
+        } catch {
+            Self.log.error(
+                "run: chain folder could not be prepared — \(error.localizedDescription, privacy: .public)")
+            return false
+        }
+    }
+
+    /// Free space measured on the chain folder's volume as the figure the
+    /// system reports for *important* work rather than raw free bytes — a
+    /// courtesy reading, since the system may not reclaim it in time.
+    func freeDiskBytes() -> Int64? {
+        let url = DaemonConfig.dataDirectory
+        guard
+            let values = try? url.resourceValues(forKeys: [
+                .volumeAvailableCapacityForImportantUsageKey
+            ]),
+            let capacity = values.volumeAvailableCapacityForImportantUsage
+        else { return nil }
+        return capacity
+    }
+
+    nonisolated func networkFirst() async -> NetworkCost {
+        await NetworkCostMonitor.shared.first()
+    }
+
+    var networkCurrent: NetworkCost {
+        NetworkCostMonitor.shared.current
+    }
+}
+
 /// The one routine both Shortcuts actions call, so their behaviour cannot drift apart.
 ///
 /// Everything here touches the device or the node, which is why it cannot be exercised
@@ -28,6 +206,13 @@ import UIKit
 enum NodeRun {
 
     private static let log = Logger(subsystem: "dev.21.NodeApp", category: "Shortcut")
+
+    /// The tolerance attached to the run's cadence sleeps — today only the
+    /// iOS 27 action's heartbeat — so the system may coalesce them with other
+    /// work. Sleeps that bound a deadline keep `tolerance: nil`: the races
+    /// inside `withHardTimeout`, and the wait loop's deadline-capped nap —
+    /// a sleep meant to bound a deadline must not be permitted to outlive it.
+    static let sleepTolerance: Duration = .seconds(1)
 
     /// The most a single question to the node may take before the run stops
     /// waiting on it.
@@ -47,10 +232,13 @@ enum NodeRun {
     /// Runs once and reports.
     ///
     /// - Parameters:
-    ///   - session: the process-owned node and private-network controllers — always
-    ///     `.shared` in practice (its initializer is private). Passed explicitly so
-    ///     the dependency stays visible at the call site rather than baked into the
-    ///     signature.
+    ///   - session: the session the run asks — node state, private-network
+    ///     readiness, the connection it asks questions through, and the device
+    ///     readings its conditions gathers consult. `NodeSession.shared` in
+    ///     production; the `RunSession` seam exists so a test can drive states
+    ///     the real session cannot be put into. Passed explicitly so the
+    ///     dependency stays visible at the call site rather than baked into
+    ///     the signature.
     ///   - waitForFirstAnswer: how long to keep asking the node whether it is up
     ///     after this run starts one — or finds one already starting. The two
     ///     actions pass different budgets: the short-run action has roughly half
@@ -61,15 +249,35 @@ enum NodeRun {
     ///     outcome, not an error. Only the waiting paths consult this: a node
     ///     that is already answering is read straight away, each question
     ///     bounded by `questionBudget`.
+    ///   - clock: the time source every wait, question bound, and deadline in
+    ///     the run is measured on. Generic over `Clock<Duration>` rather than
+    ///     `any` so instants stay `Comparable` — the erased `InstantProtocol`
+    ///     an existential yields cannot be put in deadline order. Production
+    ///     passes `ContinuousClock()`; tests drive the whole run on a
+    ///     `TestClock`.
+    ///   - now: the wall-clock instant read each time a decision weighs tip
+    ///     age — staged here for the sync watch, whose tip-freshness leg
+    ///     re-reads it on every pass. No caller consumes it until that stage
+    ///     lands.
+    ///   - defaults: the store the run reads its settings snapshot, its live
+    ///     privacy-floor check, and the `last_run_*` baseline from. No default
+    ///     — a hosted test bundle shares the app's settings domain, so a test
+    ///     that forgot the argument would read the person's real
+    ///     `tor_enabled` and could send the run down the private-network
+    ///     path; the same reason the persistence boundary's `into:` has none.
+    ///     Tests pass a volatile suite.
     ///   - onProgress: called as the wait proceeds, with a fraction from 0 to 1.
     ///     The iOS 27 action forwards this to its progress display; advancing it
     ///     is also what keeps that longer time window open. Never call it from
     ///     inside a `withHardTimeout` operation: an abandoned question outlives
     ///     the run, so a report written there can land after `perform` has
     ///     returned and the progress display it feeds is already gone.
-    static func perform(
-        session: NodeSession,
+    static func perform<C: Clock<Duration>>(
+        session: any RunSession,
         waitForFirstAnswer: Duration,
+        clock: C,
+        now: @escaping @Sendable () -> Date = { Date() },
+        defaults: UserDefaults,
         onProgress: @MainActor (Double) -> Void = { _ in }
     ) async -> NodeRunReport {
         // Every setting the run is allowed to see is read once, here, before the
@@ -87,7 +295,7 @@ enum NodeRun {
         // address), while a toggle flipped *off* after the snapshot required
         // privacy still requires it — a decline is recoverable and a leak is
         // not. See `start` and ADR 0006.
-        let settings = DaemonConfig.Snapshot(reading: .standard)
+        let settings = DaemonConfig.Snapshot(reading: defaults)
         // The step decision weighs the snapshot's privacy setting; `start`
         // tightens it to snapshot-or-live at the launch boundary — the two
         // deliberately differ, so this local keeps the narrower name.
@@ -105,16 +313,17 @@ enum NodeRun {
 
         // Idempotent, and belt-and-braces: the watcher is started at process launch, but
         // this is the one path that runs with no window, so it does not rely on that.
-        NetworkCostMonitor.shared.start()
+        session.device.startWatchingNetworkCost()
 
         let step = NodeAutomation.step(
-            nodeState: session.node.nodeState,
+            nodeState: session.nodeState,
             privacyEnabled: snapshotPrivacy,
-            privacyReady: session.tor.isReady
+            privacyReady: session.torIsReady
         )
 
         if NodeAutomation.consultsDeviceConditions(for: step),
-            let refusal = NodePreflight.refusal(for: await readConditions())
+            let refusal = NodePreflight.refusal(
+                for: await readConditions(device: session.device, clock: clock))
         {
             log.notice("run: declined — \(String(describing: refusal), privacy: .public)")
             return declined(reason: refusal.message)
@@ -133,7 +342,8 @@ enum NodeRun {
             // Never interrupt a node someone started themselves: read it and leave it
             // alone (ADR 0005).
             log.notice("run: a node is already running — reading and leaving it alone")
-            return await report(session: session, onProgress: onProgress)
+            return await report(
+                session: session, clock: clock, defaults: defaults, onProgress: onProgress)
 
         case .waitForStartingNode:
             // Already on its way up: nothing to start, and nothing to read until
@@ -141,7 +351,8 @@ enum NodeRun {
             // it started itself.
             log.notice("run: a node is already starting — waiting on it")
             return await waitForStarting(
-                session: session, within: waitForFirstAnswer, onProgress: onProgress)
+                session: session, within: waitForFirstAnswer, clock: clock,
+                defaults: defaults, onProgress: onProgress)
 
         case .waitForPrivateNetwork:
             // The step was decided before the device-condition read, which can
@@ -149,10 +360,11 @@ enum NodeRun {
             // finish. A network that is ready now means there is nothing to
             // wait for, and declining "not ready" would be a lie at report
             // time; take the start path and let its own checks run.
-            if session.tor.isReady {
+            if session.torIsReady {
                 return await start(
-                    session: session, settings: settings,
-                    waitForFirstAnswer: waitForFirstAnswer, onProgress: onProgress)
+                    session: session, settings: settings, defaults: defaults,
+                    waitForFirstAnswer: waitForFirstAnswer, clock: clock,
+                    onProgress: onProgress)
             }
             // Spend the run establishing the private network rather than starting on a
             // direct connection, which would expose the person's home network address
@@ -160,7 +372,7 @@ enum NodeRun {
             // log — depends on the live setting: still on means the network is
             // genuinely coming up; switched off mid-run means nothing is being
             // established, and saying so would be a lie in both places.
-            let stillEnabled = session.startTorIfStillEnabled()
+            let stillEnabled = session.startTorIfStillEnabled(reading: defaults)
             if stillEnabled {
                 log.notice("run: private network not ready — starting it, not starting the node")
             } else {
@@ -171,17 +383,20 @@ enum NodeRun {
 
         case .startNode:
             return await start(
-                session: session, settings: settings,
-                waitForFirstAnswer: waitForFirstAnswer, onProgress: onProgress)
+                session: session, settings: settings, defaults: defaults,
+                waitForFirstAnswer: waitForFirstAnswer, clock: clock,
+                onProgress: onProgress)
         }
     }
 
     // MARK: - Starting
 
-    private static func start(
-        session: NodeSession,
+    private static func start<C: Clock<Duration>>(
+        session: any RunSession,
         settings: DaemonConfig.Snapshot,
+        defaults: UserDefaults,
         waitForFirstAnswer: Duration,
+        clock: C,
         onProgress: @MainActor (Double) -> Void
     ) async -> NodeRunReport {
         // Privacy fails closed at the launch boundary — the one place this file
@@ -194,7 +409,7 @@ enum NodeRun {
         // be trusted — `startArguments` declines the split before the proxy
         // floor is even checked. The decision itself lives in `NodeAutomation`
         // and is tested (ADR 0006).
-        let liveEnabled = UserDefaults.standard.bool(forKey: "tor_enabled")
+        let liveEnabled = defaults.bool(forKey: "tor_enabled")
         let privacyEnabled = NodeAutomation.requiresPrivateNetwork(
             snapshotEnabled: settings.torEnabled,
             liveEnabled: liveEnabled)
@@ -214,7 +429,7 @@ enum NodeRun {
                 // the node to a proxy that dies seconds after launch — and with
                 // `-proxy=` set the daemon has no direct fallback, which makes a
                 // dead launch reported as started strictly worse than a decline.
-                proxyAddress: session.tor.isReady ? session.tor.proxyAddress : nil,
+                proxyAddress: session.torIsReady ? session.torProxyAddress : nil,
                 build: {
                     DaemonConfig.buildArguments(settings: effectiveSettings, torProxy: $0)
                 })
@@ -233,7 +448,9 @@ enum NodeRun {
             // established; a turned-off refusal promises nothing, and nudges
             // nothing.
             log.error("run: refused to start — \(String(describing: refusal), privacy: .public)")
-            if refusal == .privateNetworkNotReady { session.startTorIfStillEnabled() }
+            if refusal == .privateNetworkNotReady {
+                session.startTorIfStillEnabled(reading: defaults)
+            }
             return declined(reason: refusal.message)
         }
 
@@ -242,7 +459,7 @@ enum NodeRun {
         // Captured before the wait, not after: once the node reaches `.running` its
         // own sync poll begins overwriting the observational store the baseline
         // can still fall back to.
-        let previous = lastRunBaseline()
+        let previous = lastRunBaseline(in: defaults)
 
         // The last checkpoint before the side effect: the condition read and the
         // argument build suspend nowhere, but a run cancelled in that window would
@@ -256,21 +473,22 @@ enum NodeRun {
         // not do, the exact distinction `waitForStarting` exists to keep.
         // Take that path instead: it waits on whoever's node is coming up and
         // reports what it finds honestly.
-        guard session.node.start(
+        guard session.startNode(
             arguments: arguments,
-            torSession: privacyEnabled ? session.tor.sessionID : nil,
-            torSocksPort: privacyEnabled
-                ? session.tor.socksEndpoint.flatMap { UInt16(exactly: $0.port) } : nil
+            torSession: privacyEnabled ? session.torSessionID : nil,
+            torSocksPort: privacyEnabled ? session.torSocksPort : nil
         ) else {
             log.notice("run: node moved off stopped during the condition read — waiting on whoever started it")
             return await waitForStarting(
-                session: session, within: waitForFirstAnswer, onProgress: onProgress)
+                session: session, within: waitForFirstAnswer, clock: clock,
+                defaults: defaults, onProgress: onProgress)
         }
         log.notice("run: node start requested")
 
         guard
             let reading = await awaitFirstAnswer(
-                session: session, within: waitForFirstAnswer, onProgress: onProgress)
+                session: session, within: waitForFirstAnswer, clock: clock,
+                onProgress: onProgress)
         else {
             // The wait can also end before its deadline: the run was cancelled, the
             // node was stopped from the app mid-wait, or an in-flight answer was
@@ -289,7 +507,7 @@ enum NodeRun {
         log.notice("run: node answered at block \(reading.height, privacy: .public)")
         return await measuredReport(
             outcome: .started, previous: previous, reading: reading,
-            session: session, onProgress: onProgress)
+            session: session, clock: clock, onProgress: onProgress)
     }
 
     /// Waits on a node that is already coming up — started by an earlier run that
@@ -300,18 +518,21 @@ enum NodeRun {
     /// reported `.alreadyRunning` rather than `.started` — this run did not start
     /// anything — and a wait that runs out is `.didNotComeUp`: "still starting"
     /// is literally true whoever started it.
-    private static func waitForStarting(
-        session: NodeSession,
+    private static func waitForStarting<C: Clock<Duration>>(
+        session: any RunSession,
         within budget: Duration,
+        clock: C,
+        defaults: UserDefaults,
         onProgress: @MainActor (Double) -> Void
     ) async -> NodeRunReport {
         // Captured before the wait for the same reason `start` captures it: once
         // the node reaches `.running` its own sync poll overwrites the
         // observational fallback the baseline can read.
-        let previous = lastRunBaseline()
+        let previous = lastRunBaseline(in: defaults)
         guard
             let reading = await awaitFirstAnswer(
-                session: session, within: budget, onProgress: onProgress)
+                session: session, within: budget, clock: clock,
+                onProgress: onProgress)
         else {
             guard answerIsStillWanted(session: session) else {
                 log.notice("run: wait ended early — run cancelled or node stopped")
@@ -323,7 +544,7 @@ enum NodeRun {
         log.notice("run: starting node answered at block \(reading.height, privacy: .public)")
         return await measuredReport(
             outcome: .alreadyRunning, previous: previous, reading: reading,
-            session: session, onProgress: onProgress)
+            session: session, clock: clock, onProgress: onProgress)
     }
 
     /// Keeps asking the node whether it is up, giving up at the deadline.
@@ -350,21 +571,22 @@ enum NodeRun {
     /// One deadline is computed up front rather than accumulating intervals, state is
     /// re-read every time rather than assumed (someone may open the app and stop the
     /// node mid-wait), and the sleep is interruptible so a stopped run exits promptly.
-    private static func awaitFirstAnswer(
-        session: NodeSession,
+    private static func awaitFirstAnswer<C: Clock<Duration>>(
+        session: any RunSession,
         within budget: Duration,
+        clock: C,
         onProgress: @MainActor (Double) -> Void
     ) async -> NodeAutomation.LiveReading? {
         let reader = session.reader
-        let started = ContinuousClock.now
+        let started = clock.now
         let deadline = started.advanced(by: budget)
         let budgetSeconds = Double(budget / .milliseconds(1)) / 1000
 
-        while ContinuousClock.now < deadline {
+        while clock.now < deadline {
             if Task.isCancelled { return nil }
-            if session.node.nodeState.isStoppedOrStopping { return nil }
-            let remaining = ContinuousClock.now.duration(to: deadline)
-            let info = try? await withHardTimeout(min(remaining, questionBudget)) {
+            if session.nodeState.isStoppedOrStopping { return nil }
+            let remaining = clock.now.duration(to: deadline)
+            let info = try? await withHardTimeout(min(remaining, questionBudget), clock: clock) {
                 try await reader.blockchainInfo()
             }
             if let info {
@@ -383,17 +605,22 @@ enum NodeRun {
                 onProgress(0.9)
                 return NodeAutomation.reading(from: info)
             }
-            let elapsed = Double(started.duration(to: .now) / .milliseconds(1)) / 1000
+            let elapsed = Double(started.duration(to: clock.now) / .milliseconds(1)) / 1000
             onProgress(budgetSeconds > 0 ? min(0.9, elapsed / budgetSeconds) : 0)
             // The nap is capped by the time left rather than fixed at half a
             // second: an uncapped sleep can outlive the deadline by most of its
             // length — a two-second wait was observed ending at ~2.2s — which
             // would make the deadline a soft one in the one place this loop
-            // promises it is hard.
+            // promises it is hard. For the same reason it takes no tolerance:
+            // tolerance is *added* leeway the system may spend past the wake
+            // it was asked for, so a ~1s slack here would let the sleep land
+            // past the deadline the cap exists to honor. The run's shared
+            // tolerance is for cadence sleeps like the heartbeat; this nap is
+            // a deadline bound.
             let nap = min(
-                .milliseconds(500), ContinuousClock.now.duration(to: deadline))
+                .milliseconds(500), clock.now.duration(to: deadline))
             if nap > .zero {
-                do { try await Task.sleep(for: nap) } catch { return nil }
+                do { try await clock.sleep(for: nap) } catch { return nil }
             }
         }
         return nil
@@ -412,13 +639,15 @@ enum NodeRun {
     /// iOS 27 action is what guarantees the run keeps reporting; these milestones
     /// exist so the movement corresponds to something real rather than being pure
     /// invention.
-    private static func report(
-        session: NodeSession,
+    private static func report<C: Clock<Duration>>(
+        session: any RunSession,
+        clock: C,
+        defaults: UserDefaults,
         onProgress: @MainActor (Double) -> Void
     ) async -> NodeRunReport {
         let reader = session.reader
         onProgress(0.1)
-        let info = try? await withHardTimeout(questionBudget) {
+        let info = try? await withHardTimeout(questionBudget, clock: clock) {
             try await reader.blockchainInfo()
         }
         guard let info else {
@@ -435,9 +664,9 @@ enum NodeRun {
         guard answerIsStillWanted(session: session) else { return noAnswerReport() }
         onProgress(0.6)
         return await measuredReport(
-            outcome: .alreadyRunning, previous: lastRunBaseline(),
+            outcome: .alreadyRunning, previous: lastRunBaseline(in: defaults),
             reading: NodeAutomation.reading(from: info),
-            session: session, onProgress: onProgress)
+            session: session, clock: clock, onProgress: onProgress)
     }
 
     /// The report for a run holding a real reading: asks the last question
@@ -462,16 +691,19 @@ enum NodeRun {
     /// the run's result is actually returned — a run cancelled or stopped
     /// between the last question and that return reports nothing, so it must
     /// not advance a baseline it never reported. The actions make that call
-    /// through `persistReportedTip(from:to:)` on their `.result` path.
-    private static func measuredReport(
+    /// at the shared result boundary: `resultUnlessCancelled` persists
+    /// through `persistReportedTip(from:to:)` only when the report is
+    /// actually returned.
+    private static func measuredReport<C: Clock<Duration>>(
         outcome: NodeAutomation.Outcome,
         previous: NodeAutomation.TipBaseline?,
         reading: NodeAutomation.LiveReading,
-        session: NodeSession,
+        session: any RunSession,
+        clock: C,
         onProgress: @MainActor (Double) -> Void
     ) async -> NodeRunReport {
         let blocksSinceLastCheck = NodeAutomation.blocksSince(previous: previous, to: reading)
-        let connections = await connectionCount(session: session)
+        let connections = await connectionCount(session: session, clock: clock)
         // The peer-count question above is another bounded wait — the same window
         // every path in this file re-checks after. A node stopped in those last
         // seconds, or a run cancelled there, must not be reported as running.
@@ -540,9 +772,11 @@ enum NodeRun {
     /// The node's peer count, or `nil` if it could not be asked. Absent rather than
     /// zero: a run that gained nothing because it never found a peer would otherwise
     /// look identical to one that had peers and still gained nothing.
-    private static func connectionCount(session: NodeSession) async -> Int? {
+    private static func connectionCount<C: Clock<Duration>>(
+        session: any RunSession, clock: C
+    ) async -> Int? {
         let reader = session.reader
-        let info = try? await withHardTimeout(questionBudget) {
+        let info = try? await withHardTimeout(questionBudget, clock: clock) {
             try await reader.networkInfo()
         }
         guard let info else { return nil }
@@ -553,10 +787,10 @@ enum NodeRun {
     /// instant it is called — which is the point of the exercise, since both can
     /// change while a question is in flight. The decision stays in
     /// `NodeAutomation`; this only gathers what it decides on.
-    private static func answerIsStillWanted(session: NodeSession) -> Bool {
+    private static func answerIsStillWanted(session: any RunSession) -> Bool {
         NodeAutomation.answerIsStillWanted(
             runWasCancelled: Task.isCancelled,
-            nodeIsStopped: session.node.nodeState.isStoppedOrStopping)
+            nodeIsStopped: session.nodeState.isStoppedOrStopping)
     }
 
     /// The last tip a run actually reported, as a `TipBaseline` — the chain and
@@ -585,8 +819,10 @@ enum NodeRun {
     /// old single store behaved this way only by timing luck: it produced a
     /// figure only once a poll the person never saw had already overwritten
     /// the old-chain tip.
-    private static func lastRunBaseline() -> NodeAutomation.TipBaseline? {
-        (NodeViewModel.lastRun() ?? NodeViewModel.lastKnown()).map {
+    private static func lastRunBaseline(
+        in defaults: UserDefaults
+    ) -> NodeAutomation.TipBaseline? {
+        (NodeViewModel.lastRun(in: defaults) ?? NodeViewModel.lastKnown(in: defaults)).map {
             NodeAutomation.TipBaseline(chain: $0.chain, height: $0.height)
         }
     }
@@ -603,10 +839,13 @@ enum NodeRun {
     /// only when a measurement actually happened — a declined, unanswered, or
     /// discarded run has neither — so the guard is the whole contract: a run
     /// that reported no measurement cannot advance either baseline. Not
-    /// private — both intents call it. `to` exists so tests can hand a
-    /// throwaway store rather than the app's real settings.
+    /// private — `resultUnlessCancelled` calls it. The store is handed in
+    /// rather than defaulted to `.standard`: a run-internal persist — the
+    /// regression the result boundary exists against — spelled without a
+    /// store would silently write the app's real settings, untouched by
+    /// whatever a test handed the run.
     static func persistReportedTip(
-        from report: NodeRunReport, to defaults: UserDefaults = .standard
+        from report: NodeRunReport, to defaults: UserDefaults
     ) {
         guard let height = report.blockHeight, let chain = report.chain else { return }
         // `last_run_*` records exactly what this run reported — unconditional,
@@ -623,6 +862,43 @@ enum NodeRun {
             return
         }
         NodeViewModel.persistLastKnown(height: height, chain: chain, in: defaults)
+    }
+
+    /// The result boundary both actions share: a report the run produced is
+    /// returned and persisted only if it is still wanted at the instant it
+    /// crosses back into the intent.
+    ///
+    /// Between the run's last "still wanted?" check and the `.result` return
+    /// there is one more window where the answer can stop being wanted — the
+    /// run can be cancelled in that span, or (for the iOS 27 action, which can
+    /// also be told to stop) the person can end it. Returning then would
+    /// deliver a result for a run the system has already forgotten — and
+    /// `persistReportedTip` would advance `last_run_*` from an answer nobody
+    /// was shown, collapsing the next run's "since last check" delta toward
+    /// zero. The throw exists so the boundary can never persist what it did
+    /// not return.
+    ///
+    /// `wasStopped` carries the long-running action's own stop signal — it is
+    /// reported through a channel beside task cancellation, so it is weighed
+    /// beside it rather than read as `Task.isCancelled`. The short action
+    /// passes nothing.
+    ///
+    /// - Throws: `CancellationError` when the result is no longer wanted.
+    ///
+    /// `into` has no default for the same reason `persistReportedTip`'s store
+    /// doesn't: a boundary call that forgot the store would silently persist
+    /// to `.standard`, outside whatever a test handed the run.
+    static func resultUnlessCancelled(
+        _ report: NodeRunReport,
+        wasStopped: Bool = false,
+        into defaults: UserDefaults
+    ) throws -> NodeRunReport {
+        guard !wasStopped, !Task.isCancelled else {
+            log.notice("run: cancelled — reporting the run as cancelled, not as a result")
+            throw CancellationError()
+        }
+        persistReportedTip(from: report, to: defaults)
+        return report
     }
 
     private static func declined(reason: LocalizedStringResource) -> NodeRunReport {
@@ -643,76 +919,48 @@ enum NodeRun {
 
     // MARK: - Device conditions
 
-    /// Reads the seven conditions `NodePreflight` weighs.
+    /// Gathers the seven conditions `NodePreflight` weighs — the full set the
+    /// start paths consult — out of the raw readings `device` exposes. The
+    /// combination is the part worth testing, so it lives here rather than in
+    /// the adapter: which readings, in what order, and how long the network
+    /// answer may wait.
     ///
-    /// Deliberately here rather than beside the decision: every line touches an Apple
-    /// framework and cannot be exercised by automated checks, so it sits with its caller
-    /// while the decision stays testable. Free space is read as the figure the system
-    /// reports for *important* work rather than raw free bytes, and is treated as a
-    /// courtesy check — it counts space the system may not reclaim in time, so a write
-    /// failure must still be handled.
-    private static func readConditions() async -> NodePreflight.DeviceConditions {
-        // Every reading here is immediate except the network one, which this
-        // path waits on — briefly. The watcher started at launch normally has
-        // an answer ready, but on a background launch the run reaches this line
-        // within milliseconds of that start, before the first report has had
-        // time to land on the watcher's queue — and reading `current` then
-        // would take "not yet reported" as "not costly", silently skipping the
-        // refusals that protect the person's data allowance. The wait is
-        // bounded: an earlier version suspended on the report unboundedly and
-        // could hang before the run ever reached the node, and a report that
-        // never comes falls back to the same not-known answer `current` gives.
-        let network = (try? await withHardTimeout(.seconds(2)) {
-            await NetworkCostMonitor.shared.first()
+    /// Every reading is immediate except the network one, which this path
+    /// waits on — briefly. The watcher started at launch normally has an
+    /// answer ready, but on a background launch the run reaches this line
+    /// within milliseconds of that start, before the first report has had
+    /// time to land on the watcher's queue — and reading `networkCurrent`
+    /// then would take "not yet reported" as "not costly", silently skipping
+    /// the refusals that protect the person's data allowance. The wait is
+    /// bounded: an earlier version suspended on the report unboundedly and
+    /// could hang before the run ever reached the node, and a report that
+    /// never comes falls back to the same not-known answer `networkCurrent`
+    /// gives.
+    private static func readConditions<C: Clock<Duration>>(
+        device: any DeviceReadings,
+        clock: C
+    ) async -> NodePreflight.DeviceConditions {
+        let network = (try? await withHardTimeout(.seconds(2), clock: clock) {
+            await device.networkFirst()
         }) ?? .unknown
-        let filesReadable = UIApplication.shared.isProtectedDataAvailable
-        // The folder prepare is a write, attempted only when files can be read at
-        // all: before the first unlock after a restart it is doomed to fail and
-        // would log a scary error on every such run — for a refusal
-        // `filesNotReadable` already reports on its own.
-        let chainFolderExists = filesReadable && prepareChainFolder()
+        let filesReadable = device.protectedDataAvailable
+        // The folder prepare is a write, attempted only when files can be
+        // read at all: before the first unlock after a restart it is doomed
+        // to fail and would log a scary error on every such run — for a
+        // refusal `filesNotReadable` already reports on its own. It also runs
+        // before the disk read because free space is measured *on this
+        // folder's volume*: until it exists the reading comes back unknown,
+        // which the space check deliberately treats as "do not refuse".
+        let chainFolderExists = filesReadable && device.prepareChainFolder()
         return NodePreflight.DeviceConditions(
             filesReadable: filesReadable,
             chainFolderExists: chainFolderExists,
-            lowPowerModeEnabled: ProcessInfo.processInfo.isLowPowerModeEnabled,
+            lowPowerModeEnabled: device.lowPowerModeEnabled,
             networkIsMetered: network.isMetered,
             networkIsDataRestricted: network.isDataRestricted,
-            thermalState: ProcessInfo.processInfo.thermalState,
-            freeDiskBytes: freeDiskBytes()
+            thermalState: device.thermalState,
+            freeDiskBytes: device.freeDiskBytes()
         )
-    }
-
-    /// Creates the folder the chain is written into, reporting whether it is there.
-    ///
-    /// Done before anything else is measured because free space is measured *on this
-    /// folder*: until it exists the reading comes back unknown, which the space check
-    /// deliberately treats as "do not refuse" — quietly disabling the check on a first
-    /// run, the one run it was written for. Only the folder's existence is weighed;
-    /// the request to keep it out of backups is best-effort inside
-    /// `DaemonConfig.prepareDataDirectory` — a folder that exists but is unmarked is
-    /// perfectly writable, and unattended there is nobody to notice backups growing,
-    /// which is why that failure is only ever logged.
-    private static func prepareChainFolder() -> Bool {
-        do {
-            try DaemonConfig.prepareDataDirectory(at: DaemonConfig.dataDirectory)
-            return true
-        } catch {
-            log.error(
-                "run: chain folder could not be prepared — \(error.localizedDescription, privacy: .public)"
-            )
-            return false
-        }
-    }
-
-    private static func freeDiskBytes() -> Int64? {
-        let url = DaemonConfig.dataDirectory
-        guard
-            let values = try? url.resourceValues(forKeys: [
-                .volumeAvailableCapacityForImportantUsageKey
-            ]),
-            let capacity = values.volumeAvailableCapacityForImportantUsage
-        else { return nil }
-        return capacity
     }
 }
 

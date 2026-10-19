@@ -53,9 +53,10 @@ struct SyncNodeLongRunningIntentTests {
         let (_, meter) = makeMeter()
         let report = await SyncNodeLongRunningIntent.runWithHeartbeat(
             meter: meter,
+            clock: ContinuousClock(),
             isStopped: { false },
             heartbeatInterval: .milliseconds(10)
-        ) { _ in
+        ) { _, _ in
             self.report(.alreadyRunning, "from work")
         }
         #expect(report.outcome == .alreadyRunning)
@@ -68,9 +69,10 @@ struct SyncNodeLongRunningIntentTests {
         let (_, meter) = makeMeter()
         let report = await SyncNodeLongRunningIntent.runWithHeartbeat(
             meter: meter,
+            clock: ContinuousClock(),
             isStopped: { true },
             heartbeatInterval: .milliseconds(10)
-        ) { _ in
+        ) { _, _ in
             // Five seconds is still hundreds of heartbeat ticks of "still
             // running" — and bounds the failure mode: if the group's cancelAll
             // stopped reaching the work child, the group would await this sleep
@@ -94,9 +96,10 @@ struct SyncNodeLongRunningIntentTests {
         let observedCancel = Mutex(false)
         let report = await SyncNodeLongRunningIntent.runWithHeartbeat(
             meter: meter,
+            clock: ContinuousClock(),
             isStopped: { begun.withLock { $0 } },
             heartbeatInterval: .milliseconds(20)
-        ) { _ in
+        ) { _, _ in
             begun.withLock { $0 = true }
             // Bounded on purpose: if the heartbeat's nil stopped cancelling the
             // work child, an unbounded wait here would hang the test rather

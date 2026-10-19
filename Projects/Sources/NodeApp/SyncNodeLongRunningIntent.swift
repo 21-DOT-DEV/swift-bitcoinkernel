@@ -125,7 +125,8 @@ struct SyncNodeLongRunningIntent: LongRunningIntent, CancellableIntent {
         let stopped = Mutex<IntentCancellationReason?>(nil)
         let report = try await performBackgroundTask(options: []) {
             Self.log.notice("run: background task begin")
-            let report = await Self.runWithHeartbeat(meter: meter) {
+            let report = await Self.runWithHeartbeat(
+                meter: meter, clock: ContinuousClock()) {
                 stopped.withLock { $0 != nil }
             }
             // The end card is written here, while the operation is still running:
@@ -182,19 +183,19 @@ struct SyncNodeLongRunningIntent: LongRunningIntent, CancellableIntent {
         Self.log.notice(
             "run: finished \(report.outcome.rawValue, privacy: .public) in \(elapsedMs, privacy: .public) ms"
         )
-        if stopped.withLock({ $0 != nil }) || Task.isCancelled {
-            Self.log.notice("run: cancelled — reporting the run as cancelled, not as a result")
-            throw CancellationError()
-        }
         // Only now — the report is being returned — does its reading become a
         // recorded tip. Persisting inside the run, before the last "still
         // wanted?" check and this one, advanced the baseline for runs that
         // ended up reporting nothing (a stop landing mid-question, or a
         // timeout discarding the report wholesale), and the "blocks since
         // last check" the next run reports would silently swallow a span
-        // nobody saw.
-        NodeRun.persistReportedTip(from: report)
-        return .result(value: report, dialog: IntentDialog(report.dialogText))
+        // nobody saw. The boundary is shared with the short action; this
+        // one's stop flag rides beside task cancellation because `onCancel`
+        // records the stop itself rather than promising this task was the
+        // thing cancelled.
+        let result = try NodeRun.resultUnlessCancelled(
+            report, wasStopped: stopped.withLock { $0 != nil }, into: .standard)
+        return .result(value: result, dialog: IntentDialog(result.dialogText))
     }
 
     /// Runs the work with a heartbeat underneath it.
@@ -224,15 +225,23 @@ struct SyncNodeLongRunningIntent: LongRunningIntent, CancellableIntent {
     /// and the stop flag reaching a `@MainActor` child are the riskiest
     /// mechanics in the action and should not be hardware-only. The defaults
     /// keep the production call site a one-liner.
+    ///
+    /// `work` receives the same `clock` the heartbeat sleeps on, so a test can
+    /// drive both from one `TestClock`: the heartbeat and the run's own waits
+    /// advance in the same virtual time. Its naps carry the run's shared
+    /// tolerance — a heartbeat is a cadence the system may coalesce, not a
+    /// deadline race.
     @MainActor
-    static func runWithHeartbeat(
+    static func runWithHeartbeat<C: Clock<Duration>>(
         meter: ProgressMeter,
+        clock: C,
         isStopped: @escaping @Sendable () -> Bool,
         heartbeatInterval: Duration = Self.heartbeat,
-        work: @escaping @MainActor (@MainActor (Double) -> Void) async -> NodeRunReport = {
+        work: @escaping @MainActor (C, @MainActor (Double) -> Void) async -> NodeRunReport = {
             await NodeRun.perform(
-                session: .shared, waitForFirstAnswer: waitForFirstAnswer,
-                onProgress: $0)
+                session: NodeSession.shared,
+                waitForFirstAnswer: waitForFirstAnswer,
+                clock: $0, defaults: .standard, onProgress: $1)
         }
     ) async -> NodeRunReport {
         await withTaskGroup(of: NodeRunReport?.self) { group in
@@ -242,13 +251,21 @@ struct SyncNodeLongRunningIntent: LongRunningIntent, CancellableIntent {
                     // group is still setting up should not wait out a full
                     // heartbeat interval to begin unwinding the work child.
                     if isStopped() { return nil }
-                    do { try await Task.sleep(for: heartbeatInterval) } catch { return nil }
+                    do {
+                        try await clock.sleep(
+                            for: heartbeatInterval,
+                            // Proportionate to the cadence, capped at the
+                            // shared tolerance — a flat second would dwarf
+                            // the millisecond intervals tests drive.
+                            tolerance: min(
+                                NodeRun.sleepTolerance, heartbeatInterval / 5))
+                    } catch { return nil }
                     if isStopped() { return nil }
                     meter.tick()
                 }
             }
             group.addTask { @MainActor in
-                await work { fraction in meter.advance(to: fraction) }
+                await work(clock) { fraction in meter.advance(to: fraction) }
             }
             // Whichever yields first ends the group: the work's report on a
             // completed run, or the heartbeat's nil when the run was stopped or
