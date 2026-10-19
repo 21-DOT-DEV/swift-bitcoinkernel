@@ -727,4 +727,8 @@ load-bearing: HTTP-for-life is the expected locked-device case; the watch's
 first successful reading is the trigger bootstrap polled for, and the
 explicit retry is action work — `Daemon.bootstrap` is already public), grace
 for the short action (declined — its ~30 s window cannot afford a cold
-bootstrap).
+bootstrap), `TestClock` in `TorViewModelRaceTests` (3 sites park on virtual
+time; each `sleep`/`advance` pays `megaYield`'s ~20 detached hops — the
+starvation vector that timed out this feature's clock tests on CI and was
+removed there by the suite's `ManualClock`; the race suite's 105 s on the
+same run is the cost already accruing).

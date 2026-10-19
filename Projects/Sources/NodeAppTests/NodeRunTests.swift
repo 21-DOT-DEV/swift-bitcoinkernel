@@ -9,7 +9,6 @@
 //
 
 import Bitcoin
-import Clocks
 import Foundation
 import Synchronization
 import Testing
@@ -154,7 +153,8 @@ struct NodeRunTests {
 /// Every wait is event-driven (`Gate`) or clock-driven (an injected clock):
 /// no test sleeps real time, so nothing here is timing-lucky. Where a test
 /// must prove the run actually asked its injected clock, `ObservedClock`
-/// records each sleep request — a `TestClock` alone cannot see who was asked.
+/// records each sleep request — a `ManualClock` alone cannot see who was
+/// asked.
 @Suite("Run drivability")
 @MainActor
 struct NodeRunDrivabilityTests {
@@ -193,7 +193,7 @@ struct NodeRunDrivabilityTests {
         let run = Task { @MainActor in
             await NodeRun.perform(
                 session: session, waitForFirstAnswer: .seconds(30),
-                clock: TestClock(), defaults: store)
+                clock: ManualClock(), defaults: store)
         }
         // Ordered on the event, not a guess at elapsed time: the cancel lands
         // only once the last question is provably in flight.
@@ -233,7 +233,7 @@ struct NodeRunDrivabilityTests {
         let run = Task { @MainActor in
             await NodeRun.perform(
                 session: session, waitForFirstAnswer: .seconds(30),
-                clock: TestClock(), defaults: store)
+                clock: ManualClock(), defaults: store)
         }
         try await questionEntered.wait()
         session.nodeState = .stopping   // the app stops the node while the question is out
@@ -283,18 +283,18 @@ struct NodeRunDrivabilityTests {
         #expect(NodeViewModel.lastKnown(in: store)?.height == 110)
     }
 
-    /// A `TestClock` nobody advances would pass even if every sleep in the
-    /// run went back to `Task.sleep` — the seam would exist and prove
-    /// nothing. The recording wrapper is what makes this fail when it should:
-    /// a nap spelled `Task.sleep` never asks the injected clock, so the gate
-    /// never opens and the limit bites; a deadline measured on the wall clock
+    /// A clock nobody advances would pass even if every sleep in the run
+    /// went back to `Task.sleep` — the seam would exist and prove nothing.
+    /// The recording wrapper is what makes this fail when it should: a nap
+    /// spelled `Task.sleep` never asks the injected clock, so the gate never
+    /// opens and the limit bites; a deadline measured on the wall clock
     /// outlasts it too — the budget is deliberately longer than the smallest
     /// `.timeLimit`, so only virtual time can finish the run in time.
     @Test(
         "the first-answer wait naps and times out on the injected clock",
         .timeLimit(.minutes(1)))
     func waitRunsOnInjectedClock() async throws {
-        let test = TestClock()
+        let test = ManualClock()
         let start = test.now
         let napRequested = Gate()
         let tolerances = Mutex<[Duration?]>([])
@@ -320,8 +320,8 @@ struct NodeRunDrivabilityTests {
                 clock: clock, defaults: makeVolatileDefaults())
         }
         try await napRequested.wait()      // the nap asked *this* clock
-        // Past the deadline, never to it — a `TestClock` sleep registered at
-        // exactly `now` suspends until the next advance; see `ObservedClock`.
+        // Past the run's deadline — the parked nap wakes and the wait's
+        // `now < deadline` check ends the loop.
         await test.advance(by: .seconds(241))
         #expect(await run.value.outcome == .didNotComeUp)
         let recorded = tolerances.withLock { $0 }
@@ -353,7 +353,7 @@ struct NodeRunDrivabilityTests {
     ) async throws {
         let heartbeatSlept = Gate()
         let tolerances = Mutex<[Duration?]>([])
-        let clock = ObservedClock(base: TestClock()) { _, tolerance in
+        let clock = ObservedClock(base: ManualClock()) { _, tolerance in
             tolerances.withLock { $0.append(tolerance) }
             heartbeatSlept.open()
         }
@@ -394,7 +394,7 @@ struct NodeRunDrivabilityTests {
             device: device)
         let report = await NodeRun.perform(
             session: session, waitForFirstAnswer: .seconds(30),
-            clock: TestClock(), defaults: makeVolatileDefaults())
+            clock: ManualClock(), defaults: makeVolatileDefaults())
         #expect(report.outcome == .declined)
         let calls = device.calls.withLock { $0 }
         // The watcher start is the one call that precedes every gather —
@@ -413,7 +413,7 @@ struct NodeRunDrivabilityTests {
         "a network that never reports falls back inside the gather's bound",
         .timeLimit(.minutes(1)))
     func networkWaitFallsBackOnBound() async throws {
-        let test = TestClock()
+        let test = ManualClock()
         let gatherStarted = Gate()
         let napRequested = Gate()
         let clock = ObservedClock(base: test) { deadline, _ in
@@ -446,7 +446,7 @@ struct NodeRunDrivabilityTests {
         // the advance would register a sleep past the last tick and park
         // forever — and this wait would hang beside it.
         try await gatherStarted.wait()
-        // Past the bound, never to it — see `ObservedClock`.
+        // Past the gather's two-second bound.
         await test.advance(by: .seconds(3))
         try await napRequested.wait()
         // The gather fell back and the run reached the start — provable
@@ -476,7 +476,7 @@ struct NodeRunDrivabilityTests {
             device: device)
         let report = await NodeRun.perform(
             session: session, waitForFirstAnswer: .seconds(30),
-            clock: TestClock(), defaults: makeVolatileDefaults())
+            clock: ManualClock(), defaults: makeVolatileDefaults())
         #expect(report.outcome == .declined)
         #expect(session.startNodeArguments == nil)
     }
@@ -661,28 +661,112 @@ private func before(_ a: String, _ b: String, in calls: [String]) -> Bool {
     return first < second
 }
 
-/// Forwards to a `TestClock`, reporting each sleep request — and its
+/// A clock with no hidden scheduling. `TestClock` makes every `sleep` call
+/// and every woken sleeper pay `Task.megaYield` — twenty detached,
+/// background-priority hops — so a virtual wait's real cost scales with the
+/// suspensions crossed: the 241-second advance in `waitRunsOnInjectedClock`
+/// walks ~480 naps, ~9,600 detached hops, which is what starved this suite's
+/// two clock tests to their minute limit on a loaded CI runner (the same
+/// failure element-x-ios#6022 replaced `TestClock` over). Here `advance`
+/// resumes due sleepers synchronously, and a sleep at or past `now` returns
+/// at once — equality is not a trap, and a late registration after the last
+/// advance returns instead of parking. The one ordering a test still owes:
+/// a sleep whose deadline lands *ahead* of the final advance suspends
+/// forever, so gate each `advance` on the bound's request — `withHardTimeout`
+/// computes its deadline from `now` at invocation.
+private final class ManualClock: Clock, @unchecked Sendable {
+    /// The minimal `InstantProtocol`: a `Duration` offset from start.
+    struct Instant: InstantProtocol {
+        var offset: Duration
+        func advanced(by duration: Duration) -> Instant {
+            Instant(offset: offset + duration)
+        }
+        func duration(to other: Instant) -> Duration {
+            other.offset - offset
+        }
+        static func < (lhs: Instant, rhs: Instant) -> Bool {
+            lhs.offset < rhs.offset
+        }
+    }
+
+    private struct State {
+        var now = Instant(offset: .zero)
+        var nextID = 0
+        var sleepers: [
+            (id: Int, deadline: Instant,
+             continuation: CheckedContinuation<Void, any Error>)
+        ] = []
+    }
+    private let state = Mutex(State())
+
+    var now: Instant { state.withLock { $0.now } }
+    var minimumResolution: Duration { .zero }
+
+    func sleep(until deadline: Instant, tolerance: Duration? = nil) async throws {
+        try Task.checkCancellation()
+        let id = state.withLock { s -> Int in
+            defer { s.nextID += 1 }
+            return s.nextID
+        }
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation {
+                (continuation: CheckedContinuation<Void, any Error>) in
+                enum Action { case resume, throwCancel, park }
+                // Decided under the lock so a cancel racing registration
+                // either finds the entry (`onCancel`) or is answered here —
+                // never both, never neither.
+                switch state.withLock({ s -> Action in
+                    if Task.isCancelled { return .throwCancel }
+                    if deadline <= s.now { return .resume }
+                    s.sleepers.append((id, deadline, continuation))
+                    return .park
+                }) {
+                case .resume: continuation.resume()
+                case .throwCancel:
+                    continuation.resume(throwing: CancellationError())
+                case .park: break
+                }
+            }
+        } onCancel: {
+            state.withLock { s -> CheckedContinuation<Void, any Error>? in
+                guard let index = s.sleepers.firstIndex(where: {
+                    $0.id == id
+                }) else { return nil }
+                return s.sleepers.remove(at: index).continuation
+            }?.resume(throwing: CancellationError())
+        }
+    }
+
+    /// Moves `now` forward — never back — and resumes every sleeper due by
+    /// the new instant, synchronously: no yields, so the number of real task
+    /// hops an advance costs does not depend on the runner's load.
+    func advance(to instant: Instant) {
+        let due = state.withLock {
+            s -> [CheckedContinuation<Void, any Error>] in
+            if instant > s.now { s.now = instant }
+            // Deadline order, not registration order — the model a later
+            // test relying on "the earlier timer fired first" needs.
+            let due = s.sleepers.filter { $0.deadline <= s.now }
+                .sorted { $0.deadline < $1.deadline }
+            s.sleepers.removeAll { $0.deadline <= s.now }
+            return due.map(\.continuation)
+        }
+        for continuation in due { continuation.resume() }
+    }
+
+    func advance(by duration: Duration) {
+        advance(to: now.advanced(by: duration))
+    }
+}
+
+/// Forwards to a `ManualClock`, reporting each sleep request — and its
 /// tolerance — before it parks. The oracle for "this wait asked the injected
 /// clock": a sleep spelled `Task.sleep` or a deadline measured on
 /// `ContinuousClock.now` never reaches this wrapper, which is what lets a
 /// test prove the seam is wired rather than merely present.
-///
-/// Drive the wrapped clock strictly *past* the deadline under test:
-/// `TestClock` deliberately suspends a sleep registered at exactly `now`
-/// until the next advance (swift-clocks #23; the fix was reverted in #26 to
-/// match every other test scheduler) — so an `advance` landing right on a
-/// deadline can leave a tardy timer suspended forever and hang the run it
-/// was meant to release.
-///
-/// And if a test driving this clock ever stalls on a loaded runner:
-/// `TestClock.advance` makes progress through `Task.megaYield` — twenty
-/// detached background-priority hops per round — which has starved for
-/// minutes on oversubscribed CI (element-x-ios#6022 replaced `TestClock`
-/// over it). The suite's `.timeLimit` bounds keep that failure loud; a
-/// hand-rolled clock is the escape hatch if it ever shows.
 private struct ObservedClock: Clock {
-    typealias Instant = TestClock<Duration>.Instant
-    let base: TestClock<Duration>
+    typealias Instant = ManualClock.Instant
+    let base: ManualClock
     let onSleep: @Sendable (Instant, Duration?) -> Void
     var now: Instant { base.now }
     var minimumResolution: Duration { base.minimumResolution }
