@@ -56,6 +56,9 @@ final class NodeSession {
     /// snapshot: the snapshot governs what the run *launches*; whether the
     /// network starts now is the person's current business.
     ///
+    /// - Parameter defaults: the store the still-on check reads — handed in
+    ///   so the run's injected store covers this read too, rather than the
+    ///   check silently reaching `.standard` past the seam.
     /// - Returns: whether the setting is still on. The wait-for-it path uses
     ///   it to word the decline honestly — "being established now" is only
     ///   true while the network is actually wanted; switched off mid-run is a
@@ -63,11 +66,38 @@ final class NodeSession {
     ///   launch boundary asks only for the nudge, and only when its refusal
     ///   was the not-ready one.
     @discardableResult
-    func startTorIfStillEnabled() -> Bool {
-        let stillEnabled = UserDefaults.standard.bool(forKey: "tor_enabled")
+    func startTorIfStillEnabled(reading defaults: UserDefaults) -> Bool {
+        let stillEnabled = defaults.bool(forKey: "tor_enabled")
         if stillEnabled { tor.start() }
         return stillEnabled
     }
 
     private init() {}
 }
+
+/// The production `RunSession`: forwards the session's flat questions to the
+/// node and private-network controllers. The only adaptation is the SOCKS
+/// port — `HostPort` carries an `Int` so the run's `UInt16` question asks it
+/// through `exactly`, and a port that cannot be one reads as "no endpoint to
+/// start against", the same answer the network itself gives before bootstrap.
+///
+/// The conformance is iOS-only because `RunSession` is: the session itself
+/// stays compiled everywhere — the screens reach it on a Mac too.
+#if os(iOS)
+extension NodeSession: RunSession {
+    var nodeState: NodeState { node.nodeState }
+    var torIsReady: Bool { tor.isReady }
+    var torProxyAddress: String? { tor.proxyAddress }
+    var torSessionID: UUID? { tor.sessionID }
+    var torSocksPort: UInt16? { tor.socksEndpoint.flatMap { UInt16(exactly: $0.port) } }
+    // Stateless — it forwards the device's own readings — so handing a fresh
+    // one is the same value as holding one.
+    var device: any DeviceReadings { LiveDeviceReadings() }
+
+    func startNode(
+        arguments: [String], torSession: UUID?, torSocksPort: UInt16?
+    ) -> Bool {
+        node.start(arguments: arguments, torSession: torSession, torSocksPort: torSocksPort)
+    }
+}
+#endif

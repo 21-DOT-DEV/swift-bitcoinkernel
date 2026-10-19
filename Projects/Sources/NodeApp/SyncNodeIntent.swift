@@ -104,24 +104,24 @@ struct SyncNodeIntent: AppIntent {
     {
         let started = ContinuousClock.now
         let report = await NodeRun.perform(
-            session: .shared, waitForFirstAnswer: Self.waitForFirstAnswer)
+            session: NodeSession.shared,
+            waitForFirstAnswer: Self.waitForFirstAnswer,
+            clock: ContinuousClock(), defaults: .standard)
         let elapsedMs = Int(started.duration(to: .now) / .milliseconds(1))
         Self.log.notice(
             "run: finished \(report.outcome.rawValue, privacy: .public) in \(elapsedMs, privacy: .public) ms"
         )
-        if Task.isCancelled {
-            Self.log.notice("run: cancelled — reporting the run as cancelled, not as a result")
-            throw CancellationError()
-        }
         // Only now — the report is being returned — does its reading become a
         // recorded tip. Persisting inside the run, before the last "still
         // wanted?" check and this one, advanced the baseline for runs that
         // ended up reporting nothing (a stop landing mid-question), and the
         // "blocks since last check" the next run reports would silently
-        // swallow a span nobody saw.
-        NodeRun.persistReportedTip(from: report)
+        // swallow a span nobody saw. The boundary is shared with the iOS 27
+        // action, which adds its own stop flag beside this task's
+        // cancellation.
+        let result = try NodeRun.resultUnlessCancelled(report, into: .standard)
         return .result(
-            value: report, dialog: IntentDialog(report.dialogText))
+            value: result, dialog: IntentDialog(result.dialogText))
     }
 }
 

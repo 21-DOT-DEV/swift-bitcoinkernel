@@ -461,7 +461,7 @@ watch orchestration until the next group.
 
 ## The run routine — `NodeRun` orchestrates
 
-- [ ] T018 Make the run drivable — thread `C: Clock<Duration>` (not `any
+- [x] T018 Make the run drivable — thread `C: Clock<Duration>` (not `any
   Clock` — erased `InstantProtocol` can't compare deadlines) through
   `perform`, `runWithHeartbeat`, and `awaitFirstAnswer`, with the wall-clock
   `now` the tip-age leg reads injectable beside it. Give `perform` a session
@@ -475,11 +475,28 @@ watch orchestration until the next group.
   the case T005's seam cannot reach: a run cancelled or stopped between the
   last `answerIsStillWanted` check and the `.result` return persists
   nothing; the sleep
-  policy lands here too — cadence and heartbeat sleeps carry ~1 s
-  tolerance so the system can coalesce them, only `withHardTimeout`'s
-  deadline race keeps `tolerance: nil` (~200) ·
+  policy lands here too — cadence sleeps like the heartbeat carry ~1 s
+  tolerance so the system can coalesce them, while every sleep that bounds
+  a deadline keeps `tolerance: nil`: `withHardTimeout`'s race, and the wait
+  loop's deadline-capped nap — tolerance is lateness a deadline sleep
+  cannot afford. A recording clock wrapper pins both halves, since a
+  `TestClock` alone cannot see who asked it (~200) ·
   `Sources/NodeApp/NodeRun.swift`, `Sources/NodeApp/NodeSession.swift`,
   `Sources/NodeApp/SyncNodeLongRunningIntent.swift`,
+  `Sources/NodeAppTests/NodeRunTests.swift`
+- [x] T018a Device-readings seam — `RunSession.device`, a thin adapter over
+  the raw readings (protected data, chain-folder prepare, free disk, low
+  power, heat, first/current network cost, watcher start), so the three
+  conditions gathers — preflight, T023's weigh-in, T024's drift — keep
+  their combination logic in `NodeRun`, where a scripted adapter watches —
+  and the drivability suite exercises — the two-second network fallback and
+  the readable-then-prepare ordering; `LiveDeviceReadings` forwards one
+  line each to UIKit,
+  `ProcessInfo`, the filesystem, and `NetworkCostMonitor`, and the run no
+  longer names any of them. `NodeViewModel`'s `.standard`-defaulted
+  settings accessors stay as they are — the dashboard poll calls them;
+  narrowing those is its own change (~90) ·
+  `Sources/NodeApp/NodeRun.swift`, `Sources/NodeApp/NodeSession.swift`,
   `Sources/NodeAppTests/NodeRunTests.swift`
 - [ ] T019 [P] `bridgeReady` flag — `NodeViewModel` records the direct
   bridge's bootstrap outcome (`bitcoin_rpc_ready()` is package-internal C
@@ -502,7 +519,7 @@ watch orchestration until the next group.
   never-readying Tor to the decline and a readying one into the re-decision
   (FR-013; verifies FR-013) (~250) ·
   `Sources/NodeApp/NodeRun.swift`,
-  `Sources/NodeAppTests/NodeRunTests.swift` · needs T018, T020
+  `Sources/NodeAppTests/NodeRunTests.swift` · needs T018, T018a, T020
 - [ ] T022 The watch stage — poll `blockchainInfo` every ~5 s bounded at
   `min(watchQuestionBudget, remaining)`, the same bound covering
   `awaitFirstAnswer` on budgeted runs (the short action keeps
@@ -525,12 +542,12 @@ watch orchestration until the next group.
   the condition, its test asserting the weigh-in ran once and the watch
   never committed (FR-012; verifies FR-012) (~110) ·
   `Sources/NodeApp/NodeRun.swift`,
-  `Sources/NodeAppTests/NodeRunTests.swift` · needs T016, T022
+  `Sources/NodeAppTests/NodeRunTests.swift` · needs T016, T018a, T022
 - [ ] T024 Drift call site — each pass runs T017's narrow gather; a found
   condition ends the run `conditionsChanged` mid-watch, its test injecting a
   metered answer mid-watch (FR-010, FR-011; verifies FR-010, FR-011)
   (~110) · `Sources/NodeApp/NodeRun.swift`,
-  `Sources/NodeAppTests/NodeRunTests.swift` · needs T017, T022
+  `Sources/NodeAppTests/NodeRunTests.swift` · needs T017, T018a, T022
 - [ ] T025 `getpeerinfo` ride-along — on each qualifying flat pass (flag
   clear, gap closed, headers never advanced) one `getpeerinfo`, bounded like
   every question, feeds T012's confirmation count; an absent or timed-out
@@ -658,7 +675,7 @@ proof is T039's.
   (the two new fields read `notMeasured` and absent) — the SC-005
   assertion (verifies FR-005, FR-009, FR-013, FR-014, FR-016, FR-017,
   SC-005) (~160) · `Sources/NodeAppTests/NodeRunTests.swift` ·
-  needs T021–T029, T034
+  needs T018a, T021–T029, T034
 - [ ] T037 `TestClock` ending coverage — a `nodeStopped` variant ends the
   watch when the node stops mid-poll; the warm-restart run — flag clear, no
   gap, tip past `tipFreshnessThreshold` — reaches the watch on the age leg
