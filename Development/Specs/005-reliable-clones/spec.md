@@ -246,7 +246,7 @@ non-network failure exits on the first attempt.
   A real forced timeout can't produce the first arm — `lowSpeed` is
   global and would abort every attempt — so the counter file
   manufactures the single signature-printing failure.
-- **SC-003** The feature lands as seven numbered pull requests —
+- **SC-003** The feature lands as eight numbered pull requests —
   prose-only amendment PRs excluded — each independently
   mergeable with CI green on its own diff; every code-change PR is ≤ ~150
   changed lines (PR 1 is prose).

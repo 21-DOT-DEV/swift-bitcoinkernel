@@ -20,7 +20,7 @@ crawled for 9.5 minutes, and the dead clone left SwiftPM's shared repository
 cache in a state it fataled on (`cannot change to …: No such file or
 directory`). This feature authenticates every github.com git request with the
 job's own `GITHUB_TOKEN`, closes the poisoned-cache crash path, and wraps the
-package-fetch steps in a signature-gated retry — delivered as seven small,
+package-fetch steps in a signature-gated retry — delivered as eight small,
 independently revertable pull requests. Tooling/CI work, no roadmap phase.
 Supersedes the monolithic `RELIABLE-CLONE` approach: same mechanism, none of
 the perl.
@@ -189,7 +189,7 @@ architecture.
       resolve step — and the app jobs' `build-for-testing` — log no
       `Fetching`/`Cloning`/`Checking out` lines: each job's fetch happens
       inside retried fetch-only work or not at all (SC-002)
-- [ ] Each of the seven PRs lands independently: every code-change PR ≤ ~150
+- [ ] Each of the eight PRs lands independently: every code-change PR ≤ ~150
       changed lines (PR 1 is prose) and CI green on its own diff (SC-003)
 
 ## Risks
@@ -243,7 +243,7 @@ architecture.
 
 ## Division of labor
 
-Solo-maintainer CI work: seven sequential pull requests per
+Solo-maintainer CI work: eight sequential pull requests per
 [tasks.md](./tasks.md) slicing — each targets `main` after the previous
 merges (no stacking needed at this size). End-to-end validation runs on a
 throwaway branch before the retry wiring lands.
