@@ -188,7 +188,7 @@ git requests carry the Authorization header" line after checkout.
 
 ## Phase 4 — The retry mechanism, inert
 
-- [ ] T006 `retry-on-fetch-flake` composite action: bash loop gated on the
+- [x] T006 `retry-on-fetch-flake` composite action: bash loop gated on the
   signature table FR-005 owns —
   the `command` input reaches the script through `env:` (never inline
   `${{ inputs.command }}` in `run:` — the script-injection pattern
@@ -215,7 +215,7 @@ git requests carry the Authorization header" line after checkout.
   `rm -rf`'d when present, `::warning::` when absent; default
   `.build`) —
   real exit code on non-signature failures; the action exposes
-  `attempts` and `exit_code` outputs — the machine-readable channel the
+  `attempts`, `exit_code`, and `verdict` outputs — the machine-readable channel the
   selftest asserts on (`uses:`-wrapped stdout isn't capturable,
   `$GITHUB_STEP_SUMMARY` is per-step, and a step's exit code isn't
   readable by later steps either) — each written to `$GITHUB_OUTPUT`
@@ -249,12 +249,20 @@ git requests carry the Authorization header" line after checkout.
   entries `/`, `../..`, `a/../..`, bare `~`, `*`, and a symlinked parent
   pointing outside the trees warn and skip with
   nothing deleted, while a trailing `/` normalizes in place and a
-  two-entry input with no trailing newline still processes both —
+  newline-joined two-entry input processes both lines (`<<<` terminates
+  the tail itself, so the `|| [ -n ]` read guard stays load-bearing for
+  any future non-here-string reader rather than for this input) —
   covering the escape guard and the hand-written normalization on every
   edit — so the signature set FR-005 owns gets a permanent
   regression check on every future edit — pure
   bash, no supervisor (FR-005, FR-006) ·
-  `.github/actions/retry-on-fetch-flake/action.yml`
+  `.github/actions/retry-on-fetch-flake/{action.yml,retry.sh,signatures.tsv}`
+  — the loop lives in `retry.sh` (the `verify-scope.sh` precedent: the
+  selftest's guard cases need `::warning::` text a `uses:`-wrapped step
+  can't expose) and FR-005's table lives in `signatures.tsv` as
+  kind/pattern/sample rows the selftest iterates — every row IS a case by
+  construction, killing the add-a-signature-forget-its-test drift class —
+  plus `.github/workflows/actions-selftest.yml` (the `retry-gate` job)
 
 **Checkpoint:** no production workflow calls the action yet — the
 selftest's retry cases exercise it; fetch paths unchanged.
@@ -388,6 +396,34 @@ invoke the action; logs show the attempt group format.
 
   · throwaway branch, deleted after
 
+- [ ] T012 Make the selftest's `gate` job a required check — surfaced by
+  T006's review: a red `retry-gate` is only advice until the ruleset
+  requires it. Restructure `actions-selftest.yml` so the workflow
+  reports on every PR (the workflow-level `paths:` filter moves inside
+  the jobs — a required check skipped by path filtering stays
+  "Expected" forever and deadlocks unrelated PRs): a `changed-paths`
+  job computes the diff with `fetch-depth: 2` + `git diff --name-only
+  HEAD^1 HEAD` on the merge-ref checkout (no extra clone, no
+  third-party paths action) and fails closed — outputs "changed" on
+  schedule/dispatch/push or any diff error; the four test jobs run
+  `if:` it matched. A `gate` job (`needs:` all four, `if: always()` — a
+  skipped required check counts as passing, so the gate must run and
+  read `needs.*.result` itself) fails on `failure`/`cancelled` and
+  accepts `skipped` ONLY when changed-paths said skip — plus one
+  designed skip: `write-scope-canary` carries a same-repo-only `if:`
+  and skips on every fork pull_request, so the gate must also accept
+  its skip when `github.event.pull_request.head.repo.full_name`
+  differs from `github.repository`; any other skip is a test that
+  didn't run. The ruleset then requires `gate` alone —
+  one rename-proof name covering retry AND the auth jobs — pinned to
+  the GitHub Actions app (`integration_id` 15368). Rollout order is
+  load-bearing: merge this change → confirm `gate` reports on a PR
+  touching `.github/actions/**` and on one that doesn't → only then add
+  it to ruleset "Default Protection" (id 16410358); to undo later,
+  remove the rule before renaming the job. ·
+  `.github/workflows/actions-selftest.yml` + the ruleset edit (repo
+  settings, not the diff)
+
 **Checkpoint:** every verification box in plan.md ticked from observed runs.
 
 ## Pull-request slicing
@@ -398,9 +434,10 @@ invoke the action; logs show the attempt group format.
 | 2 | [x] | `github-git-auth` action, inert + `actions-selftest` + `workflow-lint` workflows + `xcode-27` label config in `actionlint.yaml` + pre-existing lint fixes | T002, T009, T011 | ~190 | — |
 | 3 | [x] | Auth wired into fetch jobs across five workflows, `release`-job checkout removed, pairing rule + `$/` variant in `.github/AGENTS.md`, `actionlint.yaml` created with the `$/` ignore | T003, T004's prose | ~230 | — |
 | 4 | [ ] | Cache flags on all fetch steps + generate-step bounds + deferred job caps + Dockerfile stall-killer + AGENTS.md conventions | T005 | ~110 | — |
-| 5 | [ ] | `retry-on-fetch-flake` action, inert + selftest retry cases | T006 | ~100 | PR 2 (selftest workflow) |
+| 5 | [ ] | `retry-on-fetch-flake` action, inert + selftest retry cases | T006 | ~700 | PR 2 (selftest workflow) |
 | 6 | [ ] | Retry wired into the two generate steps + `Tuist.swift` clone-path pin + routing rule | T007 | ~50 | PR 5 |
 | 7 | [ ] | Dedicated resolve steps under retry in the remaining fetch jobs + docc job-cap raise | T010 | ~95 | PRs 3, 5 |
+| 8 | [ ] | `gate` aggregator job + in-job path filtering (selftest enforceable; ruleset edit sequenced post-merge per T012) | T012 | ~80 | PR 5 |
 
 Numbered order is the recommended landing sequence.
 
@@ -415,6 +452,11 @@ CI run — that observation stands in for T009 until it lands. FR-009's
 job moves with T011 since `workflow-lint.yml` doesn't exist yet; PR
 3's ~230 lines exceed SC-003's ~150 cap — the overage is comments,
 doc text, and this bookkeeping, recorded here rather than trimmed.
+PR 5 lands at ~700 lines for the same class of reasons — the
+mechanism plus its permanent regression harness (`signatures.tsv`'s
+row-driven cases, the escape guard, and the `uses:` contract cases the
+spec's own evidence requires) — recorded here rather than split: the
+action and the tests that prove it are one revert unit.
 
 PR 4 has no code
 dependency and may land in any position — one caveat: PRs 4 and 7 both

@@ -13,6 +13,19 @@ name: Actions self-test
 #   double-header   — adversarial: injects a repo-local second extraheader —
 #                     the state a checkout with persisted credentials produces —
 #                     and asserts the action reports it.
+#   retry-gate      — retry-on-fetch-flake: a harness drives every
+#                     signatures.tsv row through retry.sh directly — each
+#                     pattern must match its own sample AND the run must end
+#                     with its kind's verdict word, so a dead pattern can't
+#                     pass on an unrelated outcome — plus the cleanup-dirs
+#                     escape guard, the off-runner workspace fallback and
+#                     its on-runner refusal, plus `uses:`-wrapped contract
+#                     cases — the counter-file green path (SC-002), a silent
+#                     bail, auth-precedence, and exhaustion — asserting step
+#                     outcome and the attempts/exit_code/verdict outputs
+#                     under continue-on-error. Those failing `uses:` cases
+#                     are also the experiment proving composite outputs
+#                     publish across an inner failure.
 #
 # Triggers: PRs and pushes to main that touch the actions or this file — the
 # only runs whose outcome speaks to a change — plus workflow_dispatch and a
@@ -169,3 +182,269 @@ jobs:
           test -n "$PROBE_STATUS" || { echo "::error::probe_status empty — the detector died before reporting"; exit 1; }
           test "$PROBE_STATUS" != ok || { echo "::error::probe_status=$PROBE_STATUS — duplicate header passed the wire probe"; exit 1; }
           echo "detection verified: header_count=$HEADER_COUNT probe_status=$PROBE_STATUS (warnings above are expected)"
+
+  retry-gate:
+    name: Retry gate (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both labels because they are two OS versions (macOS 26 vs 27) and
+        # the action's production call sites span both — tuist-apps and
+        # flake-hunt on xcode-27, the package workflows on macos-26.
+        runner: [macos-26, xcode-27]
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      # Every row in signatures.tsv is a case by construction — the harness
+      # reads the same file the gate does, so adding a signature without a
+      # covering assertion is impossible. Two assertions per row: the pattern
+      # must match its own sample (an outcome-only check can't notice a dead
+      # pattern — an unclassifiable failure also stops after 1 attempt, and a
+      # retry row passes when ANY pattern matches its sample), and the run's
+      # verdict word must be its kind's (retry-exhausted | auth-shaped), which
+      # proves WHICH branch fired rather than that a firing happened.
+      - name: Signature table — every row classified per its kind
+        env:
+          ACTION_DIR: .github/actions/retry-on-fetch-flake
+        run: |
+          fail=0
+          while IFS=$'\t' read -r kind pattern sample; do
+            case "$kind" in ''|\#*) continue ;; esac
+            printf '%s\n' "$sample" | grep -qE -- "$pattern" \
+              || { echo "::error::/$pattern/ does not match its own sample"; fail=1; }
+            mkdir -p "$RUNNER_TEMP/selftest-wipe"
+            out=$(RETRY_COMMAND="printf '%s\n' \"$sample\"; exit 1" \
+                  RETRY_LABEL="sig:$sample" \
+                  RETRY_MAX_ATTEMPTS=3 RETRY_BACKOFF_SECONDS=0 \
+                  RETRY_CLEANUP_DIRS="$RUNNER_TEMP/selftest-wipe" \
+                  bash "$ACTION_DIR/retry.sh" 2>&1) || true
+            attempts=$(printf '%s' "$out" | grep '^attempts=' | tail -1 | cut -d= -f2)
+            verdict=$(printf '%s' "$out" | grep '^verdict=' | tail -1 | cut -d= -f2)
+            want_attempts=3 want_verdict=retry-exhausted
+            [ "$kind" = noretry ] && { want_attempts=1; want_verdict=auth-shaped; }
+            if [ "$attempts" = "$want_attempts" ] && [ "$verdict" = "$want_verdict" ]; then
+              echo "ok: $kind /$pattern/ → attempts=$attempts verdict=$verdict"
+            else
+              echo "::error::signature /$pattern/ ($kind): attempts=$attempts verdict=$verdict, expected $want_attempts/$want_verdict"
+              printf '%s\n' "$out" | tail -5
+              fail=1
+            fi
+          done < "$ACTION_DIR/signatures.tsv"
+          exit "$fail"
+
+      # The cleanup-dirs escape guard, exercised through the script directly —
+      # the `uses:`-wrapped step's log isn't readable by later steps, so the
+      # warning TEXT assertions need the script's own captured output.
+      - name: cleanup-dirs guard — escapes warn and skip, inside dirs wipe
+        env:
+          ACTION_DIR: .github/actions/retry-on-fetch-flake
+        run: |
+          # Fixtures live in three trees — the escape target sits ABOVE
+          # RUNNER_TEMP, which the runner cleans but _work/ it never touches;
+          # a self-hosted runner would keep the litter between runs. The trap
+          # removes every fixture even when an assertion fails mid-step.
+          trap 'rm -rf "$GITHUB_WORKSPACE/wipe-me" "$GITHUB_WORKSPACE/wipe-a" "$GITHUB_WORKSPACE/wipe-b" "$GITHUB_WORKSPACE/keep-me" "$GITHUB_WORKSPACE/link-parent" "$GITHUB_WORKSPACE/star-file" "$GITHUB_WORKSPACE/dead-link" "$RUNNER_TEMP/wipe-me-tmp" "$RUNNER_TEMP/../escape-target" "$RUNNER_TEMP/local-run"' EXIT
+          mkdir -p "$GITHUB_WORKSPACE/wipe-me" "$RUNNER_TEMP/wipe-me-tmp" "$RUNNER_TEMP/../escape-target"
+          echo x > "$GITHUB_WORKSPACE/wipe-me/sentinel"
+          echo x > "$RUNNER_TEMP/wipe-me-tmp/sentinel"
+          echo keep > "$RUNNER_TEMP/../escape-target/keep"
+          ln -sfn "$RUNNER_TEMP/.." "$GITHUB_WORKSPACE/link-parent"
+          ln -sfn /nonexistent-selftest-target "$GITHUB_WORKSPACE/dead-link"
+          touch "$GITHUB_WORKSPACE/star-file"
+          out=$(RETRY_COMMAND='echo "Recv failure: Operation timed out"; exit 1' \
+                RETRY_LABEL=guard RETRY_MAX_ATTEMPTS=2 RETRY_BACKOFF_SECONDS=0 \
+                RETRY_CLEANUP_DIRS="$(printf '%s\n' / ../.. 'a/../..' '~' '*' 'link-parent/escape-target' 'dead-link' 'wipe-me/' "$RUNNER_TEMP/wipe-me-tmp" '.build')" \
+                bash "$ACTION_DIR/retry.sh" 2>&1) || true
+          printf '%s\n' "$out"
+          fail=0
+          # `/`, `../..`, `a/../..`, `link-parent/escape-target` resolve out;
+          # `~`, `*`, `.build` name nothing — 7 warnings, nothing else
+          # deleted. `dead-link` can't be canonicalized (its target is
+          # missing) yet still wipes: the link node is what rm removes.
+          warns=$(printf '%s' "$out" | grep -c '::warning::' || true)
+          [ "$warns" -eq 7 ] || { echo "::error::guard emitted $warns warnings, expected 7"; fail=1; }
+          [ -f "$RUNNER_TEMP/../escape-target/keep" ] || { echo "::error::symlinked parent was followed outside the trees"; fail=1; }
+          [ -f "$GITHUB_WORKSPACE/star-file" ] || { echo "::error::literal '*' entry glob-expanded into the workspace"; fail=1; }
+          [ ! -e "$GITHUB_WORKSPACE/wipe-me" ] || { echo "::error::workspace entry not wiped"; fail=1; }
+          [ ! -e "$RUNNER_TEMP/wipe-me-tmp" ] || { echo "::error::RUNNER_TEMP entry not wiped"; fail=1; }
+          [ ! -L "$GITHUB_WORKSPACE/dead-link" ] || { echo "::error::broken symlink entry not wiped"; fail=1; }
+          # A newline-joined list wipes every entry — this CANNOT deliver an
+          # unterminated tail (`<<<` here-strings always append their own
+          # newline), so the `|| [ -n ]` read guard stays for a future
+          # non-here-string reader; what this guards is multi-line splitting.
+          mkdir -p "$GITHUB_WORKSPACE/wipe-a" "$GITHUB_WORKSPACE/wipe-b"
+          RETRY_COMMAND='echo "Recv failure: Operation timed out"; exit 1' \
+            RETRY_LABEL=unterminated RETRY_MAX_ATTEMPTS=2 RETRY_BACKOFF_SECONDS=0 \
+            RETRY_CLEANUP_DIRS=$(printf 'wipe-a\nwipe-b') \
+            bash "$ACTION_DIR/retry.sh" >/dev/null 2>&1 || true
+          { [ ! -e "$GITHUB_WORKSPACE/wipe-a" ] && [ ! -e "$GITHUB_WORKSPACE/wipe-b" ]; } \
+            || { echo "::error::multi-line cleanup-dirs dropped an entry"; fail=1; }
+          # Explicit-empty cleanup-dirs disables the wipe — a caller's ""
+          # means "no wipe", not "use the .build default" (toolkit#272's
+          # distinction, which the env layer can express).
+          mkdir -p "$GITHUB_WORKSPACE/keep-me"
+          noout=$(RETRY_COMMAND='echo "Recv failure: Operation timed out"; exit 1' \
+            RETRY_LABEL=empty RETRY_MAX_ATTEMPTS=2 RETRY_BACKOFF_SECONDS=0 \
+            RETRY_CLEANUP_DIRS='' \
+            bash "$ACTION_DIR/retry.sh" 2>&1) || true
+          { [ -d "$GITHUB_WORKSPACE/keep-me" ] \
+            && ! printf '%s' "$noout" | grep -qE 'wiped|::warning::'; } \
+            || { echo "::error::empty cleanup-dirs still wiped or warned"; fail=1; }
+          # Off-runner fallback: GITHUB_WORKSPACE unset → the caller's cwd is
+          # the root, a notice names it, and relative entries still wipe.
+          scratch="$RUNNER_TEMP/local-run"
+          mkdir -p "$scratch/sub/.build"
+          # `env -u` must strip GITHUB_ACTIONS too: it is "true" in the
+          # step's own environment, and leaving it set would exercise the
+          # on-runner refusal branch instead of the local fallback.
+          (cd "$scratch/sub" && env -u GITHUB_WORKSPACE -u GITHUB_ACTIONS \
+            RETRY_COMMAND='echo "Recv failure: Operation timed out"; exit 1' \
+            RETRY_LABEL=local RETRY_MAX_ATTEMPTS=2 RETRY_BACKOFF_SECONDS=0 \
+            RETRY_CLEANUP_DIRS=".build" \
+            bash "$GITHUB_WORKSPACE/$ACTION_DIR/retry.sh" > out.log 2>&1) || true
+          [ ! -e "$scratch/sub/.build" ] \
+            || { echo "::error::relative entry was not wiped under the PWD fallback"; fail=1; }
+          grep -q 'cleanup-dirs rooted at' "$scratch/sub/out.log" \
+            || { echo "::error::off-runner notice missing"; fail=1; }
+          # The same emptiness on a runner is a broken environment — refuse.
+          refusal_rc=0
+          refusal=$(env -u GITHUB_WORKSPACE GITHUB_ACTIONS=true \
+            RETRY_COMMAND='exit 1' RETRY_LABEL=broken-runner \
+            bash "$ACTION_DIR/retry.sh" 2>&1) || refusal_rc=$?
+          { printf '%s' "$refusal" | grep -q 'verdict=usage' \
+            && [ "$refusal_rc" -eq 2 ]; } \
+            || { echo "::error::missing workspace on a runner must end verdict=usage rc=2 (rc=$refusal_rc)"; fail=1; }
+          exit "$fail"
+
+      # The composite contract — outcome and outputs across success AND
+      # failure: continue-on-error forces conclusion to success, so
+      # steps.<id>.outcome is the only real signal. The failing cases are
+      # themselves the experiment proving outputs publish across an inner
+      # failure; if they ever come back empty the fallback channel is
+      # $GITHUB_ENV or a $RUNNER_TEMP file.
+      - name: Wrapped — signature failure then success (SC-002)
+        id: counter
+        uses: ./.github/actions/retry-on-fetch-flake
+        continue-on-error: true
+        with:
+          label: counter-file case
+          backoff-seconds: "2"
+          # The counter lives in RUNNER_TEMP — a path inside cleanup-dirs
+          # would be wiped between attempts and the case could never pass.
+          command: |
+            if [ -f "$RUNNER_TEMP/retry-counter" ]; then
+              echo "attempt 2 — clean exit"
+              exit 0
+            fi
+            touch "$RUNNER_TEMP/retry-counter"
+            echo "Recv failure: Operation timed out"
+            exit 1
+
+      - name: Wrapped — silent non-signature failure
+        id: silent
+        uses: ./.github/actions/retry-on-fetch-flake
+        continue-on-error: true
+        with:
+          label: silent exit-3
+          backoff-seconds: "2"
+          command: exit 3
+
+      - name: Wrapped — auth-shaped failure wins over a retry match
+        id: precedence
+        uses: ./.github/actions/retry-on-fetch-flake
+        continue-on-error: true
+        with:
+          label: auth precedence
+          backoff-seconds: "2"
+          command: |
+            echo "RPC failed; curl 56"
+            echo "returned error: 401"
+            exit 1
+
+      - name: Wrapped — retryable signature exhausts attempts
+        id: exhausted
+        uses: ./.github/actions/retry-on-fetch-flake
+        continue-on-error: true
+        with:
+          label: exhausted retries
+          backoff-seconds: "2"
+          command: |
+            echo "Recv failure: Operation timed out"
+            exit 1
+
+      # Runner-semantics probe: does `with:` forward an explicitly-empty
+      # input, or substitute the ".build" default? The script-level case
+      # above proves the env path; only this uses: case answers for real
+      # callers. If the default ever wins, the .build sentinel dies, this
+      # goes red, and the empty-disable contract needs a sentinel value
+      # (e.g. `cleanup-dirs: none`) instead — caught while the action is
+      # still inert, before any production caller relies on it.
+      - name: Create .build sentinel for the empty-cleanup probe
+        run: mkdir -p "$GITHUB_WORKSPACE/.build"
+
+      - name: Wrapped — explicit-empty cleanup-dirs must not wipe
+        id: emptycleanup
+        uses: ./.github/actions/retry-on-fetch-flake
+        continue-on-error: true
+        with:
+          label: empty cleanup-dirs
+          backoff-seconds: "0"
+          cleanup-dirs: ""
+          command: |
+            echo "Recv failure: Operation timed out"
+            exit 1
+
+      - name: Assert wrapped outcomes and outputs
+        if: always()
+        env:
+          C_OUTCOME: ${{ steps.counter.outcome }}
+          C_ATTEMPTS: ${{ steps.counter.outputs.attempts }}
+          C_VERDICT: ${{ steps.counter.outputs.verdict }}
+          S_OUTCOME: ${{ steps.silent.outcome }}
+          S_ATTEMPTS: ${{ steps.silent.outputs.attempts }}
+          S_CODE: ${{ steps.silent.outputs.exit_code }}
+          S_VERDICT: ${{ steps.silent.outputs.verdict }}
+          P_OUTCOME: ${{ steps.precedence.outcome }}
+          P_ATTEMPTS: ${{ steps.precedence.outputs.attempts }}
+          P_VERDICT: ${{ steps.precedence.outputs.verdict }}
+          E_OUTCOME: ${{ steps.exhausted.outcome }}
+          E_ATTEMPTS: ${{ steps.exhausted.outputs.attempts }}
+          E_CODE: ${{ steps.exhausted.outputs.exit_code }}
+          E_VERDICT: ${{ steps.exhausted.outputs.verdict }}
+          EC_ATTEMPTS: ${{ steps.emptycleanup.outputs.attempts }}
+          EC_VERDICT: ${{ steps.emptycleanup.outputs.verdict }}
+        run: |
+          fail=0
+          check() {
+            if [ "$2" = "$3" ]; then
+              echo "ok: $1 = $2"
+            else
+              echo "::error::$1 = '$2', expected '$3'"; fail=1
+            fi
+          }
+          check "counter outcome"     "$C_OUTCOME"  success
+          check "counter attempts"    "$C_ATTEMPTS" 2
+          check "counter verdict"     "$C_VERDICT"  success
+          check "silent outcome"      "$S_OUTCOME"  failure
+          check "silent attempts"     "$S_ATTEMPTS" 1
+          check "silent exit_code"    "$S_CODE"     3
+          check "silent verdict"      "$S_VERDICT"  unclassified
+          check "precedence outcome"  "$P_OUTCOME"  failure
+          check "precedence attempts" "$P_ATTEMPTS" 1
+          check "precedence verdict"  "$P_VERDICT"  auth-shaped
+          check "exhausted outcome"   "$E_OUTCOME"  failure
+          check "exhausted attempts"  "$E_ATTEMPTS" 3
+          check "exhausted exit_code" "$E_CODE"     1
+          check "exhausted verdict"   "$E_VERDICT"  retry-exhausted
+          check "emptycleanup attempts"  "$EC_ATTEMPTS" 3
+          check "emptycleanup verdict"   "$EC_VERDICT"  retry-exhausted
+          { [ -d "$GITHUB_WORKSPACE/.build" ] \
+            || { echo "::error::runner substituted the .build default over an explicitly-empty cleanup-dirs input — the empty-disable contract needs a sentinel value"; fail=1; }; }
+          rm -rf "$GITHUB_WORKSPACE/.build"
+          exit "$fail"

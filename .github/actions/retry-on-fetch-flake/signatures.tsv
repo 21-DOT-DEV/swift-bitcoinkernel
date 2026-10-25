@@ -1,0 +1,37 @@
+# signatures.tsv — the fetch/transport signature table FR-005 owns.
+#
+# Columns (tab-separated):
+#   kind      retry | noretry
+#   pattern   ERE matched against the attempt's whole log
+#   sample    a concrete log line the pattern must match — the selftest's
+#             printer prints this; the row IS its own case by construction
+#
+#   retry   — a match is a network flake: wipe cleanup-dirs, retry.
+#   noretry — auth-shaped output: fails fast EVEN when a retry pattern also
+#             matches; exclusion is checked before inclusion (a dead
+#             credential must never burn three attempts).
+#
+# `RPC failed` is never a bare signature: unqualified it also matches auth
+# rejections — the failures meant to fail fast — so it is always written
+# transport-scoped (a curl code or an HTTP 5xx).
+# `Could not resolve host` retries a mistyped manifest host twice more
+# before failing with the real code — the accepted cost of matching DNS
+# failures at all.
+
+retry	Recv failure: Operation timed out	Recv failure: Operation timed out
+retry	Operation too slow	Operation too slow. Less than 1024 bytes/sec transferred the last 60 seconds
+retry	Could not resolve host	Could not resolve host: github.com
+retry	RPC failed; curl (18|56|92)	RPC failed; curl 56 GnuTLS recv error (-54): Error in the pull function.
+retry	RPC failed; HTTP 5[0-9][0-9]	RPC failed; HTTP 503 curl 22 The requested URL returned error: 503
+retry	early EOF	error: index-pack died of early EOF
+retry	unexpected disconnect while reading sideband packet	fatal: unexpected disconnect while reading sideband packet
+retry	Connection reset by peer	fatal: unable to access 'https://github.com/owner/repo.git/': Connection reset by peer
+retry	Failed to connect	Failed to connect to github.com port 443: Operation timed out
+retry	The remote end hung up unexpectedly	fatal: The remote end hung up unexpectedly
+retry	returned error: (50[234]|429)	The requested URL returned error: 429
+noretry	Authentication failed	fatal: Authentication failed for 'https://github.com/owner/repo.git/'
+noretry	returned error: 40[13]	The requested URL returned error: 403
+noretry	HTTP 40[13]	RPC failed; HTTP 403
+# Precedence row: this sample matches BOTH a retry pattern (curl 56) and the
+# noretry pattern above (HTTP 403) — exclusion must win: 1 attempt.
+noretry	HTTP 40[13]	RPC failed; curl 56 HTTP 403

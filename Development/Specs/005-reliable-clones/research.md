@@ -415,11 +415,11 @@ couple job health to the probe. A third warn-only check — whether the
 job token can push, probed by `push --dry-run` in `verify-scope.sh` —
 is specified and justified in §9.
 
-## 8. Hosting and slicing — local composite actions, seven prepare/apply PRs
+## 8. Hosting and slicing — local composite actions, eight prepare/apply PRs
 
 **Chosen: `./.github/actions/` in this repo, sliced spec → auth-action →
 auth-wiring → hardening → retry-action → retry-wiring → dedicated-resolve
-wiring.** Same-repo actions
+wiring → selftest-gate.** Same-repo actions
 are first-party code at the same commit — no SHA-pinning needed even under
 strict supply-chain review (per Sentry's gha-security-review taxonomy and
 GitHub's secure-use reference, which reserves immutable pinning for

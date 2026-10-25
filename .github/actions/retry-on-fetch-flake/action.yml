@@ -1,0 +1,85 @@
+name: Retry on fetch flake
+description: >-
+  Re-runs a command only when its output matches a known fetch/transport
+  signature; exits immediately with the real exit code otherwise.
+
+# Retry-with-diagnosis for fetch-only commands:
+#
+#   - Wrap commands whose work is pure package resolution — `swift package
+#     resolve`, `tuist generate`, `xcodebuild -resolvePackageDependencies` —
+#     idempotent and safe to re-run wholesale. NEVER wrap build or test
+#     steps: a retried test could mask a real regression.
+#   - The gate greps each attempt's log for the signatures in
+#     signatures.tsv (the table the selftest iterates — add a signature
+#     there and it is automatically covered). Auth-shaped output is checked
+#     first and fails fast; output matching neither set exits with the real
+#     code — retries never mask an unclassifiable failure.
+#   - Bounds are the calling step's timeout-minutes (the whole loop) plus
+#     git's http.lowSpeed* aborts from github-git-auth — no per-attempt
+#     supervisor: macOS runners ship no `timeout`, and a killed process tree
+#     is the job the step bound already does.
+#   - Between attempts the action waits backoff-seconds*attempt, then wipes
+#     every cleanup-dirs entry so a mid-clone corpse can't block the retry.
+#     Entries are literal (no ~/variable/glob expansion), resolve relative
+#     to $GITHUB_WORKSPACE (the caller's cwd when invoked outside a runner —
+#     a missing workspace off-runner roots the wipe there with a notice; on
+#     a runner it refuses), and must normalize strictly inside that root or
+#     $RUNNER_TEMP — anything else warns and is skipped, as does an entry
+#     naming nothing.
+#
+# Detailed rationale: Development/Specs/005-reliable-clones/research.md §6.
+
+inputs:
+  command:
+    description: >-
+      Command to run via `bash -eo pipefail -c`; must be idempotent and
+      safe to re-run. Passed to the script through env — never interpolated
+      into run: text.
+    required: true
+  label:
+    description: Short name used in group and error log lines
+    required: true
+  max-attempts:
+    description: Total attempts before failing
+    required: false
+    default: "3"
+  backoff-seconds:
+    description: Linear backoff unit — waits this many seconds times the attempt number between attempts
+    required: false
+    default: "20"
+  cleanup-dirs:
+    description: >-
+      Resolution-state directories wiped between attempts, one per line;
+      literal paths relative to the workspace, each constrained strictly
+      inside the workspace root or RUNNER_TEMP. An explicitly EMPTY value
+      disables the wipe entirely.
+    required: false
+    default: ".build"
+
+outputs:
+  attempts:
+    description: Number of attempts made before the terminal exit
+    value: ${{ steps.retry.outputs.attempts }}
+  exit_code:
+    description: Exit code the wrapped command last produced (0 on success)
+    value: ${{ steps.retry.outputs.exit_code }}
+  verdict:
+    description: >-
+      One word per way the run can end — success | retry-exhausted |
+      auth-shaped | unclassified | table-missing | usage — so a caller can
+      tell the auth exclusion apart from an unclassifiable failure without
+      grepping log prose. Same contract as github-git-auth's probe_status.
+    value: ${{ steps.retry.outputs.verdict }}
+
+runs:
+  using: composite
+  steps:
+    - id: retry
+      shell: bash
+      env:
+        RETRY_COMMAND: ${{ inputs.command }}
+        RETRY_LABEL: ${{ inputs.label }}
+        RETRY_MAX_ATTEMPTS: ${{ inputs.max-attempts }}
+        RETRY_BACKOFF_SECONDS: ${{ inputs.backoff-seconds }}
+        RETRY_CLEANUP_DIRS: ${{ inputs.cleanup-dirs }}
+      run: "$GITHUB_ACTION_PATH/retry.sh"
