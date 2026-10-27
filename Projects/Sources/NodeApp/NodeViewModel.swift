@@ -66,6 +66,16 @@ final class NodeViewModel {
 
     var isRunning: Bool { nodeState == .running }
 
+    /// Whether the direct in-process RPC bridge is currently serving
+    /// questions — the live flag `AutoTransport` consults on every call
+    /// (`bitcoin_rpc_ready()`), so this can never disagree with the routing
+    /// it describes. The bridge's own record is the only copy: `_bridge_init`
+    /// sets it when `Daemon.bootstrap` resolves, `bitcoin_rpc_reset()` clears
+    /// it on shutdown — a stored shadow here could only lag that truth in
+    /// exactly the teardown window the run's per-question log exists to
+    /// diagnose.
+    var bridgeReady: Bool { bitcoin_rpc_ready() == 1 }
+
     /// Returns whether the start went ahead. `false` means the node was not
     /// `.stopped` — something else already moved it (another run, a tap on the
     /// app's Start button, a config change's restart) — and the call was a

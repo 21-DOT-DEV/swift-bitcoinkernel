@@ -93,6 +93,7 @@ extension NodeSession: RunSession {
     // Stateless — it forwards the device's own readings — so handing a fresh
     // one is the same value as holding one.
     var device: any DeviceReadings { LiveDeviceReadings() }
+    var bridgeReady: Bool { node.bridgeReady }
 
     func startNode(
         arguments: [String], torSession: UUID?, torSocksPort: UInt16?

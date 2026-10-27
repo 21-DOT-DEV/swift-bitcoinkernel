@@ -224,8 +224,10 @@ ceiling sits at 60 s, and the 30 s orphan is *cancelled* —
 `withHardTimeout`'s `work.cancel()` is the one signal `URLSession`
 observes. Orphan lifetime and cancellability are inversely coupled, selected
 per call by a C function — which is why T019 logs the serving transport per
-poll: `bitcoin_rpc_ready()` itself is package-internal, so the run reads a
-`bridgeReady` flag `NodeViewModel` records from its bootstrap outcome, and a
+poll: `bitcoin_rpc_ready()` is exported by the `bitcoind` module's public
+header (the same one `NodeViewModel` already calls `bitcoin_rpc_reset()`
+through), so `bridgeReady` reads that flag live rather than recording a
+copy of the bootstrap outcome — and a
 `noProgress` verdict on device cannot attribute its timings without it (an ~11 s
 answer means different things under a 30 s and a 60 s ceiling).
 
