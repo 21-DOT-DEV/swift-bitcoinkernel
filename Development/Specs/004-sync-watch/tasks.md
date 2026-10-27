@@ -498,12 +498,33 @@ watch orchestration until the next group.
   narrowing those is its own change (~90) ·
   `Sources/NodeApp/NodeRun.swift`, `Sources/NodeApp/NodeSession.swift`,
   `Sources/NodeAppTests/NodeRunTests.swift`
-- [ ] T019 [P] `bridgeReady` flag — `NodeViewModel` records the direct
+- [x] T019 [P] `bridgeReady` flag — `NodeViewModel` records the direct
   bridge's bootstrap outcome (`bitcoin_rpc_ready()` is package-internal C
   the app can't call), and the run logs the serving transport per question,
-  so a `noProgress` verdict attributes timings to a 30 s or a 60 s ceiling
-  (~80) · `Sources/NodeApp/NodeViewModel.swift`,
-  `Sources/NodeApp/NodeRun.swift`
+  so a `noProgress` verdict attributes timings to a 30 s or a 60 s ceiling.
+  Landed with one correction and one refinement past the written task.
+  The premise is stale: `bitcoin_rpc_ready()` has been callable from the
+  app since `bitcoin_rpc_reset()` was adopted — both are declared in
+  `bitcoind.h`, the `bitcoind` module's public header — so `bridgeReady`
+  is a computed live read of the flag `AutoTransport` itself consults per
+  call rather than a stored record of the bootstrap outcome; a copy could
+  only lag the real routing in exactly the teardown window the log exists
+  to diagnose (`bitcoin_rpc_reset()` already clears the C flag in
+  `performStop`). It reaches the run as a `RunSession` member like every
+  other world-fact — scriptable and read-counted on `FakeRunSession` — and
+  every node question now flows through a new `ask` helper that logs the
+  RPC name and the serving transport with its ceiling (`via direct bridge
+  (30 s ceiling)` / `via http (60 s ceiling)`) at `.notice` — persisted by
+  default for post-hoc device forensics — before bounding the call with
+  `withHardTimeout`. All three question sites (`awaitFirstAnswer`,
+  `report`, `connectionCount`) route through it, so T022's watch and
+  T025's `getpeerinfo` inherit the line per question; a new drivability
+  test pins the consult at once per question (~110 across six files —
+  over the estimate on the seam plumbing and the consult pin the written
+  task's file list did not enumerate) ·
+  `Sources/NodeApp/{NodeViewModel,NodeRun,NodeSession}.swift`,
+  `Sources/NodeAppTests/NodeRunTests.swift`,
+  `Development/Specs/004-sync-watch/{plan,research}.md`
 - [ ] T020 [P] Widen the `onProgress` payload to a value type — fraction,
   headline, detail — `SyncNodeIntent` compiling through the same signature
   with defaults (~80) · `Sources/NodeApp/NodeRun.swift`,

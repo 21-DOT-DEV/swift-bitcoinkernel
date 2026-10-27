@@ -230,9 +230,11 @@ is dead peers, a lost network, a wedged validation thread.
   terminates it (the one transport that observes cancellation). The `cs_main`
   count is unchanged either way — the lock is per call inside Core — and the
   HTTP path adds a `.cookie` file read plus an authenticated loopback round
-  trip on top. `bitcoin_rpc_ready()` is package-internal C the app cannot
-  call — logging the serving transport means plumbing a `bridgeReady` flag
-  `NodeViewModel` sets when its bootstrap resolves, not a per-poll C call.
+  trip on top. `bitcoin_rpc_ready()` is app-callable — `bitcoind.h` is the
+  `bitcoind` module's public header, the same one `NodeViewModel` already
+  calls `bitcoin_rpc_reset()` through — so the serving transport needs no
+  stored record: `NodeViewModel.bridgeReady` reads the live flag, and the
+  run logs what it implies per question.
   Corollary: the session's questions authenticate by `.cookie`, so `rpc_auth`
   never reaches the client — a mid-grace change there yields a launched
   config nobody reasoned about, not a 401.

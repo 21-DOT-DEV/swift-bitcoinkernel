@@ -458,6 +458,22 @@ struct NodeRunDrivabilityTests {
         _ = await run.value   // the parked nap throws; the run reports nothing
     }
 
+    /// The per-question transport log exists so a `noProgress` verdict can
+    /// attribute timings to the right ceiling — a consult skipped at one
+    /// question site is a gap in exactly the trail it builds. The fake
+    /// counts every read, so a dropped consult lands as a wrong number.
+    @Test("the run consults the serving transport once per question")
+    func transportConsultedPerQuestion() async throws {
+        let session = sessionAnswering(network: { try decodeNetworkInfo() })
+        let report = await NodeRun.perform(
+            session: session, waitForFirstAnswer: .seconds(30),
+            clock: ManualClock(), defaults: makeVolatileDefaults())
+        #expect(report.blockHeight == 100)
+        // Two questions — blockchain info, then the peer count — and the
+        // flag was consulted once for each.
+        #expect(session.bridgeReadyReads == 2)
+    }
+
     /// The answer the fake hands the gather is the one `NodePreflight`
     /// weighs: a metered first report declines the run before it ever asks
     /// for the folder or the daemon.
@@ -539,6 +555,16 @@ private final class FakeRunSession: RunSession {
     /// test flips mid-run live here and the run asks through the getter.
     let deviceReadings: FakeDeviceReadings
     var device: any DeviceReadings { deviceReadings }
+
+    /// The scripted value behind `bridgeReady`; every read is counted so a
+    /// test can pin "the run consults the transport once per question" —
+    /// the consult itself is the only observable part of the log it feeds.
+    var scriptedBridgeReady = false
+    private(set) var bridgeReadyReads = 0
+    var bridgeReady: Bool {
+        bridgeReadyReads += 1
+        return scriptedBridgeReady
+    }
 
     init(
         nodeState: NodeState, reader: any DashboardDataSource,

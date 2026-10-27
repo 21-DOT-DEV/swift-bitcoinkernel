@@ -63,6 +63,16 @@ protocol RunSession {
     /// watch them be used.
     var device: any DeviceReadings { get }
 
+    /// Whether the node's questions are currently served by the direct
+    /// in-process bridge — `true` means an answer is bounded by the bridge's
+    /// own ~30 s give-up (uncancellable: an abandoned call finishes in the
+    /// background), `false` means the ~60 s `URLSession` ceiling (the one
+    /// transport `withHardTimeout`'s cancel genuinely terminates). Re-read
+    /// per question so the run's log attributes every answer's timing to
+    /// the ceiling it was measured under — on a fast-starting node the
+    /// bridge can flip mid-run.
+    var bridgeReady: Bool { get }
+
     /// Starts the node with the given daemon arguments.
     ///
     /// - Returns: whether the start was accepted. The concrete node refuses
@@ -547,6 +557,35 @@ enum NodeRun {
             session: session, clock: clock, onProgress: onProgress)
     }
 
+    /// Asks the node one bounded question, logging the transport that will
+    /// carry it — which is also the ceiling the answer's timing should be
+    /// read against. `AutoTransport` picks per call inside the package:
+    /// while the direct bridge is up, an answer is bounded by the bridge's
+    /// ~30 s give-up (uncancellable — a timed-out call finishes in the
+    /// background); over HTTP it rides `URLSession`'s ~60 s — the one
+    /// transport `withHardTimeout`'s cancel genuinely terminates. The flag
+    /// is consulted here, once per question, because a fast-starting node
+    /// can flip it mid-run — and because the line is written before the
+    /// question leaves, a question that never answers still leaves it,
+    /// which is precisely the `noProgress` case the log exists for.
+    ///
+    /// - Returns: the answer, or `nil` when the bound elapsed or the call
+    ///   was cancelled — the fold each call site spelled `try?` for.
+    private static func ask<T: Sendable, C: Clock<Duration>>(
+        _ question: String,
+        session: any RunSession,
+        within budget: Duration,
+        clock: C,
+        _ operation: @escaping @Sendable () async throws -> T
+    ) async -> T? {
+        let transport = session.bridgeReady
+            ? "direct bridge (30 s ceiling)"
+            : "http (60 s ceiling)"
+        log.notice(
+            "run: asking \(question, privacy: .public) via \(transport, privacy: .public)")
+        return try? await withHardTimeout(budget, clock: clock, operation: operation)
+    }
+
     /// Keeps asking the node whether it is up, giving up at the deadline.
     ///
     /// A `nil` here means only "no usable answer arrived" — the deadline may have
@@ -586,9 +625,10 @@ enum NodeRun {
             if Task.isCancelled { return nil }
             if session.nodeState.isStoppedOrStopping { return nil }
             let remaining = clock.now.duration(to: deadline)
-            let info = try? await withHardTimeout(min(remaining, questionBudget), clock: clock) {
-                try await reader.blockchainInfo()
-            }
+            let info = await ask(
+                "getblockchaininfo", session: session,
+                within: min(remaining, questionBudget), clock: clock
+            ) { try await reader.blockchainInfo() }
             if let info {
                 // Re-read both facts now the answer is actually here, rather than
                 // trusting the check at the top of this pass. A question already in
@@ -647,9 +687,10 @@ enum NodeRun {
     ) async -> NodeRunReport {
         let reader = session.reader
         onProgress(0.1)
-        let info = try? await withHardTimeout(questionBudget, clock: clock) {
-            try await reader.blockchainInfo()
-        }
+        let info = await ask(
+            "getblockchaininfo", session: session,
+            within: questionBudget, clock: clock
+        ) { try await reader.blockchainInfo() }
         guard let info else {
             // It says it is running but will not answer — the anomaly most worth
             // a log line on an unattended run (daemon alive, RPC dead).
@@ -776,9 +817,10 @@ enum NodeRun {
         session: any RunSession, clock: C
     ) async -> Int? {
         let reader = session.reader
-        let info = try? await withHardTimeout(questionBudget, clock: clock) {
-            try await reader.networkInfo()
-        }
+        let info = await ask(
+            "getnetworkinfo", session: session,
+            within: questionBudget, clock: clock
+        ) { try await reader.networkInfo() }
         guard let info else { return nil }
         return info.connections
     }
