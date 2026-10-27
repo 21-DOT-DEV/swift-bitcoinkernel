@@ -53,7 +53,10 @@ jobs:
       # documented symlink on the xcode-27 image (runner-images readme).
       DEVELOPER_DIR: "/Applications/Xcode_27.0.app/Contents/Developer"
       WORKSPACE: Projects/Bitcoin.xcworkspace
-      DERIVED_DATA: .derivedData
+      # Absolute, not relative: the Tuist.swift SourcePackages pin below is
+      # derived from this value and the internal resolve's working directory
+      # is not guaranteed — an absolute path removes it from the question.
+      DERIVED_DATA: ${{ github.workspace }}/.derivedData
     steps:
       - uses: actions/checkout@v6
         with:
@@ -95,16 +98,57 @@ jobs:
       # xcodebuild's single-dash flags, because SwiftPM's own CLI parser reads
       # `-workspace`/`-scheme` as short-flag clusters and the `-c` inside grabs
       # the value (and `--` leaks through to xcodebuild). See `.github/AGENTS.md`.
+      #
       # Two fetch-flake defenses on top of the authenticated header above.
       # --disable-dependency-cache fetches straight into .build/repositories —
       # a clone dying mid-fetch into SwiftPM's shared repo cache is fatal
       # (swiftlang/swift-package-manager#9037, observed killing KernelApp (ios)
       # in run 38030982512) — and the cache buys nothing on a fresh runner
-      # anyway. The 30-min bound covers the whole retry loop this step gains
-      # under the retry wiring — ≈3 attempts at incident scale plus backoffs.
+      # anyway. The 30-min bound covers the whole retry loop — ≈3 attempts at
+      # incident scale plus backoffs.
+      #
+      # retry-on-fetch-flake re-runs ONLY on a fetch/transport log signature —
+      # a broken manifest or version conflict exits on attempt 1 with the real
+      # code. cleanup-dirs wipes both resolution writes between attempts:
+      # root .build (the swift-package plugin resolve — `-p` is Tuist's arg,
+      # not SwiftPM's --package-path) and the pinned SourcePackages below.
+      #
+      # TUIST_CLONED_SOURCE_PACKAGES_DIR switches the repo-root Tuist.swift's
+      # additionalPackageResolutionArguments on: `tuist generate`'s internal
+      # `xcodebuild -resolvePackageDependencies` (which no workflow flag can
+      # reach) then runs on the system git that reads the auth ~/.gitconfig
+      # and clones into $DERIVED_DATA/SourcePackages — the directory the
+      # builds' -derivedDataPath already reads, so the remote graph fetches
+      # once inside this retried step instead of again at build time
+      # (tuist/tuist#2712's default-DerivedData split). The same expression
+      # feeds the pin and the wipe so the two can never drift. Locally the
+      # variable is unset and generate resolves into default DerivedData.
       - name: Generate workspace
         timeout-minutes: 30
-        run: swift package --disable-sandbox --disable-dependency-cache tuist generate -p Projects/ --no-open
+        uses: ./.github/actions/retry-on-fetch-flake
+        env:
+          TUIST_CLONED_SOURCE_PACKAGES_DIR: ${{ env.DERIVED_DATA }}/SourcePackages
+        with:
+          label: tuist generate
+          command: swift package --disable-sandbox --disable-dependency-cache tuist generate -p Projects/ --no-open
+          cleanup-dirs: |
+            .build
+            ${{ env.DERIVED_DATA }}/SourcePackages
+
+      # Invariant for the pin above, checked on every green run — not only on
+      # retries: if the pin stops applying (silently ignored option, unset
+      # variable) the internal resolve falls back to default DerivedData and
+      # the builds re-clone the whole graph unretried. `checkouts/` is the
+      # meaningful probe: `repositories/` collects skeletons even on a failed
+      # resolve, so top-level non-empty can't distinguish a fetch from a
+      # corpse. Warn-only like the auth action's checks — a regression shows
+      # here before it surfaces as a mid-build fetch flake.
+      - name: Verify pinned clones
+        run: |
+          CHECKOUTS="$DERIVED_DATA/SourcePackages/checkouts"
+          if [ -z "$(ls -A "$CHECKOUTS" 2>/dev/null)" ]; then
+            echo "::warning::$CHECKOUTS is missing or empty — the Tuist.swift SourcePackages pin did not apply; the internal resolve fell back to default DerivedData and the builds will re-fetch the package graph"
+          fi
 
       # macOS is a fixed destination; for the iOS Simulator we resolve an
       # available iPhone by UDID at runtime, which is robust against

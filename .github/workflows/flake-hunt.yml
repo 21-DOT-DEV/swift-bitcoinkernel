@@ -50,7 +50,10 @@ jobs:
       # Same version-pinned path as tuist-apps.yml — see the comment there.
       DEVELOPER_DIR: "/Applications/Xcode_27.0.app/Contents/Developer"
       WORKSPACE: Projects/Bitcoin.xcworkspace
-      DERIVED_DATA: .derivedData
+      # Absolute, not relative — see tuist-apps.yml: the Tuist.swift pin is
+      # derived from this value and the internal resolve's cwd is not
+      # guaranteed.
+      DERIVED_DATA: ${{ github.workspace }}/.derivedData
     steps:
       - uses: actions/checkout@v6
         with:
@@ -66,12 +69,30 @@ jobs:
         with:
           token: ${{ github.token }}
 
-      # Same defenses as tuist-apps.yml's generate step — see that comment:
-      # --disable-dependency-cache keeps clones out of the shared SwiftPM
-      # cache; the bound covers the retry loop this step gains under T007.
+      # Same wiring as tuist-apps.yml's generate step — see the comment
+      # there: signature-gated retry, root .build + pinned SourcePackages
+      # cleanup, and the TUIST_CLONED_SOURCE_PACKAGES_DIR pin that moves the
+      # internal resolve's clones into $DERIVED_DATA for warm reuse by the
+      # builds.
       - name: Generate workspace
         timeout-minutes: 30
-        run: swift package --disable-sandbox --disable-dependency-cache tuist generate -p Projects/ --no-open
+        uses: ./.github/actions/retry-on-fetch-flake
+        env:
+          TUIST_CLONED_SOURCE_PACKAGES_DIR: ${{ env.DERIVED_DATA }}/SourcePackages
+        with:
+          label: tuist generate
+          command: swift package --disable-sandbox --disable-dependency-cache tuist generate -p Projects/ --no-open
+          cleanup-dirs: |
+            .build
+            ${{ env.DERIVED_DATA }}/SourcePackages
+
+      # Same pin invariant as tuist-apps.yml — see the comment there.
+      - name: Verify pinned clones
+        run: |
+          CHECKOUTS="$DERIVED_DATA/SourcePackages/checkouts"
+          if [ -z "$(ls -A "$CHECKOUTS" 2>/dev/null)" ]; then
+            echo "::warning::$CHECKOUTS is missing or empty — the Tuist.swift SourcePackages pin did not apply; the internal resolve fell back to default DerivedData and the builds will re-fetch the package graph"
+          fi
 
       # Mirrors tuist-apps.yml's destination resolution: a device under the
       # NEWEST installed iOS runtime, picked by parsing simctl's JSON rather
