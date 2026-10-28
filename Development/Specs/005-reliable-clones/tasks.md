@@ -269,7 +269,7 @@ selftest's retry cases exercise it; fetch paths unchanged.
 
 ## Phase 5 — Turn the retry on for the fetch steps
 
-- [ ] T007 Wrap the `tuist generate` steps in `retry-on-fetch-flake`
+- [x] T007 Wrap the `tuist generate` steps in `retry-on-fetch-flake`
   (label + command inputs; the step keeps its `timeout-minutes` as the outer
   bound), each listing `cleanup-dirs` per FR-006 — root `.build` plus
   `${{ env.DERIVED_DATA }}/SourcePackages` (the runner expands the
