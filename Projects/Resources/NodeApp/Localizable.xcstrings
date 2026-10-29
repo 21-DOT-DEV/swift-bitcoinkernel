@@ -648,6 +648,9 @@
     "Synced to tip" : {
 
     },
+    "Syncing the Bitcoin node" : {
+
+    },
     "The current network is metered — cellular, or a link shared from another phone — and syncing can use gigabytes, so the node did not start." : {
 
     },

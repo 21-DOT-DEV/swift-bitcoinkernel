@@ -987,7 +987,7 @@ struct NodeAutomationTests {
         // FR-003 / plan §3.4: once a watch commits, "checking" becomes
         // "syncing" — the honest verb for the one thing the run is doing.
         #expect(NodeAutomation.watchingTitle == "Syncing the Bitcoin node")
-        #expect(NodeAutomation.watchingTitle != NodeAutomation.inProgressTitle)
+        #expect(String(localized: NodeAutomation.watchingTitle) != NodeAutomation.inProgressTitle)
     }
 
     // MARK: - The in-watch detail line

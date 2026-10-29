@@ -525,10 +525,32 @@ watch orchestration until the next group.
   `Sources/NodeApp/{NodeViewModel,NodeRun,NodeSession}.swift`,
   `Sources/NodeAppTests/NodeRunTests.swift`,
   `Development/Specs/004-sync-watch/{plan,research}.md`
-- [ ] T020 [P] Widen the `onProgress` payload to a value type — fraction,
+- [x] T020 [P] Widen the `onProgress` payload to a value type — fraction,
   headline, detail — `SyncNodeIntent` compiling through the same signature
   with defaults (~80) · `Sources/NodeApp/NodeRun.swift`,
-  `ProgressMeter.swift`
+  `ProgressMeter.swift`.
+  Landed as specced, with the shape settled in review: the payload is
+  `NodeRun.ProgressUpdate` — `Sendable, Equatable`, `fraction: Double`
+  beside `headline`/`detail` as `LocalizedStringResource?` (card text
+  decided where produced, resolved where written — the
+  `dialogTemplate`/`summary` shape), built at all five emission sites as
+  `ProgressUpdate(fraction:…)`, the labeled memberwise form the
+  text-carrying era's sites will share. `ProgressMeter.advance(_:)` takes
+  the update and reads its fraction alone — `headline`/`detail` are
+  staged-but-unwired exactly like `watchDetail`, waiting on T030's text
+  writes and finish-gate; `NodeAutomation.watchingTitle` re-typed to
+  `LocalizedStringResource` so it can feed `headline` without conversion.
+  `SyncNodeLongRunningIntent.swift` joins the file list mechanically —
+  the `work` closure's callback type and its `meter.advance($0)` forward.
+  Two pins land with it because no test had ever passed `onProgress`: one
+  records the report path's emissions (`[0.1, 0.6, 1]`, text `nil`), and
+  one drives the intent's work→meter bridge (`completedUnitCount == 50`)
+  (~140 across seven files — over the estimate on the two pins, the
+  `watchingTitle` retype, and the intent file the written list did not
+  enumerate) · `Sources/NodeApp/{NodeRun,ProgressMeter,
+  SyncNodeLongRunningIntent,NodeAutomation}.swift`,
+  `Sources/NodeAppTests/{NodeRunTests,ProgressMeterTests,
+  SyncNodeLongRunningIntentTests,NodeAutomationTests}.swift`
 - [ ] T021 Private-network grace — a deadline-bounded poll in `NodeRun`'s own
   loop shape (never `withHardTimeout` around `waitUntilReady`, which abandons
   a `@MainActor` loop whose `try?` sleep swallows cancellation);

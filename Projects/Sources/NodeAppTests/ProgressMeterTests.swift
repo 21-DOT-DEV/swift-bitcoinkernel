@@ -36,8 +36,8 @@ struct ProgressMeterTests {
         // The heartbeat can tick past where the real work has reached; when the
         // run then reports an honest lower figure, the card must not retreat.
         let (progress, meter) = makeMeter()
-        meter.advance(to: 0.5)
-        meter.advance(to: 0.2)
+        meter.advance(NodeRun.ProgressUpdate(fraction: 0.5))
+        meter.advance(NodeRun.ProgressUpdate(fraction: 0.2))
         #expect(progress.completedUnitCount == 50)
     }
 
@@ -56,7 +56,7 @@ struct ProgressMeterTests {
         // The heartbeat exists to cover silence: when a real report just wrote,
         // the tick that follows has nothing to add and spends no budget.
         let (progress, meter) = makeMeter()
-        meter.advance(to: 0.3)
+        meter.advance(NodeRun.ProgressUpdate(fraction: 0.3))
         meter.tick()
         #expect(progress.completedUnitCount == 30)
         meter.tick()
@@ -70,7 +70,7 @@ struct ProgressMeterTests {
         // fresh-report tick has been skipped, the next tick must write a new
         // value again — the only thing the system is documented to watch.
         let (progress, meter) = makeMeter()
-        meter.advance(to: 0.6)
+        meter.advance(NodeRun.ProgressUpdate(fraction: 0.6))
         meter.tick()
         #expect(progress.completedUnitCount == 60)
         meter.tick()
@@ -87,7 +87,7 @@ struct ProgressMeterTests {
         // and even spending it all, the bar cannot be carried past full.
         let (progress, meter) = makeMeter()
         for i in 1 ... 60 {
-            meter.advance(to: Double(i) / 100)
+            meter.advance(NodeRun.ProgressUpdate(fraction: Double(i) / 100))
             meter.tick()
         }
         #expect(progress.completedUnitCount == 60)
@@ -101,7 +101,7 @@ struct ProgressMeterTests {
         // A full bar is a claim that the work finished — so not even a real
         // report of 1.0 may reach it.
         let (progress, meter) = makeMeter()
-        meter.advance(to: 1.0)
+        meter.advance(NodeRun.ProgressUpdate(fraction: 1.0))
         for _ in 0 ..< 200 { meter.tick() }
         #expect(progress.completedUnitCount == 99)
     }
@@ -122,7 +122,7 @@ struct ProgressMeterTests {
     @Test("a run that read a node finishes with a full bar")
     func earnedFinishFills() {
         let (progress, meter) = makeMeter()
-        meter.advance(to: 0.4)
+        meter.advance(NodeRun.ProgressUpdate(fraction: 0.4))
         meter.finish(
             NodeAutomation.ending(
                 outcome: .started, syncEnding: .notMeasured,
@@ -135,7 +135,7 @@ struct ProgressMeterTests {
     @Test("a refused run ends short of full, with its ending written")
     func unearnedFinishStaysShort() {
         let (progress, meter) = makeMeter()
-        meter.advance(to: 0.4)
+        meter.advance(NodeRun.ProgressUpdate(fraction: 0.4))
         meter.finish(
             NodeAutomation.ending(
                 outcome: .declined, syncEnding: .notMeasured,
@@ -149,7 +149,7 @@ struct ProgressMeterTests {
     @Test("a run the system ended says so, without filling the bar")
     func timedOutEndingWrittenWithoutFill() {
         let (progress, meter) = makeMeter()
-        meter.advance(to: 0.4)
+        meter.advance(NodeRun.ProgressUpdate(fraction: 0.4))
         meter.finish(NodeAutomation.timedOutEnding)
         #expect(progress.completedUnitCount == 40)
         #expect(progress.localizedDescription == "Run cut short")
@@ -175,8 +175,8 @@ struct ProgressMeterTests {
     @Test("a nonsense report is ignored rather than trapping")
     func nonFiniteReportIgnored() {
         let (progress, meter) = makeMeter()
-        meter.advance(to: .nan)
-        meter.advance(to: .infinity)
+        meter.advance(NodeRun.ProgressUpdate(fraction: .nan))
+        meter.advance(NodeRun.ProgressUpdate(fraction: .infinity))
         #expect(progress.completedUnitCount == 0)
     }
 
@@ -187,8 +187,8 @@ struct ProgressMeterTests {
         // 0...1 must run before the conversion, so 1e300 reads as "done" rather
         // than crashing the action.
         let (progress, meter) = makeMeter()
-        meter.advance(to: 1e300)
-        meter.advance(to: -1e300)
+        meter.advance(NodeRun.ProgressUpdate(fraction: 1e300))
+        meter.advance(NodeRun.ProgressUpdate(fraction: -1e300))
         #expect(progress.completedUnitCount == 99)
     }
 
@@ -200,11 +200,11 @@ struct ProgressMeterTests {
         // values, so they must not stand in for heartbeat ticks — the run is
         // exactly as silent as if nothing had been reported at all.
         let (progress, meter) = makeMeter()
-        meter.advance(to: 0.9)
+        meter.advance(NodeRun.ProgressUpdate(fraction: 0.9))
         meter.tick()
         #expect(progress.completedUnitCount == 90)
         for _ in 0 ..< 4 {
-            meter.advance(to: 0.9)
+            meter.advance(NodeRun.ProgressUpdate(fraction: 0.9))
             meter.tick()
         }
         #expect(progress.completedUnitCount == 94)

@@ -135,7 +135,8 @@ enum NodeAutomation {
     /// §3.4 wording, pinned). Distinct from `inProgressTitle`: "checking"
     /// covers starting, waiting, and reading, while a committed watch is
     /// doing exactly one thing — "syncing" is the honest verb for it.
-    static let watchingTitle = "Syncing the Bitcoin node"
+    /// Typed as the field `NodeRun.ProgressUpdate.headline` carries it.
+    static let watchingTitle: LocalizedStringResource = "Syncing the Bitcoin node"
 
     /// Turns a finished run into what the card shows.
     ///
@@ -1370,7 +1371,7 @@ enum NodeAutomation {
     /// The last ~5% is the reserve the honesty rules hold: a full bar claims
     /// the work finished, and only an earned `finish(_:)` is in a position
     /// to know that. Plan §3.4 assigns this figure as the meter's
-    /// `advance(to:)` cap — a sync that lands with T032 if T038's device
+    /// `advance(_:)` cap — a sync that lands with T032 if T038's device
     /// experiment keeps numeric writes. Today the meter stops one unit
     /// short of full; the agreement is specced, not yet coded.
     static let watchBandEnd: Double = 0.95

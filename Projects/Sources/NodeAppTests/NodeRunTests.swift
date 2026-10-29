@@ -172,6 +172,24 @@ struct NodeRunDrivabilityTests {
                 blockchain: { try decodeBlockchainInfo() }, network: network))
     }
 
+    @Test("the run reports its progress as typed updates — fractions only, so far")
+    func progressReportsArriveAsUpdates() async {
+        // The emissions were unverifiable while the callback stayed a bare
+        // `Double` nobody passed — every test below lets it default away.
+        // Recorded on the report path, the run's shortest emission sequence:
+        // first question out, last question out, work complete.
+        var emitted: [NodeRun.ProgressUpdate] = []
+        let session = sessionAnswering(network: { try decodeNetworkInfo() })
+        _ = await NodeRun.perform(
+            session: session, waitForFirstAnswer: .seconds(30),
+            clock: ManualClock(), defaults: makeVolatileDefaults()
+        ) { emitted.append($0) }
+        #expect(emitted.map(\.fraction) == [0.1, 0.6, 1])
+        // `headline`/`detail` ride the payload already — `nil` until the watch
+        // stage produces them and T030 writes them to the card.
+        #expect(emitted.allSatisfy { $0.headline == nil && $0.detail == nil })
+    }
+
     @Test("a run cancelled mid-question reports nothing measured and persists nothing")
     func cancellationMidQuestionPersistsNothing() async throws {
         let store = makeVolatileDefaults()

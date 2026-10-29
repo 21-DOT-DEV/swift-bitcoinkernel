@@ -239,6 +239,38 @@ enum NodeRun {
     /// already-running node (two questions) still fits its window.
     private static let questionBudget: Duration = .seconds(10)
 
+    /// One report of where the run's progress display should sit.
+    ///
+    /// The bar's position today — `fraction` — plus the two lines of card
+    /// text the sync watch will report alongside it once it exists (T030
+    /// writes them to the display; nothing produces them yet, so they ride
+    /// `nil`). Text travels as an unresolved resource for the same reason
+    /// `NodeRunReport.dialogTemplate` does: the sentence is decided where
+    /// the facts are and resolved where it is shown.
+    struct ProgressUpdate: Sendable, Equatable {
+
+        /// How far through the run this report places the bar, from 0 to 1.
+        let fraction: Double
+
+        /// A replacement headline for the card — `nil` while no write
+        /// carrying text has run.
+        let headline: LocalizedStringResource?
+
+        /// A replacement detail line — `nil` for the same reason as
+        /// `headline`.
+        let detail: LocalizedStringResource?
+
+        init(
+            fraction: Double,
+            headline: LocalizedStringResource? = nil,
+            detail: LocalizedStringResource? = nil
+        ) {
+            self.fraction = fraction
+            self.headline = headline
+            self.detail = detail
+        }
+    }
+
     /// Runs once and reports.
     ///
     /// - Parameters:
@@ -276,7 +308,9 @@ enum NodeRun {
     ///     `tor_enabled` and could send the run down the private-network
     ///     path; the same reason the persistence boundary's `into:` has none.
     ///     Tests pass a volatile suite.
-    ///   - onProgress: called as the wait proceeds, with a fraction from 0 to 1.
+    ///   - onProgress: called as the wait proceeds, each call carrying a
+    ///     `ProgressUpdate` — the bar's fraction today, the card's text once
+    ///     the watch stage produces it.
     ///     The iOS 27 action forwards this to its progress display; advancing it
     ///     is also what keeps that longer time window open. Never call it from
     ///     inside a `withHardTimeout` operation: an abandoned question outlives
@@ -288,7 +322,7 @@ enum NodeRun {
         clock: C,
         now: @escaping @Sendable () -> Date = { Date() },
         defaults: UserDefaults,
-        onProgress: @MainActor (Double) -> Void = { _ in }
+        onProgress: @MainActor (ProgressUpdate) -> Void = { _ in }
     ) async -> NodeRunReport {
         // Every setting the run is allowed to see is read once, here, before the
         // first suspension point: a run spans tens of seconds, and a toggle
@@ -407,7 +441,7 @@ enum NodeRun {
         defaults: UserDefaults,
         waitForFirstAnswer: Duration,
         clock: C,
-        onProgress: @MainActor (Double) -> Void
+        onProgress: @MainActor (ProgressUpdate) -> Void
     ) async -> NodeRunReport {
         // Privacy fails closed at the launch boundary — the one place this file
         // re-reads a live setting beside the snapshot. If the person turned Tor
@@ -533,7 +567,7 @@ enum NodeRun {
         within budget: Duration,
         clock: C,
         defaults: UserDefaults,
-        onProgress: @MainActor (Double) -> Void
+        onProgress: @MainActor (ProgressUpdate) -> Void
     ) async -> NodeRunReport {
         // Captured before the wait for the same reason `start` captures it: once
         // the node reaches `.running` its own sync poll overwrites the
@@ -614,7 +648,7 @@ enum NodeRun {
         session: any RunSession,
         within budget: Duration,
         clock: C,
-        onProgress: @MainActor (Double) -> Void
+        onProgress: @MainActor (ProgressUpdate) -> Void
     ) async -> NodeAutomation.LiveReading? {
         let reader = session.reader
         let started = clock.now
@@ -642,11 +676,12 @@ enum NodeRun {
                 // it — the milestones exist so movement corresponds to something
                 // real. The wait loop below caps at the same mark so the bar never
                 // steps backwards.
-                onProgress(0.9)
+                onProgress(ProgressUpdate(fraction: 0.9))
                 return NodeAutomation.reading(from: info)
             }
             let elapsed = Double(started.duration(to: clock.now) / .milliseconds(1)) / 1000
-            onProgress(budgetSeconds > 0 ? min(0.9, elapsed / budgetSeconds) : 0)
+            onProgress(ProgressUpdate(
+                fraction: budgetSeconds > 0 ? min(0.9, elapsed / budgetSeconds) : 0))
             // The nap is capped by the time left rather than fixed at half a
             // second: an uncapped sleep can outlive the deadline by most of its
             // length — a two-second wait was observed ending at ~2.2s — which
@@ -683,10 +718,10 @@ enum NodeRun {
         session: any RunSession,
         clock: C,
         defaults: UserDefaults,
-        onProgress: @MainActor (Double) -> Void
+        onProgress: @MainActor (ProgressUpdate) -> Void
     ) async -> NodeRunReport {
         let reader = session.reader
-        onProgress(0.1)
+        onProgress(ProgressUpdate(fraction: 0.1))
         let info = await ask(
             "getblockchaininfo", session: session,
             within: questionBudget, clock: clock
@@ -703,7 +738,7 @@ enum NodeRun {
         // The same re-check the waiting loop runs, with the same report for a
         // discarded answer: the run got nothing it can stand behind.
         guard answerIsStillWanted(session: session) else { return noAnswerReport() }
-        onProgress(0.6)
+        onProgress(ProgressUpdate(fraction: 0.6))
         return await measuredReport(
             outcome: .alreadyRunning, previous: lastRunBaseline(in: defaults),
             reading: NodeAutomation.reading(from: info),
@@ -741,7 +776,7 @@ enum NodeRun {
         reading: NodeAutomation.LiveReading,
         session: any RunSession,
         clock: C,
-        onProgress: @MainActor (Double) -> Void
+        onProgress: @MainActor (ProgressUpdate) -> Void
     ) async -> NodeRunReport {
         let blocksSinceLastCheck = NodeAutomation.blocksSince(previous: previous, to: reading)
         let connections = await connectionCount(session: session, clock: clock)
@@ -749,7 +784,7 @@ enum NodeRun {
         // every path in this file re-checks after. A node stopped in those last
         // seconds, or a run cancelled there, must not be reported as running.
         guard answerIsStillWanted(session: session) else { return noAnswerReport() }
-        onProgress(1)
+        onProgress(ProgressUpdate(fraction: 1))
         return NodeRunReport(
             outcome: NodeRunOutcome(outcome),
             // Until the watch exists, a measured run's sync answer is
