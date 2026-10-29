@@ -264,7 +264,7 @@ enum NodeRun {
     ///     `any` so instants stay `Comparable` — the erased `InstantProtocol`
     ///     an existential yields cannot be put in deadline order. Production
     ///     passes `ContinuousClock()`; tests drive the whole run on a
-    ///     `TestClock`.
+    ///     `ManualClock` (SharedTests).
     ///   - now: the wall-clock instant read each time a decision weighs tip
     ///     age — staged here for the sync watch, whose tip-freshness leg
     ///     re-reads it on every pass. No caller consumes it until that stage

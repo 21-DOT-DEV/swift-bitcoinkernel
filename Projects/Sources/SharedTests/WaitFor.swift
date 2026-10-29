@@ -22,12 +22,15 @@
 //  compares two strings.
 //
 //  If the thing you are waiting on is driven by a `Clock` — a retry
-//  backoff, a poll interval, any `sleep` — inject a `TestClock` and advance
-//  it instead. `TorViewModel` (`clock:`) and `KernelAppViewModel` (`clock:`)
-//  both take one for exactly this. Virtual time cannot be starved by a busy
-//  runner. As of this writing that migration left this helper with ZERO
-//  callers; it is kept as the escape hatch for waits genuinely outside any
-//  clock's control (a real filesystem event, a third-party callback).
+//  backoff, a poll interval, any `sleep` — inject a test clock and advance
+//  it instead: `ManualClock` (same directory) is the SharedTests
+//  implementation — `advance` resumes due sleepers synchronously, so a
+//  virtual wait costs no per-suspension task hops. `TorViewModel` (`clock:`)
+//  and `KernelAppViewModel` (`clock:`) both take one for exactly this.
+//  Virtual time cannot be starved by a busy runner. As of this writing
+//  that migration left this helper with ZERO callers; it is kept as the
+//  escape hatch for waits genuinely outside any clock's control (a real
+//  filesystem event, a third-party callback).
 //
 //  Between the two sits `Gate` (same directory): when the code under test
 //  can signal the moment the test waits for — an operation starting, a
