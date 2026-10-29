@@ -64,8 +64,9 @@ struct HardTimeoutError: Error, Equatable {
 /// - **Cancelling the caller still works.** Cancellation reaches the work task
 ///   and releases the wait, rather than leaking the suspended continuation.
 ///
-/// `clock` is injectable so tests drive the timeout with a `TestClock` instead
-/// of spending real seconds — the same reason `TorViewModel(clock:)` takes one.
+/// `clock` is injectable so tests drive the timeout with a `ManualClock`
+/// instead of spending real seconds — the same reason `TorViewModel(clock:)`
+/// takes an injected clock.
 /// The clock bounds only the wait; it does not speed up or slow the call. The
 /// parameter is generic rather than `any Clock<Duration>` so the work task can
 /// compare its finish instant against the deadline — on the existential,

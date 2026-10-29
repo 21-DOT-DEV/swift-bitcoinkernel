@@ -9,7 +9,6 @@
 //
 
 import Testing
-import Clocks
 import Foundation
 
 // `withHardTimeout` lives in the shared source tree, which is compiled into
@@ -43,7 +42,7 @@ struct WithHardTimeoutTests {
 
     @Test("a call that answers in time returns its value")
     func answersInTime() async throws {
-        let clock = TestClock()
+        let clock = ManualClock()
         let value = try await withHardTimeout(.seconds(30), clock: clock) { 42 }
         #expect(value == 42)
     }
@@ -51,7 +50,7 @@ struct WithHardTimeoutTests {
     @Test("a call that throws in time reports its own error, not a timeout")
     func throwsBeforeDeadline() async {
         struct Failure: Error, Equatable {}
-        let clock = TestClock()
+        let clock = ManualClock()
         await #expect(throws: Failure.self) {
             try await withHardTimeout(.seconds(30), clock: clock) { () -> Int in
                 throw Failure()
@@ -61,7 +60,7 @@ struct WithHardTimeoutTests {
 
     @Test("a call that never answers is abandoned when the clock runs out")
     func timeoutAbandons() async throws {
-        let clock = TestClock()
+        let clock = ManualClock()
         let entered = Gate()
         let task = Task {
             try await withHardTimeout(.seconds(5), clock: clock) {
@@ -73,7 +72,7 @@ struct WithHardTimeoutTests {
         // hoped for: the detached work task is provably running, so the
         // deadline was fixed on a `clock.now` that has not advanced yet.
         try await entered.wait()
-        await clock.advance(by: .seconds(5))
+        clock.advance(by: .seconds(5))
         await #expect(throws: HardTimeoutError.self) { try await task.value }
     }
 
@@ -83,7 +82,7 @@ struct WithHardTimeoutTests {
         // deadline first, *then* the call is allowed to answer — a finish
         // stamped after the deadline is a timeout no matter which task wakes
         // first.
-        let clock = TestClock()
+        let clock = ManualClock()
         let entered = Gate()
         let unblock = Gate()
         let task = Task {
@@ -96,7 +95,7 @@ struct WithHardTimeoutTests {
             }
         }
         try await entered.wait()
-        await clock.advance(by: .seconds(6))
+        clock.advance(by: .seconds(6))
         unblock.open()
         await #expect(throws: HardTimeoutError.self) { try await task.value }
     }
@@ -106,7 +105,7 @@ struct WithHardTimeoutTests {
         // Pins the strict `<`: within N seconds means before the deadline.
         // Advancing exactly to it before unblocking stamps the finish *at*
         // the deadline by construction.
-        let clock = TestClock()
+        let clock = ManualClock()
         let entered = Gate()
         let unblock = Gate()
         let task = Task {
@@ -117,7 +116,7 @@ struct WithHardTimeoutTests {
             }
         }
         try await entered.wait()
-        await clock.advance(by: .seconds(5))
+        clock.advance(by: .seconds(5))
         unblock.open()
         await #expect(throws: HardTimeoutError.self) { try await task.value }
     }
@@ -127,7 +126,7 @@ struct WithHardTimeoutTests {
         // The mislabel the finding caught: a cancellable call answering the
         // courtesy cancel must not surface that CancellationError to the
         // caller — the honest report is that the budget ran out.
-        let clock = TestClock()
+        let clock = ManualClock()
         let entered = Gate()
         let task = Task {
             try await withHardTimeout(.seconds(5), clock: clock) { () -> Int in
@@ -140,7 +139,7 @@ struct WithHardTimeoutTests {
             }
         }
         try await entered.wait()
-        await clock.advance(by: .seconds(5))
+        clock.advance(by: .seconds(5))
         await #expect(throws: HardTimeoutError.self) { try await task.value }
     }
 
@@ -148,7 +147,7 @@ struct WithHardTimeoutTests {
     func cancelStillSent() async throws {
         // The cancel is a courtesy — the in-process transport ignores it, but
         // the HTTP transport observes it, so the helper must still send it.
-        let clock = TestClock()
+        let clock = ManualClock()
         let entered = Gate()
         let sawCancel = Gate()
         let task = Task {
@@ -162,7 +161,7 @@ struct WithHardTimeoutTests {
             }
         }
         try await entered.wait()
-        await clock.advance(by: .seconds(5))
+        clock.advance(by: .seconds(5))
         await #expect(throws: HardTimeoutError.self) { try await task.value }
         // The assertion is the event itself: suspend until the work task's
         // cancellation handler opens the gate, whenever the executor gets to
@@ -174,7 +173,7 @@ struct WithHardTimeoutTests {
     func callerCancelled() async throws {
         // Without this, a cancelled caller would hang on a call that ignores
         // cancellation — the suspended continuation would never resume.
-        let clock = TestClock()
+        let clock = ManualClock()
         let sawCancel = Gate()
         let task = Task {
             try await withHardTimeout(.seconds(30), clock: clock) {
@@ -195,7 +194,7 @@ struct WithHardTimeoutTests {
 
     @Test("an abandoned call still finishes in the background; its result is dropped")
     func abandonedWorkCompletes() async throws {
-        let clock = TestClock()
+        let clock = ManualClock()
         let entered = Gate()
         let finishWhen = Gate()
         let finished = Gate()
@@ -211,7 +210,7 @@ struct WithHardTimeoutTests {
             }
         }
         try await entered.wait()
-        await clock.advance(by: .seconds(5))
+        clock.advance(by: .seconds(5))
         await #expect(throws: HardTimeoutError.self) { try await task.value }
         // The helper has returned and the call has provably *not* — this is
         // positive evidence, not a timing implication.
