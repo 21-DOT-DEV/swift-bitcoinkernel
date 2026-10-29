@@ -20,7 +20,9 @@ struct ManualClockTests {
     func sleepAtNowReturns() async throws {
         let clock = ManualClock()
         try await clock.sleep(until: clock.now)
-        try await clock.sleep(until: clock.now.advanced(by: -.seconds(1)))
+        clock.advance(by: .seconds(1))
+        // The start instant is now in the past — already due.
+        try await clock.sleep(until: ManualClock.Instant(offset: .zero))
     }
 
     @Test("a sleep registered behind now returns instead of parking")
@@ -28,7 +30,7 @@ struct ManualClockTests {
         let clock = ManualClock()
         clock.advance(by: .seconds(10))
         // Registered five seconds behind the advanced instant — due at once.
-        try await clock.sleep(until: clock.now.advanced(by: -.seconds(5)))
+        try await clock.sleep(until: ManualClock.Instant(offset: .seconds(5)))
     }
 
     @Test("a parked sleeper cancelled mid-wait throws CancellationError")
