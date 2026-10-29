@@ -237,7 +237,7 @@ struct SyncNodeLongRunningIntent: LongRunningIntent, CancellableIntent {
         clock: C,
         isStopped: @escaping @Sendable () -> Bool,
         heartbeatInterval: Duration = Self.heartbeat,
-        work: @escaping @MainActor (C, @MainActor (Double) -> Void) async -> NodeRunReport = {
+        work: @escaping @MainActor (C, @MainActor (NodeRun.ProgressUpdate) -> Void) async -> NodeRunReport = {
             await NodeRun.perform(
                 session: NodeSession.shared,
                 waitForFirstAnswer: waitForFirstAnswer,
@@ -265,7 +265,7 @@ struct SyncNodeLongRunningIntent: LongRunningIntent, CancellableIntent {
                 }
             }
             group.addTask { @MainActor in
-                await work(clock) { fraction in meter.advance(to: fraction) }
+                await work(clock) { meter.advance($0) }
             }
             // Whichever yields first ends the group: the work's report on a
             // completed run, or the heartbeat's nil when the run was stopped or

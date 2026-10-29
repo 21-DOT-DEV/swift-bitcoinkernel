@@ -65,12 +65,17 @@ final class ProgressMeter {
         progress.completedUnitCount = 0
     }
 
-    /// Real progress: how far through the run this is, from 0 to 1.
-    func advance(to fraction: Double) {
+    /// Real progress: where the run's work has reached.
+    ///
+    /// Only the update's `fraction` moves the bar — `headline` and `detail`
+    /// ride the same payload for T030, which lands the card's text writes
+    /// and the gate that makes them final together.
+    func advance(_ update: NodeRun.ProgressUpdate) {
         // A non-finite fraction would crash `Int64(_:)` — an unforced trap inside
         // an unattended background action is the worst available failure mode,
         // so the report is dropped as if it never arrived. Finite-but-huge
         // values trap the same conversion, so the fraction is clamped first.
+        let fraction = update.fraction
         guard fraction.isFinite else { return }
         let clamped = min(max(fraction, 0), 1)
         // A report that changes nothing wrote nothing: it cannot count as the

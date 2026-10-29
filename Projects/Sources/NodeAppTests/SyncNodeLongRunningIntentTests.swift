@@ -64,6 +64,27 @@ struct SyncNodeLongRunningIntentTests {
     }
 
     @available(iOS 27.0, *)
+    @Test("an update the work reports reaches the meter as a fraction")
+    func workProgressReachesMeter() async {
+        // The bridge is one line — `meter.advance($0)` inside the group's work
+        // child — and every other test's work ignores the callback, so this
+        // is the only pin that line has.
+        let (progress, meter) = makeMeter()
+        _ = await SyncNodeLongRunningIntent.runWithHeartbeat(
+            meter: meter,
+            clock: ContinuousClock(),
+            isStopped: { false },
+            // Long enough that no tick can land first: the assertion must see
+            // exactly the work's write.
+            heartbeatInterval: .seconds(60)
+        ) { _, reportProgress in
+            reportProgress(NodeRun.ProgressUpdate(fraction: 0.5))
+            return self.report(.started, "from work")
+        }
+        #expect(progress.completedUnitCount == 50)
+    }
+
+    @available(iOS 27.0, *)
     @Test("a run already stopped yields the no-answer report, not the work's")
     func stoppedYieldsNoAnswer() async {
         let (_, meter) = makeMeter()
