@@ -96,6 +96,9 @@ final class TorViewModel {
     /// only promise is a retry scheduled *past* the horizon answers `false`
     /// — a bounded wait should give up on a network that cannot attempt
     /// again in time rather than hold its budget to the deadline. The
+    /// `.stopping` leg is deliberately horizon-blind: a restart queued
+    /// behind a teardown reads `true` regardless — teardowns are prompt,
+    /// and the wait's other exits still bound the outcome. The
     /// comparison is the wall clock, matching `nextRetryAt`'s wall time:
     /// correct under the production `ContinuousClock`, and recorded design
     /// debt under a virtual `clock` — a retry's fire time is bound to the

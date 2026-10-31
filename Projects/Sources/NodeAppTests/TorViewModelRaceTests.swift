@@ -499,6 +499,7 @@ struct TorViewModelRaceTests {
         vm.start()                  // queued — pendingStartAfterStop
         #expect(vm.displayState == .stopping)
         #expect(vm.isComingUp)      // the teardown carries a restart
+        #expect(vm.isComingUp(within: .zero))   // …whose leg ignores the horizon
 
         await vm.awaitStopped()     // teardown fires the queued start
         #expect(vm.isComingUp)      // …which is itself a start in flight

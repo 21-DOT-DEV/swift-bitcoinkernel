@@ -567,18 +567,25 @@ struct NodeRunGraceTests {
         session.torIsComingUp = true   // bootstrapping for as long as the run waits
         session.torStillEnabled = true
         var emitted: [NodeRun.ProgressUpdate] = []
+        let done = Gate()
         let run = Task { @MainActor in
-            await NodeRun.perform(
+            defer { done.open() }
+            return await NodeRun.perform(
                 session: session, waitForFirstAnswer: .seconds(240),
                 privateNetworkGrace: .seconds(90),
                 clock: clock.clock, defaults: store) { emitted.append($0) }
         }
         try await clock.napRequested.wait()   // the wait is on the injected clock
-        // Three stepped advances rather than one jump: each wakes a pass
-        // that writes progress and re-naps — the yield runs that enqueued
-        // body before the clock moves again, so the ramp is sampled pass
-        // by pass.
-        for _ in 0..<3 {
+        // Stepped advances rather than one jump: each wakes a pass that
+        // writes progress and re-naps — the yield runs that enqueued body
+        // before the clock moves again, so the ramp is sampled pass by
+        // pass. How many turns the run needs per nap is platform-dependent,
+        // so the drive is bounded by the run finishing. The cap guards only
+        // underdrive — ten 30 s steps are 300 virtual s against the 90 s
+        // grace; if all of them land before the run's first wake, the clock
+        // is already past the deadline, the wait exits after one write, and
+        // the emitted-count assertion below reports it.
+        for _ in 0..<10 where !done.isOpen {
             clock.test.advance(by: .seconds(30))
             await Task.yield()
         }
@@ -693,8 +700,10 @@ struct NodeRunGraceTests {
         session.torSocksPort = 9050
         session.startNodeResult = true
         var emitted: [NodeRun.ProgressUpdate] = []
+        let done = Gate()
         let run = Task { @MainActor in
-            await NodeRun.perform(
+            defer { done.open() }
+            return await NodeRun.perform(
                 session: session, waitForFirstAnswer: .seconds(240),
                 privateNetworkGrace: .seconds(90),
                 clock: clock.clock, defaults: store) { emitted.append($0) }
@@ -709,9 +718,16 @@ struct NodeRunGraceTests {
         clock.test.advance(by: .milliseconds(600))
         // The stretch ahead is a chain of ≤500 ms naps — the gather's
         // bounded wait, the poll's two thrown answers, the final reading —
-        // and each woken pass needs its executor turn before the clock
-        // moves again, so the drive advances one nap at a time.
-        for _ in 0..<24 {
+        // and each woken pass needs executor turns before the clock moves
+        // again. How many turns is platform-dependent (a starved simulator
+        // needs more than any fixed count), so the drive is bounded by the
+        // run finishing or by the virtual budget that bounds it — 600
+        // iterations of 600 ms well past the 240 s question deadline.
+        // Overdrive ends the wait, not the drive: a run still starved when
+        // the clock crosses its deadline reports `.didNotComeUp`, so the
+        // `.started` assertion failing without a stall is the starvation
+        // signature.
+        for _ in 0..<600 where !done.isOpen {
             clock.test.advance(by: .milliseconds(600))
             await Task.yield()
         }

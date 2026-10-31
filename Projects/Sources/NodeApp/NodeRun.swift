@@ -48,8 +48,12 @@ protocol RunSession {
     /// restart. The horizon is the waiter's own remaining budget: a failed
     /// network whose next scheduled attempt lands beyond it reads `false`
     /// too, so a wait gives up on a Tor that cannot arrive in time instead
-    /// of holding its whole budget. An attempt already in flight — or a
-    /// retry firing now — always reads `true`: its arrival is not
+    /// of holding its whole budget — while the teardown leg ignores it,
+    /// since teardowns are prompt and the wait's other exits still bound
+    /// the outcome. The retry comparison runs on the wall clock, matching
+    /// the schedule's basis; `TorViewModel.isComingUp(within:)` spells out
+    /// what that means under a virtual clock. An attempt already in flight
+    /// — or a retry firing now — always reads `true`: its arrival is not
     /// schedulable, only its abandonment would be premature.
     func torIsComingUp(within horizon: Duration) -> Bool
 
@@ -881,12 +885,13 @@ enum NodeRun {
     ///   invisible, and a real launch takes orders of magnitude longer
     ///   than 500 ms, so no round trip can complete inside one.
     /// * the network resolved either way — ready, or no longer able to
-    ///   arrive inside what the wait has left (`torIsComingUp(within:)`
-    ///   counts a scheduled retry and a queued restart as still coming,
-    ///   but only against the waiter's remaining budget: a torn-down or
-    ///   exhausted Tor — or one whose next attempt is scheduled past the
-    ///   deadline — ends the wait early instead of burning the budget on
-    ///   a network that cannot arrive in time).
+    ///   arrive inside what the wait has left: `torIsComingUp(within:)`
+    ///   counts a scheduled retry as still coming only while it can land
+    ///   inside the remaining budget — a torn-down or exhausted Tor, or
+    ///   one whose next attempt is scheduled past the deadline, ends the
+    ///   wait early instead of burning the budget on a network that
+    ///   cannot arrive in time — and counts a restart queued behind a
+    ///   teardown unconditionally, since teardowns are prompt.
     /// * the deadline — measured on the injected clock like every other
     ///   wait here.
     ///
