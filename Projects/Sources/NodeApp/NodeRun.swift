@@ -42,6 +42,17 @@ protocol RunSession {
     /// holding a SOCKS endpoint — rather than merely switched on.
     var torIsReady: Bool { get }
 
+    /// Whether the private network is still on its way to usable inside
+    /// `horizon` — bootstrapping, retrying a failed attempt inside its
+    /// backoff schedule, or finishing a teardown that carries a queued
+    /// restart. The horizon is the waiter's own remaining budget: a failed
+    /// network whose next scheduled attempt lands beyond it reads `false`
+    /// too, so a wait gives up on a Tor that cannot arrive in time instead
+    /// of holding its whole budget. An attempt already in flight — or a
+    /// retry firing now — always reads `true`: its arrival is not
+    /// schedulable, only its abandonment would be premature.
+    func torIsComingUp(within horizon: Duration) -> Bool
+
     /// The private network's `host:port` SOCKS address, handed to the node's
     /// arguments only while `torIsReady` holds.
     var torProxyAddress: String? { get }
@@ -291,6 +302,26 @@ enum NodeRun {
     ///     outcome, not an error. Only the waiting paths consult this: a node
     ///     that is already answering is read straight away, each question
     ///     bounded by `questionBudget`.
+    ///   - privateNetworkGrace: the most the run will spend waiting for the
+    ///     private network to establish, when the run requires it — the
+    ///     snapshot's privacy setting, or a live requirement the launch
+    ///     boundary measured mid-run — and it is not yet usable (FR-013).
+    ///     `nil` keeps the original verdict — nudge the network and decline
+    ///     on the spot — which is the short action's shape: its ~30 s window
+    ///     cannot afford a cold bootstrap. The budget is spent once per run:
+    ///     whatever ends the wait, the run re-decides on live facts — node
+    ///     state, conditions, the step — and a second wait-for-the-network
+    ///     verdict declines rather than buying another wait with the same
+    ///     money. A non-`nil` grace also marks the run as budgeted for
+    ///     progress purposes: every fraction `onProgress` receives is
+    ///     compressed into `NodeAutomation.startUpBand` (`0...0.1`) so the
+    ///     watch stage has room to climb — the coupling T030's real flag
+    ///     replaces. Even at `nil`, a stall the launch boundary measured
+    ///     still routes through the re-decision — one extra conditions
+    ///     gather (at most ~2 s of the short action's window) so the report
+    ///     can carry the operative refusal — a device condition that
+    ///     turned refusing mid-flight — rather than the privacy sentence
+    ///     it displaced.
     ///   - clock: the time source every wait, question bound, and deadline in
     ///     the run is measured on. Generic over `Clock<Duration>` rather than
     ///     `any` so instants stay `Comparable` — the erased `InstantProtocol`
@@ -310,7 +341,10 @@ enum NodeRun {
     ///     Tests pass a volatile suite.
     ///   - onProgress: called as the wait proceeds, each call carrying a
     ///     `ProgressUpdate` — the bar's fraction today, the card's text once
-    ///     the watch stage produces it.
+    ///     the watch stage produces it. Fractions arrive on one scale per
+    ///     run: raw `0...1` positions while the run carries no
+    ///     `privateNetworkGrace`, or compressed into the start-up band
+    ///     (`0...0.1`) when it does — see that parameter.
     ///     The iOS 27 action forwards this to its progress display; advancing it
     ///     is also what keeps that longer time window open. Never call it from
     ///     inside a `withHardTimeout` operation: an abandoned question outlives
@@ -319,10 +353,11 @@ enum NodeRun {
     static func perform<C: Clock<Duration>>(
         session: any RunSession,
         waitForFirstAnswer: Duration,
+        privateNetworkGrace: Duration? = nil,
         clock: C,
         now: @escaping @Sendable () -> Date = { Date() },
         defaults: UserDefaults,
-        onProgress: @MainActor (ProgressUpdate) -> Void = { _ in }
+        onProgress: @escaping @MainActor (ProgressUpdate) -> Void = { _ in }
     ) async -> NodeRunReport {
         // Every setting the run is allowed to see is read once, here, before the
         // first suspension point: a run spans tens of seconds, and a toggle
@@ -350,86 +385,181 @@ enum NodeRun {
         // it began would otherwise launch the node (or the private network) on
         // its way out, the very act the cancel was meant to prevent. Check
         // before the side effects, not just before the reports: here on entry,
-        // and again right before the switch, because the device-condition read
-        // in between is the one stretch that suspends (its bounded wait on the
-        // first network report).
+        // at the top of every loop pass, and again right before the switch,
+        // because the device-condition read in between is the one stretch
+        // that suspends (its bounded wait on the first network report).
         guard !Task.isCancelled else { return noAnswerReport() }
 
         // Idempotent, and belt-and-braces: the watcher is started at process launch, but
         // this is the one path that runs with no window, so it does not rely on that.
         session.device.startWatchingNetworkCost()
 
-        let step = NodeAutomation.step(
-            nodeState: session.nodeState,
-            privacyEnabled: snapshotPrivacy,
-            privacyReady: session.torIsReady
-        )
-
-        if NodeAutomation.consultsDeviceConditions(for: step),
-            let refusal = NodePreflight.refusal(
-                for: await readConditions(device: session.device, clock: clock))
-        {
-            log.notice("run: declined — \(String(describing: refusal), privacy: .public)")
-            return declined(reason: refusal.message)
-        }
-
-        // The second checkpoint promised above: the device-condition read can
-        // spend up to two seconds suspended — plenty of window for a stop to
-        // arrive. Without this, a called-off run could still reach the branch
-        // that starts the private network, and a consensus download over
-        // whatever link is current is precisely the act these checks exist to
-        // prevent.
-        guard !Task.isCancelled else { return noAnswerReport() }
-
-        switch step {
-        case .reportExistingNode:
-            // Never interrupt a node someone started themselves: read it and leave it
-            // alone (ADR 0005).
-            log.notice("run: a node is already running — reading and leaving it alone")
-            return await report(
-                session: session, clock: clock, defaults: defaults, onProgress: onProgress)
-
-        case .waitForStartingNode:
-            // Already on its way up: nothing to start, and nothing to read until
-            // its block index loads — so the run waits on it exactly like a node
-            // it started itself.
-            log.notice("run: a node is already starting — waiting on it")
-            return await waitForStarting(
-                session: session, within: waitForFirstAnswer, clock: clock,
-                defaults: defaults, onProgress: onProgress)
-
-        case .waitForPrivateNetwork:
-            // The step was decided before the device-condition read, which can
-            // suspend for seconds — long enough for an in-flight bootstrap to
-            // finish. A network that is ready now means there is nothing to
-            // wait for, and declining "not ready" would be a lie at report
-            // time; take the start path and let its own checks run.
-            if session.torIsReady {
-                return await start(
-                    session: session, settings: settings, defaults: defaults,
-                    waitForFirstAnswer: waitForFirstAnswer, clock: clock,
-                    onProgress: onProgress)
+        // The grace buys the run one bounded wait for the private network —
+        // `nil` is the short action's shape, which declines on the spot. The
+        // wait is the only thing this loop re-decides around: whatever ends
+        // it, the step, node state, and conditions are weighed again on live
+        // facts rather than resuming the path the run left, because ninety
+        // seconds is long enough for the person to have started or stopped
+        // the node and for the network to have finished or failed for good
+        // (plan §3.8). The budget is consumed on use — a second
+        // wait-for-the-network verdict declines below rather than buying
+        // another wait with the same money — so the loop cannot wait forever.
+        var grace = privateNetworkGrace
+        // The loop's other re-entry, and the marker that keeps it honest: a
+        // launch can reach the boundary — `start`'s one live read — and find
+        // the network gone even though the step committed, or find a privacy
+        // toggle flipped *on* mid-run that the snapshot-pure step cannot
+        // express. Retrying the identical step would never change that
+        // verdict, so the refusal returns here as a measured requirement:
+        // the step below then reads the run as the wait-for-the-network case
+        // it is — where the nudge, the grace, and the unchanged decline all
+        // live. Set once, it stays set — a requirement the boundary measured
+        // does not un-measure while the run continues — and honored once: a
+        // second stall declines the unchanged verdict rather than buying
+        // another trip, so every `continue` below is fired by a one-shot
+        // marker (the grace, this flag) and the loop is bounded by
+        // construction, not by reasoning about which step follows which.
+        var networkStalled = false
+        // `startUpBand`'s documented single application point: a budgeted
+        // run — today marked by carrying a grace, T030's real flag when it
+        // lands — wraps the run's whole callback once, so every pre-watch
+        // write — the grace's ramp, the fixed milestones, the first-answer
+        // ramp — lands inside `0 ... startUpBandEnd` on one scale and no
+        // second wrap can double-band it. An ungraced run keeps the full
+        // bar: with no watch to leave room for, its writes keep their raw
+        // positions (the doc's "an unbudgeted run never calls it").
+        let progress: @MainActor (ProgressUpdate) -> Void =
+            privateNetworkGrace == nil
+            ? onProgress
+            : { update in
+                onProgress(ProgressUpdate(
+                    fraction: NodeAutomation.startUpBand(update.fraction),
+                    headline: update.headline,
+                    detail: update.detail))
             }
-            // Spend the run establishing the private network rather than starting on a
-            // direct connection, which would expose the person's home network address
-            // after they asked it not to. Which sentence the person gets — and the
-            // log — depends on the live setting: still on means the network is
-            // genuinely coming up; switched off mid-run means nothing is being
-            // established, and saying so would be a lie in both places.
-            let stillEnabled = session.startTorIfStillEnabled(reading: defaults)
-            if stillEnabled {
-                log.notice("run: private network not ready — starting it, not starting the node")
-            } else {
-                log.notice("run: private network was turned off mid-run — not starting the node")
-            }
-            return declined(
-                reason: NodeAutomation.StartRefusal(stillEnabled: stillEnabled).message)
+        while true {
+            // Every pass checks: a cancelled run pays at most the in-flight
+            // stretch — never another gather, never another start attempt.
+            guard !Task.isCancelled else { return noAnswerReport() }
+            let step = NodeAutomation.step(
+                nodeState: session.nodeState,
+                privacyEnabled: snapshotPrivacy || networkStalled,
+                privacyReady: session.torIsReady
+            )
 
-        case .startNode:
-            return await start(
-                session: session, settings: settings, defaults: defaults,
-                waitForFirstAnswer: waitForFirstAnswer, clock: clock,
-                onProgress: onProgress)
+            if NodeAutomation.consultsDeviceConditions(for: step),
+                let refusal = NodePreflight.refusal(
+                    for: await readConditions(device: session.device, clock: clock))
+            {
+                log.notice("run: declined — \(String(describing: refusal), privacy: .public)")
+                return declined(reason: refusal.message)
+            }
+
+            // The second checkpoint promised above: the device-condition read can
+            // spend up to two seconds suspended — plenty of window for a stop to
+            // arrive. Without this, a called-off run could still reach the branch
+            // that starts the private network, and a consensus download over
+            // whatever link is current is precisely the act these checks exist to
+            // prevent.
+            guard !Task.isCancelled else { return noAnswerReport() }
+
+            switch step {
+            case .reportExistingNode:
+                // Never interrupt a node someone started themselves: read it and leave it
+                // alone (ADR 0005).
+                log.notice("run: a node is already running — reading and leaving it alone")
+                return await report(
+                    session: session, clock: clock, defaults: defaults, onProgress: progress)
+
+            case .waitForStartingNode:
+                // Already on its way up: nothing to start, and nothing to read until
+                // its block index loads — so the run waits on it exactly like a node
+                // it started itself.
+                log.notice("run: a node is already starting — waiting on it")
+                return await waitForStarting(
+                    session: session, within: waitForFirstAnswer, clock: clock,
+                    defaults: defaults, onProgress: progress)
+
+            case .waitForPrivateNetwork:
+                // The step was decided before the device-condition read, which can
+                // suspend for seconds — long enough for an in-flight bootstrap to
+                // finish. A network that is ready now means there is nothing to
+                // wait for, and declining "not ready" would be a lie at report
+                // time; take the start path and let its own checks run.
+                if session.torIsReady {
+                    do {
+                        return try await start(
+                            session: session, settings: settings, defaults: defaults,
+                            waitForFirstAnswer: waitForFirstAnswer, clock: clock,
+                            onProgress: progress)
+                    } catch let refusal {
+                        // A not-ready refusal — the only thing `start` throws —
+                        // routed, not retried: a real stall marks the boundary's
+                        // measured requirement so the next pass lands on the
+                        // wait-or-decline below; anything else declines as the
+                        // boundary ruled, and so does a second stall — the
+                        // marker is spent once. The stall arm is unreachable
+                        // *here*: the branch above just read `torIsReady`
+                        // true, and that read, the boundary's, and this
+                        // catch's are one actor stretch — a stall needs the
+                        // network gone. The uniform shape stands so a future
+                        // suspension inserted inside `start` lands a real
+                        // stall on the same routing, not on a silent
+                        // one-off decline.
+                        guard !networkStalled,
+                            isPrivateNetworkStall(refusal, session: session)
+                        else { return declined(reason: refusal.message) }
+                        networkStalled = true
+                        continue
+                    }
+                }
+                // Spend the run establishing the private network rather than starting on a
+                // direct connection, which would expose the person's home network address
+                // after they asked it not to. Which sentence the person gets — and the
+                // log — depends on the live setting: still on means the network is
+                // genuinely coming up; switched off mid-run means nothing is being
+                // established, and saying so would be a lie in both places.
+                let stillEnabled = session.startTorIfStillEnabled(reading: defaults)
+                if stillEnabled, let budget = grace {
+                    grace = nil   // spent — a second verdict declines below
+                    log.notice("run: private network not ready — waiting inside the grace")
+                    guard await awaitPrivateNetwork(
+                        session: session, within: budget, clock: clock,
+                        onProgress: progress)
+                    else { return noAnswerReport() }
+                    // Whatever ended the wait, the next pass decides on what
+                    // is true now — never resume where the run left off.
+                    continue
+                }
+                if stillEnabled {
+                    log.notice("run: private network not ready — started it, not starting the node")
+                } else {
+                    log.notice("run: private network was turned off mid-run — not starting the node")
+                }
+                return declined(
+                    reason: NodeAutomation.StartRefusal(stillEnabled: stillEnabled).message)
+
+            case .startNode:
+                do {
+                    return try await start(
+                        session: session, settings: settings, defaults: defaults,
+                        waitForFirstAnswer: waitForFirstAnswer, clock: clock,
+                        onProgress: progress)
+                } catch let refusal {
+                    // The launch boundary found the network gone after the
+                    // step committed — a stall routed so every "not ready"
+                    // verdict lands on the same wait-or-decline path above
+                    // rather than declining out of order. Retrying this step
+                    // unchanged could never change that verdict — it is the
+                    // one the marker exists to rewrite — and a second stall
+                    // declines here: the marker is spent once.
+                    guard !networkStalled,
+                        isPrivateNetworkStall(refusal, session: session)
+                    else { return declined(reason: refusal.message) }
+                    networkStalled = true
+                    continue
+                }
+            }
         }
     }
 
@@ -442,7 +572,7 @@ enum NodeRun {
         waitForFirstAnswer: Duration,
         clock: C,
         onProgress: @MainActor (ProgressUpdate) -> Void
-    ) async -> NodeRunReport {
+    ) async throws(NodeAutomation.StartRefusal) -> NodeRunReport {
         // Privacy fails closed at the launch boundary — the one place this file
         // re-reads a live setting beside the snapshot. If the person turned Tor
         // *on* after the run entered (snapshot says off, live says on), starting
@@ -486,15 +616,20 @@ enum NodeRun {
             // after the step decision has already committed to starting. (While
             // that read could not suspend, the check genuinely was unreachable.)
             // `throws(StartRefusal)` lets the compiler prove this is the only
-            // branch — report the verdict the builder rendered rather than
-            // re-derive it from a second read — and re-arm the network only for
-            // the not-ready answer, whose sentence promises it is being
-            // established; a turned-off refusal promises nothing, and nudges
-            // nothing.
-            log.error("run: refused to start — \(String(describing: refusal), privacy: .public)")
+            // branch, and the verdict travels as typed data rather than being
+            // re-derived from a second read.
             if refusal == .privateNetworkNotReady {
-                session.startTorIfStillEnabled(reading: defaults)
+                // A stall, not a verdict — the `waitsForConnectivity` shape:
+                // nothing has launched, so the transient drop routes back to
+                // the decision loop, which owns the one grace — nudge, wait,
+                // or the unchanged decline once the budget is spent. The
+                // turned-off refusal stays a decline here: a preference the
+                // person revoked is terminal, not something a wait can fix.
+                log.notice(
+                    "run: private network went not-ready inside the condition window — routing to the wait")
+                throw refusal
             }
+            log.error("run: refused to start — \(String(describing: refusal), privacy: .public)")
             return declined(reason: refusal.message)
         }
 
@@ -699,6 +834,99 @@ enum NodeRun {
             }
         }
         return nil
+    }
+
+    /// Whether a refusal escaping `start` is the transient stall the grace
+    /// exists for — or a verdict to report.
+    ///
+    /// `start` throws only `.privateNetworkNotReady`; the typed-throws
+    /// channel exists to route exactly that verdict back to the loop. But
+    /// the signature cannot prove *which* refusal escaped, so the value is
+    /// checked rather than assumed — and the value alone is not enough: a
+    /// not-ready verdict landing while the network *still reports ready* is
+    /// contradictory rather than transient (a proxy refused while usable is
+    /// not something a wait can fix), so it fails the check too and keeps
+    /// the terminal decline the loop's predecessor gave it — minus the
+    /// nudge that decline used to fire: `tor.start()` on a network that
+    /// reports ready short-circuits anyway, so nothing is lost with it.
+    /// The re-read is advisory, not a second measurement: the refusal and
+    /// this check run in one actor stretch, so the readiness seen here is
+    /// the readiness the boundary refused on.
+    private static func isPrivateNetworkStall(
+        _ refusal: NodeAutomation.StartRefusal,
+        session: any RunSession
+    ) -> Bool {
+        refusal == .privateNetworkNotReady && !session.torIsReady
+    }
+
+    /// Waits for the private network inside the grace, in this file's own
+    /// loop shape — the deadline-and-nap poll `awaitFirstAnswer` runs, never
+    /// a timeout wrapped around `TorViewModel.waitUntilReady`: that helper is
+    /// a `@MainActor` loop whose `try?` sleep swallows cancellation, so an
+    /// abandoned one keeps polling a display state nobody reads while the
+    /// run reports over its head.
+    ///
+    /// The wait's premise is a stopped node that needs the network to start
+    /// against, and its per-pass exits cover whatever can dissolve that
+    /// premise or resolve the stall — the wait-predicate doctrine of
+    /// re-checking the continuation's own preconditions:
+    ///
+    /// * the node left `.stopped` — started *or* stopped from the app, or by
+    ///   another run. Every direction lands on the re-decision, and the
+    ///   early exit is what makes a person's Stop un-overridable: a wait
+    ///   that ran out its budget on a `.stopped` node the network just
+    ///   readied for would relaunch the very node they stopped. The check
+    ///   is a per-pass sample, not a transition record — a `.stopped` →
+    ///   `.starting` → `.stopped` round trip inside one nap would be
+    ///   invisible, and a real launch takes orders of magnitude longer
+    ///   than 500 ms, so no round trip can complete inside one.
+    /// * the network resolved either way — ready, or no longer able to
+    ///   arrive inside what the wait has left (`torIsComingUp(within:)`
+    ///   counts a scheduled retry and a queued restart as still coming,
+    ///   but only against the waiter's remaining budget: a torn-down or
+    ///   exhausted Tor — or one whose next attempt is scheduled past the
+    ///   deadline — ends the wait early instead of burning the budget on
+    ///   a network that cannot arrive in time).
+    /// * the deadline — measured on the injected clock like every other
+    ///   wait here.
+    ///
+    /// - Returns: `false` only when the run itself was cancelled — the one
+    ///   exit that reports `noAnswer` rather than re-deciding.
+    private static func awaitPrivateNetwork<C: Clock<Duration>>(
+        session: any RunSession,
+        within budget: Duration,
+        clock: C,
+        onProgress: @MainActor (ProgressUpdate) -> Void
+    ) async -> Bool {
+        let started = clock.now
+        let deadline = started.advanced(by: budget)
+        let budgetSeconds = Double(budget / .milliseconds(1)) / 1000
+
+        while clock.now < deadline {
+            if Task.isCancelled { return false }
+            if session.nodeState != .stopped { return true }
+            let remaining = clock.now.duration(to: deadline)
+            if session.torIsReady || !session.torIsComingUp(within: remaining) {
+                return true
+            }
+            let elapsed = Double(started.duration(to: clock.now) / .milliseconds(1)) / 1000
+            // A raw stage fraction, like the first-answer ramp's writes:
+            // the start-up band is applied where the caller hands this
+            // wait its callback — this stage's own share of the bar once
+            // the watch exists is the wrapper's job (FR-004), not a write's.
+            onProgress(ProgressUpdate(
+                fraction: budgetSeconds > 0 ? elapsed / budgetSeconds : 1))
+            // The same deadline-capped nap the first-answer wait takes —
+            // capped by the time left so the deadline stays hard, and no
+            // tolerance: slack here is leeway the system may spend past the
+            // deadline the cap exists to honor.
+            let nap = min(
+                .milliseconds(500), clock.now.duration(to: deadline))
+            if nap > .zero {
+                do { try await clock.sleep(for: nap) } catch { return false }
+            }
+        }
+        return true
     }
 
     // MARK: - Reading

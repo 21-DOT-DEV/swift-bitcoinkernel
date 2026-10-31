@@ -158,3 +158,5 @@ Tuist/.build
 # skills write here at catalog root; ignore at any depth to defend against
 # stray writes from eval sessions running against fixtures.
 .docc-suite-state/
+.tuist/
+.cache/

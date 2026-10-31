@@ -447,4 +447,100 @@ struct TorViewModelRaceTests {
         #expect(factory.callCount == countBefore)
         #expect(vm.failureCount == 1)
     }
+
+    // MARK: - isComingUp (004, T021)
+
+    /// `isReady` is false through every leg of a bootstrap, so the run's
+    /// grace wait reads `isComingUp` for "is it still worth waiting?" — the
+    /// split `NWConnection` draws between `.waiting` and `.failed`. The
+    /// predicate reads `retryTask` and `pendingStartAfterStop`, both
+    /// private — these legs are the only tests that can see them work.
+    @Test("isComingUp across the live legs: starting, running, stopping, disabled")
+    func comingUpAcrossLiveLegs() async throws {
+        let fake = FakeTorSession()
+        let vm = TorViewModel(
+            subsystem: "test",
+            backoffSchedule: [.milliseconds(10)],
+            makeSession: { _ in fake }
+        )
+
+        #expect(vm.displayState == .disabled)
+        #expect(!vm.isComingUp)          // never asked to come up
+
+        vm.start()
+        #expect(vm.displayState == .starting)
+        #expect(vm.isComingUp)           // mid-bootstrap — on its way
+
+        await fake.releaseBootstrap()
+        await vm.awaitSettled()
+        #expect(vm.displayState == .running)
+        #expect(!vm.isComingUp)          // arrived — no longer coming
+
+        vm.stop()
+        #expect(vm.displayState == .stopping)
+        #expect(!vm.isComingUp)          // tearing down with nothing queued
+
+        await vm.awaitStopped()
+        #expect(vm.displayState == .disabled)
+        #expect(!vm.isComingUp)
+    }
+
+    @Test("isComingUp counts a restart queued behind a stop as still coming")
+    func comingUpWhileRestartQueued() async throws {
+        let factory = SessionFactory([FakeTorSession(), FakeTorSession()])
+        let vm = TorViewModel(
+            subsystem: "test",
+            backoffSchedule: [.milliseconds(10)],
+            makeSession: factory.make()
+        )
+
+        vm.start()
+        vm.stop()                   // .stopping
+        vm.start()                  // queued — pendingStartAfterStop
+        #expect(vm.displayState == .stopping)
+        #expect(vm.isComingUp)      // the teardown carries a restart
+
+        await vm.awaitStopped()     // teardown fires the queued start
+        #expect(vm.isComingUp)      // …which is itself a start in flight
+
+        vm.stop()
+        await vm.awaitStopped()
+    }
+
+    @Test("isComingUp counts a scheduled retry but not an exhausted one")
+    func comingUpAcrossRetryAndExhaustion() async throws {
+        // A seconds-scale leg: `isComingUp(within:)` reads `nextRetryAt`'s
+        // wall time, so the horizon margin must exceed the real wall
+        // elapsed between scheduling and assertion — a 40 ms leg against a
+        // 10 ms horizon flakes on a loaded runner, a 2 s leg against half
+        // a second cannot.
+        let schedule: [Duration] = [.seconds(2)]
+        let clock = TestClock()
+        let factory = SessionFactory([
+            FakeTorSession(mode: .startThrows),
+            FakeTorSession(mode: .startThrows)
+        ])
+        let vm = TorViewModel(
+            subsystem: "test",
+            backoffSchedule: schedule,
+            clock: clock,
+            makeSession: factory.make()
+        )
+
+        vm.start()
+        await vm.awaitSettled()
+        #expect(vm.displayState == .failed)
+        #expect(vm.isComingUp)      // a retry is already scheduled
+        // The horizon is the waiter's remaining budget, read against the
+        // retry's scheduled wall time: 2 s out fits inside a generous
+        // horizon but not inside a half-second one.
+        #expect(!vm.isComingUp(within: .milliseconds(500)))
+        #expect(vm.isComingUp(within: .seconds(60)))
+
+        await clock.advance(by: schedule[0])
+        await vm.awaitSettled()
+        #expect(vm.displayState == .failed)
+        #expect(vm.nextRetryAt == nil)
+        #expect(!vm.isComingUp)     // schedule exhausted — dead until retry()
+    }
 }
