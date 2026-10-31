@@ -237,7 +237,7 @@ struct SyncNodeLongRunningIntent: LongRunningIntent, CancellableIntent {
         clock: C,
         isStopped: @escaping @Sendable () -> Bool,
         heartbeatInterval: Duration = Self.heartbeat,
-        work: @escaping @MainActor (C, @MainActor (NodeRun.ProgressUpdate) -> Void) async -> NodeRunReport = {
+        work: @escaping @MainActor (C, @escaping @MainActor (NodeRun.ProgressUpdate) -> Void) async -> NodeRunReport = {
             await NodeRun.perform(
                 session: NodeSession.shared,
                 waitForFirstAnswer: waitForFirstAnswer,

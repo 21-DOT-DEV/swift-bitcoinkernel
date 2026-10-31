@@ -48,9 +48,10 @@ final class NodeSession {
 
     /// Starts the private network only if its setting is still on right now.
     ///
-    /// A run reaches a nudge tens of seconds after it began — the deliberate
-    /// wait-for-it path and the launch boundary's not-ready refusal both ask
-    /// for it — long enough for the person to have toggled the setting off.
+    /// A run reaches a nudge tens of seconds after it began — the decision
+    /// loop's wait-for-the-network path asks for it, including after a stall
+    /// the launch boundary routed back — long enough for the person to have
+    /// toggled the setting off.
     /// Starting it then would resurrect the very network they just switched
     /// off, so this checks the live preference rather than the run's own
     /// snapshot: the snapshot governs what the run *launches*; whether the
@@ -62,9 +63,9 @@ final class NodeSession {
     /// - Returns: whether the setting is still on. The wait-for-it path uses
     ///   it to word the decline honestly — "being established now" is only
     ///   true while the network is actually wanted; switched off mid-run is a
-    ///   different message, because nothing is being established at all. The
-    ///   launch boundary asks only for the nudge, and only when its refusal
-    ///   was the not-ready one.
+    ///   different message, because nothing is being established at all. A
+    ///   not-ready refusal the launch boundary measured is routed back to the
+    ///   decision loop, which reaches the nudge through that same path.
     @discardableResult
     func startTorIfStillEnabled(reading defaults: UserDefaults) -> Bool {
         let stillEnabled = defaults.bool(forKey: "tor_enabled")
@@ -87,6 +88,9 @@ final class NodeSession {
 extension NodeSession: RunSession {
     var nodeState: NodeState { node.nodeState }
     var torIsReady: Bool { tor.isReady }
+    func torIsComingUp(within horizon: Duration) -> Bool {
+        tor.isComingUp(within: horizon)
+    }
     var torProxyAddress: String? { tor.proxyAddress }
     var torSessionID: UUID? { tor.sessionID }
     var torSocksPort: UInt16? { tor.socksEndpoint.flatMap { UInt16(exactly: $0.port) } }

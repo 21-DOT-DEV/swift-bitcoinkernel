@@ -77,6 +77,55 @@ final class TorViewModel {
     /// countdown UI which renders `"attempt X of Y"`.
     var maxAttempts: Int { backoffSchedule.count + 1 }
 
+    /// Whether Tor is still on its way to usable — mid-bootstrap, retrying a
+    /// failed attempt inside the backoff schedule, or finishing a teardown
+    /// that carries a queued restart.
+    ///
+    /// `displayState` answers what the status row says; this answers whether
+    /// waiting is still worthwhile — the split `NWConnection` draws between
+    /// `.waiting` and `.failed`: a `.failed` attempt with a retry scheduled
+    /// arrives at `.starting` within seconds, so reading it as terminal
+    /// abandons a wait moments before the state machine resumes it on its
+    /// own. `isReady` cannot stand in — it is `false` the whole way here.
+    var isComingUp: Bool { isComingUp(within: .seconds(Int64.max)) }
+
+    /// Whether Tor is still on its way to usable inside `horizon` — the
+    /// waiter's own remaining budget, not an open-ended promise.
+    ///
+    /// Same legs as `isComingUp`, with one refinement: a `.failed` Tor whose
+    /// only promise is a retry scheduled *past* the horizon answers `false`
+    /// — a bounded wait should give up on a network that cannot attempt
+    /// again in time rather than hold its budget to the deadline. The
+    /// `.stopping` leg is deliberately horizon-blind: a restart queued
+    /// behind a teardown reads `true` regardless — teardowns are prompt,
+    /// and the wait's other exits still bound the outcome. The
+    /// comparison is the wall clock, matching `nextRetryAt`'s wall time:
+    /// correct under the production `ContinuousClock`, and recorded design
+    /// debt under a virtual `clock` — a retry's fire time is bound to the
+    /// injected clock the task sleeps on, while `nextRetryAt` is bound to
+    /// `Date`; the two bases only coincide in production, so a
+    /// virtual-clock caller should drive the schedule short enough that
+    /// the wall comparison stays inside it. An attempt already in flight —
+    /// `.starting`, or a retry whose task is firing now — always answers
+    /// `true`: its arrival is not schedulable, only its abandonment would
+    /// be premature.
+    func isComingUp(within horizon: Duration) -> Bool {
+        switch displayState {
+        case .starting:
+            return true
+        case .failed:
+            guard retryTask != nil else { return false }
+            // A cleared `nextRetryAt` with a live task means the retry is
+            // in its fire hop — an attempt underway, not one to schedule.
+            guard let retryAt = nextRetryAt else { return true }
+            return retryAt.timeIntervalSinceNow <= durationSeconds(horizon)
+        case .stopping:
+            return pendingStartAfterStop
+        case .running, .disabled:
+            return false
+        }
+    }
+
     // MARK: - Private state
 
     private let logger: Logger

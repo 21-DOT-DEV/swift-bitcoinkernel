@@ -551,7 +551,7 @@ watch orchestration until the next group.
   SyncNodeLongRunningIntent,NodeAutomation}.swift`,
   `Sources/NodeAppTests/{NodeRunTests,ProgressMeterTests,
   SyncNodeLongRunningIntentTests,NodeAutomationTests}.swift`
-- [ ] T021 Private-network grace — a deadline-bounded poll in `NodeRun`'s own
+- [x] T021 Private-network grace — a deadline-bounded poll in `NodeRun`'s own
   loop shape (never `withHardTimeout` around `waitUntilReady`, which abandons
   a `@MainActor` loop whose `try?` sleep swallows cancellation);
   `Task.isCancelled` and `session.tor.isReady` checked each pass, early exit
@@ -559,10 +559,48 @@ watch orchestration until the next group.
   run re-decides — node state, device conditions, and the step — settings
   stay the T002 snapshot; a Tor that never readies declines with the
   unchanged `privateNetworkNotReady`; the `TestClock` test drives a
-  never-readying Tor to the decline and a readying one into the re-decision
-  (FR-013; verifies FR-013) (~250) ·
-  `Sources/NodeApp/NodeRun.swift`,
-  `Sources/NodeAppTests/NodeRunTests.swift` · needs T018, T018a, T020
+  never-readying Tor to the decline and a readying one into the re-decision.
+  Landed as: `perform` gains `privateNetworkGrace: Duration? = nil` (T034
+  wires ~90 s; the short action keeps `nil`), and the decide→gather→dispatch
+  sequence becomes a one-trip loop that re-decides on live facts — the grace
+  consumed on use, so a second `waitForPrivateNetwork` verdict declines. The
+  "still coming" signal widened past the literal `.starting` to
+  `TorViewModel.isComingUp(within:)` (`.starting` ∨ `.failed` with a retry
+  pending inside the waiter's remaining budget ∨ `.stopping` with a queued
+  restart — `NWConnection`'s `.waiting`/`.failed` split, read against
+  `nextRetryAt`'s wall time so a retry scheduled past the deadline ends
+  the wait early), surfaced as `RunSession.torIsComingUp(within:)`; the
+  poll also exits on
+  `nodeState != .stopped`, so a person's Stop mid-wait can never be
+  relaunched behind. `start()` propagates `.privateNetworkNotReady` into the
+  same loop — a pre-commit drop is a stall, the `waitsForConnectivity`
+  shape — while `.privateNetworkTurnedOff` stays a terminal in-place
+  decline. A stall the boundary measured but the snapshot-pure step cannot
+  express (privacy toggled *on* mid-run) returns as `networkStalled` so the
+  re-decision lands on the wait-or-decline branch instead of retrying an
+  identical step forever — the jury-review catch — honored once: a second
+  stall declines the unchanged verdict, so every `continue` is fired by a
+  one-shot marker and the loop is bounded by construction, not by
+  reasoning about which step follows which. A refusal landing while the
+  network still reports ready declines as contradictory rather than
+  stalling. `Task.isCancelled` is checked at the loop top each pass as
+  well as after the suspending gather, and the stall's re-decision
+  re-weighs device conditions on live facts — a condition turning
+  refusing between the two gathers reports the operative refusal, not
+  the privacy sentence it displaced. Progress lands on one scale: a
+  graced run wraps `perform`'s whole `onProgress` callback once — the
+  application point `startUpBand`'s doc assigns the run — so the grace's
+  ramp, the milestones, and the first-answer ramp all write inside
+  `0 ... startUpBandEnd` and no second wrap can double-band it. Nineteen
+  `ManualClock`/`ObservedClock`/`TestClock` tests pin the contract plus
+  the `isComingUp` legs (FR-013; verifies FR-013)
+  (~950 across five files — over the estimate on the seam member, the
+  loop's re-indentation, and the launch-boundary second door the written
+  text did not scope) ·
+  `Sources/NodeApp/{NodeRun,NodeSession}.swift`,
+  `Sources/Shared/TorViewModel.swift`,
+  `Sources/NodeAppTests/{NodeRunTests,TorViewModelRaceTests}.swift` ·
+  needs T018, T018a, T020
 - [ ] T022 The watch stage — poll `blockchainInfo` every ~5 s bounded at
   `min(watchQuestionBudget, remaining)`, the same bound covering
   `awaitFirstAnswer` on budgeted runs (the short action keeps
@@ -686,7 +724,17 @@ experiment landed.
   `tipFreshnessThreshold` ~60 min, `watchQuestionBudget` ~30 s,
   `peerConfirmationsRequired` 2, meter `scale`; the headline flips to the
   syncing wording on watch entry; constants and the execution-target
-  declaration pinned in `SyncNodeLongRunningIntentTests` (FR-003, FR-006,
+  declaration pinned in `SyncNodeLongRunningIntentTests`. The grace goes
+  live here, so re-derive `scale`'s documented heartbeat coupling
+  (`heartbeatCoverageExceedsWait`) against it: the banded ~90 s wait writes
+  ~6 *changed* integer units over its ~18 ticks (~60 s uncovered), and the
+  first-answer stretch's banded ramp sits at or below the grace's band end
+  — floored writes leave liveness to ticks for its whole ~240 s — so the
+  coupling must outlast ~330 s of grace plus question, not question alone;
+  and the wrap bands *every* pre-watch write, so a graced run that only
+  reports an existing node leaves the bar at ≤10% — decide there whether
+  the watch-stage entry or the ending reclaims the headroom (jury
+  carry-forward) (FR-003, FR-006,
   FR-007, FR-013; verifies FR-006, FR-007, FR-013) (~150) ·
   `Sources/NodeApp/SyncNodeLongRunningIntent.swift`,
   `Sources/NodeAppTests/SyncNodeLongRunningIntentTests.swift` ·
