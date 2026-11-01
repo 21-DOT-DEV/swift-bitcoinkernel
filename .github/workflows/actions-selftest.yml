@@ -15,9 +15,11 @@ name: Actions self-test
 #                     and asserts the action reports it.
 #   retry-gate      — retry-on-fetch-flake: a harness drives every
 #                     signatures.tsv row through retry.sh directly — each
-#                     pattern must match its own sample AND the run must end
-#                     with its kind's verdict word, so a dead pattern can't
-#                     pass on an unrelated outcome — plus the cleanup-dirs
+#                     pattern must match its own sample (`nomatch` rows
+#                     invert: the sample must NOT match) AND the run must
+#                     end with its kind's verdict word (`unclassified` for
+#                     `nomatch`), so a dead pattern can't pass on an
+#                     unrelated outcome — plus the cleanup-dirs
 #                     escape guard, the off-runner workspace fallback and
 #                     its on-runner refusal, plus `uses:`-wrapped contract
 #                     cases — the counter-file green path (SC-002), a silent
@@ -204,20 +206,32 @@ jobs:
       # Every row in signatures.tsv is a case by construction — the harness
       # reads the same file the gate does, so adding a signature without a
       # covering assertion is impossible. Two assertions per row: the pattern
-      # must match its own sample (an outcome-only check can't notice a dead
-      # pattern — an unclassifiable failure also stops after 1 attempt, and a
-      # retry row passes when ANY pattern matches its sample), and the run's
-      # verdict word must be its kind's (retry-exhausted | auth-shaped), which
-      # proves WHICH branch fired rather than that a firing happened.
+      # must match its own sample — inverted for `nomatch` rows, which pin a
+      # shape that must NOT classify — (an outcome-only check can't notice a
+      # dead pattern — an unclassifiable failure also stops after 1 attempt,
+      # and a retry row passes when ANY pattern matches its sample), and the
+      # run's verdict word must be its kind's (retry-exhausted | auth-shaped
+      # | unclassified), which proves WHICH branch fired rather than that a
+      # firing happened.
       - name: Signature table — every row classified per its kind
         env:
           ACTION_DIR: .github/actions/retry-on-fetch-flake
         run: |
           fail=0
-          while IFS=$'\t' read -r kind pattern sample; do
+          while IFS=$'\t' read -r kind pattern sample || [ -n "$kind" ]; do
             case "$kind" in ''|\#*) continue ;; esac
-            printf '%s\n' "$sample" | grep -qE -- "$pattern" \
-              || { echo "::error::/$pattern/ does not match its own sample"; fail=1; }
+            case "$kind" in retry|noretry|nomatch) ;; *)
+              echo "::error::signatures.tsv row kind /$kind/ unrecognised — want retry|noretry|nomatch"; fail=1; continue ;;
+            esac
+            rc=0
+            printf '%s\n' "$sample" | grep -qE -- "$pattern" || rc=$?
+            if [ "$kind" = nomatch ]; then
+              [ "$rc" -eq 1 ] \
+                || { echo "::error::/$pattern/ on nomatch sample: grep rc=$rc — want 1 (0 means it matched, 2 means the pattern is bad ERE)"; fail=1; }
+            else
+              [ "$rc" -eq 0 ] \
+                || { echo "::error::/$pattern/ does not match its own sample (rc=$rc)"; fail=1; }
+            fi
             mkdir -p "$RUNNER_TEMP/selftest-wipe"
             out=$(RETRY_COMMAND="printf '%s\n' \"$sample\"; exit 1" \
                   RETRY_LABEL="sig:$sample" \
@@ -228,6 +242,7 @@ jobs:
             verdict=$(printf '%s' "$out" | grep '^verdict=' | tail -1 | cut -d= -f2)
             want_attempts=3 want_verdict=retry-exhausted
             [ "$kind" = noretry ] && { want_attempts=1; want_verdict=auth-shaped; }
+            [ "$kind" = nomatch ] && { want_attempts=1; want_verdict=unclassified; }
             if [ "$attempts" = "$want_attempts" ] && [ "$verdict" = "$want_verdict" ]; then
               echo "ok: $kind /$pattern/ → attempts=$attempts verdict=$verdict"
             else
