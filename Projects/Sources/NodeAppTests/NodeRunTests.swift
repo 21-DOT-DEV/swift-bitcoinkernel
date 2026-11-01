@@ -526,9 +526,12 @@ struct NodeRunDrivabilityTests {
 /// *or* stopped by the person — ends the wait early (a wait that ran on
 /// could relaunch a node someone just stopped); and the same verdict
 /// reached at the launch boundary lands on the same grace rather than
-/// declining out of order. Nothing sleeps real time: the poll naps on the
-/// injected `ManualClock` like every wait in this file, and each advance is
-/// gated on the nap's request — ordering on the event, never on a guess.
+/// declining out of order. The waits under test nap only on the injected
+/// `ManualClock`, and each advance fires the earliest armed deadline —
+/// capped at the call's step, so a bound armed over work still in flight
+/// is approached in hops that buy it real executor turns, never jumped to
+/// outright. The only real-time element left is `.timeLimit` itself,
+/// which cancels a wedged drive's wait.
 @Suite("Private-network grace")
 @MainActor
 struct NodeRunGraceTests {
@@ -576,19 +579,14 @@ struct NodeRunGraceTests {
                 clock: clock.clock, defaults: store) { emitted.append($0) }
         }
         try await clock.napRequested.wait()   // the wait is on the injected clock
-        // Stepped advances rather than one jump: each wakes a pass that
-        // writes progress and re-naps — the yield runs that enqueued body
-        // before the clock moves again, so the ramp is sampled pass by
-        // pass. How many turns the run needs per nap is platform-dependent,
-        // so the drive is bounded by the run finishing. The cap guards only
-        // underdrive — ten 30 s steps are 300 virtual s against the 90 s
-        // grace; if all of them land before the run's first wake, the clock
-        // is already past the deadline, the wait exits after one write, and
-        // the emitted-count assertion below reports it.
-        for _ in 0..<10 where !done.isOpen {
-            clock.test.advance(by: .seconds(30))
-            await Task.yield()
-        }
+        // The drive ends only when the run does — the clock crossing the
+        // 90 s grace deadline is what ends the wait. Each hop fires the
+        // earliest armed deadline capped at 30 s: naps wake at their own
+        // instants so the ramp is sampled pass by pass, and a bound armed
+        // over work still in flight is approached in hops that give the
+        // work real turns — starvation past that budget flips the verdict
+        // honestly rather than stalling the drive.
+        try await clock.test.drive(untilDone: done, by: .seconds(30))
         let report = await run.value
         #expect(report.outcome == .declined)
         // The verdict and its sentence are the ungraced path's, verbatim —
@@ -700,37 +698,46 @@ struct NodeRunGraceTests {
         session.torSocksPort = 9050
         session.startNodeResult = true
         var emitted: [NodeRun.ProgressUpdate] = []
+        let graceRamp = Gate()
         let done = Gate()
         let run = Task { @MainActor in
             defer { done.open() }
             return await NodeRun.perform(
                 session: session, waitForFirstAnswer: .seconds(240),
                 privateNetworkGrace: .seconds(90),
-                clock: clock.clock, defaults: store) { emitted.append($0) }
+                clock: clock.clock, defaults: store) {
+                emitted.append($0)
+                // The wait's first pass writes the band's own zero; the
+                // post-jump pass is the first strictly-above write — the
+                // predicate asks the band itself rather than assuming
+                // `startUpBand(0) == 0` forever.
+                if $0.fraction > NodeAutomation.startUpBand(0) {
+                    graceRamp.open()
+                }
+            }
         }
         try await clock.napRequested.wait()
         // Thirty seconds of grace first — the ramp has somewhere to restart
-        // *from* — then the bootstrap finishes inside the held window.
+        // *from* — then the bootstrap finishes inside the held window. The
+        // flip waits on the moved-ramp emission rather than a yield: a pass
+        // that wakes to `torIsReady` exits without writing, so ending the
+        // wait before the ramp write landed would leave nothing above the
+        // restart for the dip below to measure against.
         clock.test.advance(by: .seconds(30))
-        await Task.yield()
+        try await graceRamp.wait()
         session.torIsReady = true
         session.torIsComingUp = false
         clock.test.advance(by: .milliseconds(600))
-        // The stretch ahead is a chain of ≤500 ms naps — the gather's
-        // bounded wait, the poll's two thrown answers, the final reading —
-        // and each woken pass needs executor turns before the clock moves
-        // again. How many turns is platform-dependent (a starved simulator
-        // needs more than any fixed count), so the drive is bounded by the
-        // run finishing or by the virtual budget that bounds it — 600
-        // iterations of 600 ms well past the 240 s question deadline.
-        // Overdrive ends the wait, not the drive: a run still starved when
-        // the clock crosses its deadline reports `.didNotComeUp`, so the
-        // `.started` assertion failing without a stall is the starvation
-        // signature.
-        for _ in 0..<600 where !done.isOpen {
-            clock.test.advance(by: .milliseconds(600))
-            await Task.yield()
-        }
+        // The stretch ahead is a chain of ≤500 ms poll naps under the
+        // gather's 2 s and each question's 10 s bounds — the poll's two
+        // thrown answers, then the final reading. The drive fires each
+        // armed deadline at its own instant, capped at 600 ms per hop, so
+        // a bound armed while its work is still in flight is approached in
+        // hops that buy the work real turns before it can fire. A run
+        // still starved when the clock crosses its 240 s deadline reports
+        // `.didNotComeUp` — the `.started` assertion failing without a
+        // stall is the starvation signature.
+        try await clock.test.drive(untilDone: done, by: .milliseconds(600))
         let report = await run.value
         #expect(report.outcome == .started)
         #expect(

@@ -24,7 +24,10 @@ import Synchronization
 /// advance returns instead of parking. The one ordering a test still owes:
 /// a sleep whose deadline lands *ahead* of the final advance suspends
 /// forever, so gate each `advance` on the bound's request — `withHardTimeout`
-/// computes its deadline from `now` at invocation.
+/// computes its deadline from `now` at invocation. A driver that needs the
+/// park itself as an event — an event-exact advance that visits every armed
+/// deadline in order — awaits `waitForNextDeadline()` (or samples
+/// `earliestParkedDeadline`) instead of polling `parkedSleepers`.
 final class ManualClock: Clock, Sendable {
     /// The minimal `InstantProtocol`: a `Duration` offset from start.
     struct Instant: InstantProtocol {
@@ -47,6 +50,10 @@ final class ManualClock: Clock, Sendable {
             (id: Int, deadline: Instant,
              continuation: CheckedContinuation<Void, any Error>)
         ] = []
+        var armedWaiters: [
+            (id: Int,
+             continuation: CheckedContinuation<Instant, any Error>)
+        ] = []
     }
     private let state = Mutex(State())
 
@@ -58,6 +65,72 @@ final class ManualClock: Clock, Sendable {
     /// sleeper lands rather than racing it.
     var parkedSleepers: Int { state.withLock { $0.sleepers.count } }
 
+    /// How many `waitForNextDeadline` callers are parked waiting on a
+    /// sleeper to register — the same registration-happened surface as
+    /// `parkedSleepers`, for the waiter's side of the handshake.
+    var armedWaiterCount: Int { state.withLock { $0.armedWaiters.count } }
+
+    /// The earliest deadline among parked sleepers, or nil — a
+    /// non-suspending sample. For "wake me when one parks", use
+    /// `waitForNextDeadline()`.
+    var earliestParkedDeadline: Instant? {
+        state.withLock {
+            $0.sleepers.min { $0.deadline < $1.deadline }?.deadline
+        }
+    }
+
+    /// Suspends until a sleeper parks and returns the earliest parked
+    /// deadline AT THE MOMENT OF THE PARK — a wake signal, not a promise:
+    /// a nearer sleeper can register before the caller is scheduled, so a
+    /// driver re-samples `earliestParkedDeadline` before advancing rather
+    /// than trusting the delivered value. Returns at once when a sleeper
+    /// is already parked, so a park can't be missed between a sample and
+    /// the wait. Throws `CancellationError` if the caller is cancelled
+    /// first — the same contract `sleep` and `Gate.wait` keep, so a
+    /// suite's `.timeLimit` still reaps a wedged driver.
+    func waitForNextDeadline() async throws -> Instant {
+        try Task.checkCancellation()
+        let id = state.withLock { s -> Int in
+            defer { s.nextID += 1 }
+            return s.nextID
+        }
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation {
+                (continuation: CheckedContinuation<Instant, any Error>) in
+                enum Action {
+                    case deliver(Instant), throwCancel, park
+                }
+                // Same under-lock three-way as `sleep`: a cancel racing
+                // registration either finds the entry (`onCancel`) or is
+                // answered here — and a sleeper already parked is
+                // delivered without suspending.
+                switch state.withLock({ s -> Action in
+                    if Task.isCancelled { return .throwCancel }
+                    if let earliest = s.sleepers.min(by: {
+                        $0.deadline < $1.deadline
+                    }) {
+                        return .deliver(earliest.deadline)
+                    }
+                    s.armedWaiters.append((id, continuation))
+                    return .park
+                }) {
+                case .deliver(let deadline):
+                    continuation.resume(returning: deadline)
+                case .throwCancel:
+                    continuation.resume(throwing: CancellationError())
+                case .park: break
+                }
+            }
+        } onCancel: {
+            state.withLock { s -> CheckedContinuation<Instant, any Error>? in
+                guard let index = s.armedWaiters.firstIndex(where: {
+                    $0.id == id
+                }) else { return nil }
+                return s.armedWaiters.remove(at: index).continuation
+            }?.resume(throwing: CancellationError())
+        }
+    }
+
     func sleep(until deadline: Instant, tolerance: Duration? = nil) async throws {
         try Task.checkCancellation()
         let id = state.withLock { s -> Int in
@@ -67,20 +140,38 @@ final class ManualClock: Clock, Sendable {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation {
                 (continuation: CheckedContinuation<Void, any Error>) in
-                enum Action { case resume, throwCancel, park }
                 // Decided under the lock so a cancel racing registration
                 // either finds the entry (`onCancel`) or is answered here —
                 // never both, never neither.
+                enum Action {
+                    case resume, throwCancel,
+                        park([(CheckedContinuation<Instant, any Error>, Instant)])
+                }
                 switch state.withLock({ s -> Action in
                     if Task.isCancelled { return .throwCancel }
                     if deadline <= s.now { return .resume }
                     s.sleepers.append((id, deadline, continuation))
-                    return .park
+                    // A park is the armed event `waitForNextDeadline`
+                    // callers suspended on — released atomically with the
+                    // append, resumed outside the lock, each handed the
+                    // earliest parked deadline at this instant. `min` is
+                    // force-unwrapped under the invariant the entry just
+                    // appended guarantees: the queue cannot be empty here.
+                    let earliest = s.sleepers.min {
+                        $0.deadline < $1.deadline
+                    }!.deadline
+                    let waiters = s.armedWaiters
+                    s.armedWaiters.removeAll()
+                    return .park(
+                        waiters.map { ($0.continuation, earliest) })
                 }) {
                 case .resume: continuation.resume()
                 case .throwCancel:
                     continuation.resume(throwing: CancellationError())
-                case .park: break
+                case .park(let armed):
+                    for (waiter, deadline) in armed {
+                        waiter.resume(returning: deadline)
+                    }
                 }
             }
         } onCancel: {
@@ -123,5 +214,42 @@ final class ManualClock: Clock, Sendable {
             return due.map(\.continuation)
         }
         for continuation in due { continuation.resume() }
+    }
+}
+
+extension ManualClock {
+    /// Advances the clock toward the earliest armed deadline — never more
+    /// than `step` per hop — until `done` opens: the run's own
+    /// completion, not a turn count, is the bound. A deadline inside the
+    /// hop lands at its own instant, so naps wake in real-time order; one
+    /// beyond it is approached hop-wise instead of fired outright,
+    /// because an armed hard-timeout bound is not a safely schedulable
+    /// event — it guards detached work that still needs real executor
+    /// turns, and jumping to its deadline would stamp the work's answer
+    /// late no matter when the bound's own timer task runs. Each hop's
+    /// yield is a real turn for that work, so a bound only fires after it
+    /// has spent a `step`-proportional budget of turns waiting on the
+    /// work; starvation past that budget still flips the verdict
+    /// honestly, it just can't be caused by the drive. When nothing is
+    /// parked the run is mid-hop: the drive suspends on the next armed
+    /// deadline racing `done`, never polling — the only real-time element
+    /// left is a suite's `.timeLimit`, which reaps a wedged drive by
+    /// cancelling that wait.
+    func drive(untilDone done: Gate, by step: Duration) async throws {
+        precondition(step > .zero, "drive needs a positive step")
+        while !done.isOpen {
+            try Task.checkCancellation()
+            if let deadline = earliestParkedDeadline {
+                advance(to: min(deadline, now.advanced(by: step)))
+                await Task.yield()
+            } else {
+                try await withThrowingTaskGroup(of: Void.self) { group in
+                    group.addTask { _ = try await self.waitForNextDeadline() }
+                    group.addTask { try await done.wait() }
+                    try await group.next()
+                    group.cancelAll()
+                }
+            }
+        }
     }
 }
