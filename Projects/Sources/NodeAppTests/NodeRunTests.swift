@@ -530,8 +530,9 @@ struct NodeRunDrivabilityTests {
 /// `ManualClock`, and each advance fires the earliest armed deadline —
 /// capped at the call's step, so a bound armed over work still in flight
 /// is approached in hops that buy it real executor turns, never jumped to
-/// outright. The only real-time element left is `.timeLimit` itself,
-/// which cancels a wedged drive's wait.
+/// outright. Each hop then spends a bounded real-time window on the real
+/// clock so the in-flight work can take its turns; `.timeLimit` is the
+/// backstop that cancels a wedged drive's wait.
 @Suite("Private-network grace")
 @MainActor
 struct NodeRunGraceTests {

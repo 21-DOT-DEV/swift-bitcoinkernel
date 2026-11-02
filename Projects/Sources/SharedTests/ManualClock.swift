@@ -225,23 +225,35 @@ extension ManualClock {
     /// beyond it is approached hop-wise instead of fired outright,
     /// because an armed hard-timeout bound is not a safely schedulable
     /// event — it guards detached work that still needs real executor
-    /// turns, and jumping to its deadline would stamp the work's answer
-    /// late no matter when the bound's own timer task runs. Each hop's
-    /// yield is a real turn for that work, so a bound only fires after it
-    /// has spent a `step`-proportional budget of turns waiting on the
-    /// work; starvation past that budget still flips the verdict
-    /// honestly, it just can't be caused by the drive. When nothing is
-    /// parked the run is mid-hop: the drive suspends on the next armed
-    /// deadline racing `done`, never polling — the only real-time element
-    /// left is a suite's `.timeLimit`, which reaps a wedged drive by
-    /// cancelling that wait.
+    /// time, and jumping to its deadline would stamp the work's answer
+    /// late no matter when the bound's own timer task runs. Each hop is
+    /// followed by a real-time break — `Task.sleep` on the real clock,
+    /// not `Task.yield`: a yield may immediately resume this task when it
+    /// outranks the detached work (documented behavior — CI saw the work
+    /// get zero turns in ~400 hops), while a suspension frees the
+    /// executor across every priority for a bounded window. A bound then
+    /// fires only after spending a `step`-proportional budget of real
+    /// executor windows waiting on the work; starvation past that budget
+    /// still flips the verdict honestly, it just can't be caused by the
+    /// drive. When nothing is parked the run is mid-hop: the drive
+    /// suspends on the next armed deadline racing `done`, never polling —
+    /// the suite's `.timeLimit` reaps a wedged drive by cancelling that
+    /// wait.
     func drive(untilDone done: Gate, by step: Duration) async throws {
         precondition(step > .zero, "drive needs a positive step")
         while !done.isOpen {
             try Task.checkCancellation()
             if let deadline = earliestParkedDeadline {
                 advance(to: min(deadline, now.advanced(by: step)))
-                await Task.yield()
+                // A real suspension, not `Task.yield()` — frees the
+                // executor for a bounded wall-time window on every
+                // priority, which is what unparked in-flight work needs.
+                // Wall cost is ~0.9 ms per hop measured (timer
+                // granularity overruns the 200 µs ask ~4x), so total
+                // drive time ≈ (virtual span ÷ step) × ~1 ms — keep
+                // `step` well above the span ÷ `.timeLimit` budget or a
+                // pathologically small one reads as a wedged drive.
+                try await Task.sleep(for: .microseconds(200))
             } else {
                 try await withThrowingTaskGroup(of: Void.self) { group in
                     group.addTask { _ = try await self.waitForNextDeadline() }
