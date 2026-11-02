@@ -1,10 +1,19 @@
 # signatures.tsv — the fetch/transport signature table FR-005 owns.
 #
 # Columns (tab-separated):
-#   kind      retry | noretry
+#   kind      retry | noretry | nomatch
 #   pattern   ERE matched against the attempt's whole log
 #   sample    a concrete log line the pattern must match — the selftest's
-#             printer prints this; the row IS its own case by construction
+#             printer prints this; the row IS its own case by construction.
+#             A `nomatch` row inverts the contract: the selftest asserts the
+#             pattern does NOT match the sample and the run classifies
+#             `unclassified` at 1 attempt — the gate ignores the kind, so the
+#             row exists purely as a pinned negative.
+#
+# The harness feeds one sample per run, so rows prove per-row behavior only —
+# cross-signature interaction (a log matching a retry row AND a noretry row,
+# where exclusion must win) is covered solely by the two hand-authored
+# precedence rows near the bottom, not by construction.
 #
 #   retry   — a match is a network flake: wipe cleanup-dirs, retry.
 #   noretry — auth-shaped output: fails fast EVEN when a retry pattern also
@@ -29,9 +38,50 @@ retry	Connection reset by peer	fatal: unable to access 'https://github.com/owner
 retry	Failed to connect	Failed to connect to github.com port 443: Operation timed out
 retry	The remote end hung up unexpectedly	fatal: The remote end hung up unexpectedly
 retry	returned error: (50[234]|429)	The requested URL returned error: 429
+# `Couldn’t fetch updates…` is SwiftPM's wrapper for its internal
+# cache-update git fetch — emitted with U+2019, so the pattern matches
+# `Could.*` rather than the apostrophe byte. It must also anchor at line
+# start: the same words arrive non-fatally inside
+# `warning: skipping cache due to an error: …`, where resolution falls
+# back and continues — matching that form would retry any permanent
+# failure that merely carried the warning. The fatal second-stage-resolve
+# surface this row exists for prints the summary on its own line —
+# observed verbatim in run 41185222185's `KernelApp (ios)` job log, which
+# is the sample below (2-space indent, real U+2019 byte). Residual: if a
+# formatter ever WRAPS the warning so the summary lands on its own
+# indented line, it is indistinguishable from the fatal surface and will
+# retry — a line-wise anchor cannot close that; the nomatch row pins the
+# single-line form observed today. The permanent companions the fatal
+# surface can travel with are excluded below, not retried.
+retry	^[[:space:]]*Could.*fetch updates from remote repositories	  Couldn’t fetch updates from remote repositories:
+nomatch	^[[:space:]]*Could.*fetch updates from remote repositories	warning: skipping cache due to an error: Couldn’t fetch updates from remote repositories:
 noretry	Authentication failed	fatal: Authentication failed for 'https://github.com/owner/repo.git/'
 noretry	returned error: 40[13]	The requested URL returned error: 403
 noretry	HTTP 40[13]	RPC failed; HTTP 403
 # Precedence row: this sample matches BOTH a retry pattern (curl 56) and the
 # noretry pattern above (HTTP 403) — exclusion must win: 1 attempt.
 noretry	HTTP 40[13]	RPC failed; curl 56 HTTP 403
+# The permanent deaths the fetch summary can carry — git's non-interactive
+# auth failure, a dead package URL (the `#fragment` shape pins this one
+# down: bare `info/refs not valid` can also mean a transient proxy/CDN
+# error page), and a missing repo — excluded before inclusion by kind
+# (the header's precedence rule), not by position. Each pattern is
+# anchored on its observed `fatal:`/`remote:` transport marker rather
+# than line-start: `matches_any` greps the whole log and exclusion wins
+# first, so a bare phrase could match non-fatal wrapper text elsewhere
+# and suppress a genuine transport flake; the marker requirement keeps
+# the kill precise while staying constructable inside a precedence row.
+noretry	fatal:.*could not read Username	fatal: could not read Username for 'https://github.com': terminal prompts disabled
+noretry	fatal:.*#[^ ]*/info/refs not valid	fatal: https://github.com/owner/repo#fragment/info/refs not valid: could not determine hash algorithm
+noretry	remote:.*[Rr]epository not found	remote: Repository not found.
+noretry	fatal:.*The requested URL returned error: 404	fatal: unable to access 'https://github.com/owner/repo.git/': The requested URL returned error: 404
+# Missing-ref/bad-pin deaths — git shapes that DO travel under a
+# cache-update fetch (`couldn.t` dodges the apostrophe-encoding question
+# outright). Resolution-phase deaths (version conflicts, malformed
+# manifests) never print the fetch wrapper, so they need no row.
+noretry	fatal:.*couldn.t find remote ref	fatal: couldn't find remote ref refs/heads/pinned-branch
+noretry	fatal:.*not found in upstream origin	fatal: Remote branch v9.9.9 not found in upstream origin
+# Precedence row for the new pair, like the `RPC failed; curl 56 HTTP 403`
+# row above: this sample matches BOTH the `fetch updates` retry pattern
+# and `fatal:.*could not read Username` — exclusion must win: 1 attempt.
+noretry	fatal:.*could not read Username	Couldn’t fetch updates from remote repositories: fatal: could not read Username for 'https://github.com'

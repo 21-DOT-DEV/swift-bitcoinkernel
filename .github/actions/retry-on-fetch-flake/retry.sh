@@ -9,7 +9,9 @@
 # `noretry` rows) is checked BEFORE the retryable set and exits immediately
 # with the real code — a dead credential must never burn three attempts.
 # Anything matching neither set also exits with the real code: retries never
-# mask a failure they can't classify.
+# mask a failure they can't classify. A third `nomatch` kind in the table is
+# ignored here by construction — it exists only for the selftest's
+# pinned-negative assertion.
 #
 # Wrap fetch-only commands (`swift package resolve`, `tuist generate`,
 # `xcodebuild -resolvePackageDependencies`) — re-running is only safe when
@@ -113,6 +115,11 @@ if [ -f "$SIG_FILE" ]; then
     case "$kind" in
       retry)   RETRY_PATTERNS+=("$pattern") ;;
       noretry) NORETRY_PATTERNS+=("$pattern") ;;
+      # Selftest-only rows: the gate loads nothing for them — the harness
+      # inverts their self-match and expects `unclassified` here. Any
+      # other kind is a typo that would ship a dead signature silently.
+      nomatch) ;;
+      *) echo "::error::signatures.tsv: unrecognised kind '$kind' — want retry|noretry|nomatch"; exit 2 ;;
     esac
   done < "$SIG_FILE"
 fi

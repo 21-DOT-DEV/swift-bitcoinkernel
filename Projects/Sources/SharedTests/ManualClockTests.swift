@@ -67,4 +67,89 @@ struct ManualClockTests {
         }
         #expect(clock.parkedSleepers == 0)
     }
+
+    @Test("a deadline wait returns the earliest parked deadline at once", .timeLimit(.minutes(1)))
+    func waitReturnsEarliestParked() async throws {
+        let clock = ManualClock()
+        let near = Task {
+            try await clock.sleep(until: clock.now.advanced(by: .seconds(5)))
+        }
+        let far = Task {
+            try await clock.sleep(until: clock.now.advanced(by: .seconds(60)))
+        }
+        var spins = 0
+        while clock.parkedSleepers < 2, spins < 10_000 {
+            await Task.yield()
+            spins += 1
+        }
+        try #require(clock.parkedSleepers == 2)
+        let deadline = try await clock.waitForNextDeadline()
+        #expect(deadline == clock.now.advanced(by: .seconds(5)))
+        near.cancel()
+        far.cancel()
+        _ = try? await near.value
+        _ = try? await far.value
+    }
+
+    @Test("a deadline wait suspends until a sleeper parks, then delivers it", .timeLimit(.minutes(1)))
+    func waitSuspendsUntilParked() async throws {
+        let clock = ManualClock()
+        let waiter = Task { try await clock.waitForNextDeadline() }
+        var spins = 0
+        while clock.armedWaiterCount == 0, spins < 10_000 {
+            await Task.yield()
+            spins += 1
+        }
+        try #require(clock.armedWaiterCount == 1)
+        let sleeper = Task {
+            try await clock.sleep(until: clock.now.advanced(by: .seconds(30)))
+        }
+        let deadline = try await waiter.value
+        #expect(deadline == clock.now.advanced(by: .seconds(30)))
+        #expect(clock.armedWaiterCount == 0)
+        sleeper.cancel()
+        _ = try? await sleeper.value
+    }
+
+    @Test("a deadline wait cancelled while parked throws CancellationError", .timeLimit(.minutes(1)))
+    func cancelWaiter() async throws {
+        let clock = ManualClock()
+        let waiter = Task { try await clock.waitForNextDeadline() }
+        var spins = 0
+        while clock.armedWaiterCount == 0, spins < 10_000 {
+            await Task.yield()
+            spins += 1
+        }
+        try #require(clock.armedWaiterCount == 1)
+        waiter.cancel()
+        await #expect(throws: CancellationError.self) {
+            try await waiter.value
+        }
+        #expect(clock.armedWaiterCount == 0)
+    }
+
+    @Test("a drive returns when its done gate opens with nothing parked", .timeLimit(.minutes(1)))
+    func driveReturnsOnDone() async throws {
+        let clock = ManualClock()
+        let done = Gate()
+        let driver = Task {
+            try await clock.drive(untilDone: done, by: .milliseconds(600))
+        }
+        // Nothing ever parks — the drive is suspended on the arm-wait, so
+        // opening the gate is the only exit, and it must arrive.
+        done.open()
+        try await driver.value
+    }
+
+    @Test("a drive cancelled while suspended throws CancellationError", .timeLimit(.minutes(1)))
+    func driveCancelled() async throws {
+        let clock = ManualClock()
+        let driver = Task {
+            try await clock.drive(untilDone: Gate(), by: .milliseconds(600))
+        }
+        driver.cancel()
+        await #expect(throws: CancellationError.self) {
+            try await driver.value
+        }
+    }
 }

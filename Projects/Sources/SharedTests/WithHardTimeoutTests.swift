@@ -220,4 +220,30 @@ struct WithHardTimeoutTests {
         // result has nowhere to go.
         try await finished.wait()
     }
+
+    @Test("a stepped drive under the bound leaves in-flight work its real turns")
+    func steppedDriveLetsWorkAnswer() async throws {
+        let clock = ManualClock()
+        let done = Gate()
+        let call = Task {
+            defer { done.open() }
+            return try await withHardTimeout(.seconds(10), clock: clock) {
+                // In-flight work needing real executor turns, never a
+                // clock park: five hops, then the answer. The bound is
+                // the only parked deadline, so a driver that jumped
+                // straight to it would stamp this answer late and have
+                // it discarded — the step cap is what buys the work its
+                // turns.
+                for _ in 0..<5 { await Task.yield() }
+                return 42
+            }
+        }
+        // The grace suite's shared driver at ~400 turns of budget (10 s
+        // ÷ 25 ms) for the ~5 the work needs: a driver that jumped
+        // straight to the bound fires it on hop one, so this still fails
+        // against the naive shape — but the budget is engineered margin,
+        // not a guarantee, since unparked work is invisible to the clock.
+        try await clock.drive(untilDone: done, by: .milliseconds(25))
+        #expect(try await call.value == 42)
+    }
 }
