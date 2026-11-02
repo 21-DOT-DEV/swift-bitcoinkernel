@@ -238,9 +238,12 @@ struct WithHardTimeoutTests {
                 return 42
             }
         }
-        // The grace suite's shared driver: the bound is approached
-        // hop-wise while the work it guards still gets its turns.
-        try await clock.drive(untilDone: done, by: .milliseconds(600))
+        // The grace suite's shared driver at ~400 turns of budget (10 s
+        // ÷ 25 ms) for the ~5 the work needs: a driver that jumped
+        // straight to the bound fires it on hop one, so this still fails
+        // against the naive shape — but the budget is engineered margin,
+        // not a guarantee, since unparked work is invisible to the clock.
+        try await clock.drive(untilDone: done, by: .milliseconds(25))
         #expect(try await call.value == 42)
     }
 }

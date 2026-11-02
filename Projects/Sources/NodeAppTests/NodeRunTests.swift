@@ -581,12 +581,11 @@ struct NodeRunGraceTests {
         try await clock.napRequested.wait()   // the wait is on the injected clock
         // The drive ends only when the run does — the clock crossing the
         // 90 s grace deadline is what ends the wait. Each hop fires the
-        // earliest armed deadline capped at 30 s: naps wake at their own
+        // earliest armed deadline capped at 100 ms: naps wake at their own
         // instants so the ramp is sampled pass by pass, and a bound armed
-        // over work still in flight is approached in hops that give the
-        // work real turns — starvation past that budget flips the verdict
-        // honestly rather than stalling the drive.
-        try await clock.test.drive(untilDone: done, by: .seconds(30))
+        // over work still in flight is approached in ~20–900 hops of
+        // budget — real turns the work needs before the bound can fire.
+        try await clock.test.drive(untilDone: done, by: .milliseconds(100))
         let report = await run.value
         #expect(report.outcome == .declined)
         // The verdict and its sentence are the ungraced path's, verbatim —
@@ -731,13 +730,14 @@ struct NodeRunGraceTests {
         // The stretch ahead is a chain of ≤500 ms poll naps under the
         // gather's 2 s and each question's 10 s bounds — the poll's two
         // thrown answers, then the final reading. The drive fires each
-        // armed deadline at its own instant, capped at 600 ms per hop, so
-        // a bound armed while its work is still in flight is approached in
+        // armed deadline at its own instant, capped at 100 ms per hop —
+        // ~20 turns for the gather's bound, ~100 for a question's — so a
+        // bound armed while its work is still in flight is approached in
         // hops that buy the work real turns before it can fire. A run
         // still starved when the clock crosses its 240 s deadline reports
         // `.didNotComeUp` — the `.started` assertion failing without a
         // stall is the starvation signature.
-        try await clock.test.drive(untilDone: done, by: .milliseconds(600))
+        try await clock.test.drive(untilDone: done, by: .milliseconds(100))
         let report = await run.value
         #expect(report.outcome == .started)
         #expect(
