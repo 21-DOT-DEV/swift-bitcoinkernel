@@ -612,23 +612,39 @@ watch orchestration until the next group.
   never the `.running` flag; the `TestClock` test asserts the question
   bound, the precedence application, and a fresh write every pass (~380 —
   over the tripwire because poll, feed, apply, and their driving test are
-  one mechanism; splitting mid-loop leaves a half-wired stage)
+  one mechanism; splitting mid-loop leaves a half-wired stage; landed
+  ~840 — poll, feed, apply, and report in one stage, over half the
+  overage tests, recorded per the T019/T021 precedent rather than re-cut)
   (FR-001, FR-005, FR-009, FR-018, FR-019; verifies FR-009, FR-018, FR-019) ·
   `Sources/NodeApp/NodeRun.swift`,
   `Sources/NodeAppTests/NodeRunTests.swift`
   · needs T008, T010, T011, T013, T014, T018, T019, T020
+- [ ] T022a Split `NodeRunTests.swift` — the shared run-test fakes
+  (`FakeRunSession`, `StagedReader`, `FakeDeviceReadings`,
+  `ObservedClock`, `SleepLog`, the fixture decoders, `watchNow`,
+  `before`, `watchClock`) lift to a new `Sources/NodeAppTests/Support/`
+  at `internal`, mirroring `KernelAppTests/Support/`; the four suites
+  become one file each — `NodeRunTests.swift` keeps the namesake
+  persistence suite, `NodeRunDrivabilityTests.swift`,
+  `NodeRunGraceTests.swift`, `NodeRunWatchTests.swift` — with no test
+  body touched: the proof is the same suites passing identically, the
+  review unit the move itself (~3,500 — past the ceiling because the
+  churn is relocation, not authorship: `git diff --find-renames` shows
+  the same suites re-homed, and a partial move leaves a half-split
+  file — the worst of both) · `Sources/NodeAppTests/` — new `Support/`
+  plus three suite files
 - [ ] T023 Weigh-in call site — the preflight-skipped paths
   (`reportExistingNode`, `waitForStartingNode`) run T016's `refusal(for:)`
   once before the watch commits; a refusal ends `conditionsChanged` naming
   the condition, its test asserting the weigh-in ran once and the watch
   never committed (FR-012; verifies FR-012) (~110) ·
   `Sources/NodeApp/NodeRun.swift`,
-  `Sources/NodeAppTests/NodeRunTests.swift` · needs T016, T018a, T022
+  `Sources/NodeAppTests/NodeRunWatchTests.swift` · needs T016, T018a, T022
 - [ ] T024 Drift call site — each pass runs T017's narrow gather; a found
   condition ends the run `conditionsChanged` mid-watch, its test injecting a
   metered answer mid-watch (FR-010, FR-011; verifies FR-010, FR-011)
   (~110) · `Sources/NodeApp/NodeRun.swift`,
-  `Sources/NodeAppTests/NodeRunTests.swift` · needs T017, T018a, T022
+  `Sources/NodeAppTests/NodeRunWatchTests.swift` · needs T017, T018a, T022
 - [ ] T025 `getpeerinfo` ride-along — on each qualifying flat pass (flag
   clear, gap closed, headers never advanced) one `getpeerinfo`, bounded like
   every question, feeds T012's confirmation count; an absent or timed-out
@@ -636,7 +652,7 @@ watch orchestration until the next group.
   answer never resets one; the test watches a qualifying flat pass ask once
   and a non-qualifying pass never ask (FR-006; verifies FR-006) (~160) ·
   `Sources/NodeApp/NodeRun.swift`,
-  `Sources/NodeAppTests/NodeRunTests.swift`
+  `Sources/NodeAppTests/NodeRunWatchTests.swift`
   · needs T012, T022 · provisional on T039
 - [ ] T026 `nodeStopped` ending — `isStoppedOrStopping` checked at the top of
   each pass, again before accepting each answer, and as `report()`'s
@@ -646,7 +662,7 @@ watch orchestration until the next group.
   `noProgress`; the test stops the node mid-watch and reads the measured
   report's ending (FR-008, FR-009; verifies FR-008, FR-009) (~180) ·
   `Sources/NodeApp/NodeRun.swift`,
-  `Sources/NodeAppTests/NodeRunTests.swift` · needs T022
+  `Sources/NodeAppTests/NodeRunWatchTests.swift` · needs T022
 - [ ] T027 `previous` snapshot captured at attach on `reportExistingNode` —
   before the weigh-in, not merely before the watch: the run-owned
   `last_run_*` baseline cannot be moved by the poll, but a concurrent run's
@@ -656,12 +672,15 @@ watch orchestration until the next group.
   overwrites `lastRun` between attach and weigh-in and reads the surviving
   baseline (FR-017; verifies FR-017) (~140) ·
   `Sources/NodeApp/NodeRun.swift`,
-  `Sources/NodeAppTests/NodeRunTests.swift` · needs T022
+  `Sources/NodeAppTests/NodeRunWatchTests.swift` · needs T022
 - [ ] T028 Suppress `measuredReport`'s closing `onProgress(1)` on budgeted
   runs only — the unbudgeted `answerIsStillWanted` guard stays
-  byte-identical; the test records the write sequence on both paths
+  byte-identical; the test records the write sequence on both paths,
+  asserting sortedness over the *full* emitted sequence (T022 review: the
+  watch suite's monotonicity check filters to headline-bearing writes,
+  which the offending terminal write does not carry)
   (FR-014; verifies FR-014) (~70) · `Sources/NodeApp/NodeRun.swift`,
-  `Sources/NodeAppTests/NodeRunTests.swift` · needs T022
+  `Sources/NodeAppTests/NodeRunWatchTests.swift` · needs T022
 - [ ] T029 `WithHardTimeout`'s pile-up comment is re-derived — the loop is
   sequential, so nothing overlaps unless abandoned; an abandoned call's
   residual is (channel give-up − question budget): ≈0 on the direct bridge,
@@ -678,7 +697,16 @@ unchanged; the assembled run's proof is the end-to-end group.
 - [ ] T030 Headline and detail writes on the underlying `Progress` — the
   detail line carries "Block X of Y", the staleness clause appended once flat
   past the leash's own duration; `finish()` gates text and count alike; one
-  composed sentence, not two competing for a line (FR-003; verifies FR-003)
+  composed sentence, not two competing for a line. Wiring the production
+  caller also lands this task's sizing obligation (T022 review): `scale`
+  and the tick budget are sized against `waitForFirstAnswer` (~240 s), but
+  a watched run can breathe for the whole `syncBudget` — and a flat pass's
+  same-fraction rewrite returns `changed == false`, so `tick()`'s
+  `scale / 2` ≈ 250 s of covered silence is the entire heartbeat on a
+  fifteen-minute watch. Either re-size `scale`/the tick budget against
+  `syncBudget`, or have the watch write monotone-but-fresh values inside
+  the band's headroom — and extend the coverage invariant past
+  `waitForFirstAnswer` (FR-003; verifies FR-003)
   (~170) · `Sources/NodeApp/ProgressMeter.swift`,
   `Sources/NodeAppTests/ProgressMeterTests.swift` · needs T020
 - [ ] T031 [P] Drop the `#if os(iOS)`/`@available` fences on `ProgressMeter`
@@ -765,7 +793,7 @@ proof is T039's.
   emits its pre-existing report fields and progress writes byte-identical
   (the two new fields read `notMeasured` and absent) — the SC-005
   assertion (verifies FR-005, FR-009, FR-013, FR-014, FR-016, FR-017,
-  SC-005) (~160) · `Sources/NodeAppTests/NodeRunTests.swift` ·
+  SC-005) (~160) · `Sources/NodeAppTests/NodeRunWatchTests.swift` ·
   needs T018a, T021–T029, T034
 - [ ] T037 `TestClock` ending coverage — a `nodeStopped` variant ends the
   watch when the node stops mid-poll; the warm-restart run — flag clear, no
@@ -773,7 +801,7 @@ proof is T039's.
   alone in both quiet-chain shapes: ≥2 confirming outbound peers end
   `caughtUp`, zero qualifying end `noProgress` (verifies FR-006, FR-008)
   (~140) ·
-  `Sources/NodeAppTests/NodeRunTests.swift` · needs T036
+  `Sources/NodeAppTests/NodeRunWatchTests.swift` · needs T036
 
 **Checkpoint:** the whole pipeline — grace, start, watch, every ending —
 runs green under a `TestClock` with the node left running.
