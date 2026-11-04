@@ -619,7 +619,7 @@ watch orchestration until the next group.
   `Sources/NodeApp/NodeRun.swift`,
   `Sources/NodeAppTests/NodeRunTests.swift`
   · needs T008, T010, T011, T013, T014, T018, T019, T020
-- [ ] T022a Split `NodeRunTests.swift` — the shared run-test fakes
+- [x] T022a Split `NodeRunTests.swift` — the shared run-test fakes
   (`FakeRunSession`, `StagedReader`, `FakeDeviceReadings`,
   `ObservedClock`, `SleepLog`, the fixture decoders, `watchNow`,
   `before`, `watchClock`) lift to a new `Sources/NodeAppTests/Support/`

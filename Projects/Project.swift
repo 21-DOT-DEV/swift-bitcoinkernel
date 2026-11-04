@@ -41,7 +41,6 @@ let project = Project(
             product: .app,
             bundleId: "dev.21.NodeApp",
             deploymentTargets: deploymentTargets,
-            sources: ["Sources/NodeApp/**", "Sources/Shared/**"],
             resources: [
                 "Resources/NodeApp/Assets.xcassets/**",
                 "Resources/NodeApp/Preview Content/**",
@@ -51,6 +50,10 @@ let project = Project(
                 // Xcode populates it from the code on each build.
                 "Resources/NodeApp/Localizable.xcstrings"
             ],
+            // Xcode-synchronized folders: files added or removed on disk join
+            // the target with no `tuist generate`. `resources:` stays globs —
+            // the xcconfigs and entitlements beside them must not be bundled.
+            buildableFolders: ["Sources/NodeApp", "Sources/Shared"],
             entitlements: "Resources/NodeApp/NodeApp.entitlements",
             dependencies: [
                 .package(product: "Bitcoin"),
@@ -75,13 +78,13 @@ let project = Project(
             product: .app,
             bundleId: "dev.21.KernelApp",
             deploymentTargets: deploymentTargets,
-            sources: ["Sources/KernelApp/**", "Sources/Shared/**"],
             resources: [
                 "Resources/KernelApp/Assets.xcassets/**",
                 "Resources/KernelApp/Preview Content/**",
                 "Resources/KernelApp/AppIcon.icon",
                 "Resources/KernelApp/PrivacyInfo.xcprivacy"
             ],
+            buildableFolders: ["Sources/KernelApp", "Sources/Shared"],
             entitlements: "Resources/KernelApp/KernelApp.entitlements",
             dependencies: [
                 .package(product: "BitcoinKernel"),
@@ -107,7 +110,7 @@ let project = Project(
             product: .unitTests,
             bundleId: "dev.21.NodeAppTests",
             deploymentTargets: deploymentTargets,
-            sources: ["Sources/NodeAppTests/**", "Sources/SharedTests/**"],
+            buildableFolders: ["Sources/NodeAppTests", "Sources/SharedTests"],
             dependencies: [.target(name: "NodeApp"), .package(product: "Clocks")],
             settings: .settings(
                 base: [
@@ -128,7 +131,7 @@ let project = Project(
             product: .unitTests,
             bundleId: "dev.21.KernelAppTests",
             deploymentTargets: deploymentTargets,
-            // The last two entries reach up into the Swift package's own test
+            // The `sources:` pair reaches up into the Swift package's own test
             // helpers rather than duplicating them. `.kernelSerialized` makes
             // engine-touching tests take turns across ALL suites in a bundle;
             // Apple's built-in `.serialized` only orders tests within one suite,
@@ -137,11 +140,10 @@ let project = Project(
             // Listed as explicit files, not a wildcard: that folder also holds a
             // `MockBlockSource.swift` that would collide with this bundle's own.
             sources: [
-                "Sources/KernelAppTests/**",
-                "Sources/SharedTests/**",
                 "../Tests/BitcoinKernelTests/Support/KernelSerialization.swift",
                 "../Tests/BitcoinKernelTests/Support/AsyncSemaphore.swift",
             ],
+            buildableFolders: ["Sources/KernelAppTests", "Sources/SharedTests"],
             dependencies: [.target(name: "KernelApp"), .package(product: "Clocks")],
             settings: .settings(
                 base: [
