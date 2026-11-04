@@ -254,12 +254,41 @@ enum NodeRun {
     /// already-running node (two questions) still fits its window.
     private static let questionBudget: Duration = .seconds(10)
 
+    /// The most a single question may take on a run carrying a watch
+    /// budget — thirty seconds, the watch's own patience and the daemon's
+    /// own `-rpcservertimeout` cutoff over HTTP. That figure matches the
+    /// direct bridge's own give-up rather than beating it, so the bound
+    /// and the channel race on the direct path — a coin flip between two
+    /// identical `nil`s, the abandoned call finishing in the background
+    /// either way. A budgeted run bounds
+    /// *every* question here, the first-answer wait included, because all
+    /// of them share the same contention: `getblockchaininfo` and
+    /// `getnetworkinfo` alike ride the daemon's main thread (`cs_main`),
+    /// which IBD can bury for the whole of the short action's window. A
+    /// run that can afford a fifteen-minute watch would otherwise write a
+    /// slow-but-alive ~11 s node off before the watch could begin — the
+    /// 10 s bound above is shaped for the short action's window, where
+    /// that answer is slow rather than dead.
+    private static let watchQuestionBudget: Duration = .seconds(30)
+
+    /// The watch's poll cadence — about five seconds between passes
+    /// (FR-001). The loop is sequential — a pass asks its question, then
+    /// naps — so a question that runs to its bound stretches that pass to
+    /// `questionBound + cadence`: it delays the next pass, never cancels
+    /// it, and the leashes measure wall time rather than pass counts, so
+    /// the stretch spends budget, not correctness. The nap carries the
+    /// run's shared tolerance whenever enough budget remains to absorb a
+    /// coalesced wake — a cadence the system may coalesce, not a deadline
+    /// bound like the waits' naps.
+    private static let watchPollInterval: Duration = .seconds(5)
+
     /// One report of where the run's progress display should sit.
     ///
     /// The bar's position today — `fraction` — plus the two lines of card
-    /// text the sync watch will report alongside it once it exists (T030
-    /// writes them to the display; nothing produces them yet, so they ride
-    /// `nil`). Text travels as an unresolved resource for the same reason
+    /// text the sync watch reports alongside it: `headline` and `detail`
+    /// are `nil` until the watch commits, then carried on every pass
+    /// (T030 writes them to the display; only the watch produces them).
+    /// Text travels as an unresolved resource for the same reason
     /// `NodeRunReport.dialogTemplate` does: the sentence is decided where
     /// the facts are and resolved where it is shown.
     struct ProgressUpdate: Sendable, Equatable {
@@ -305,7 +334,8 @@ enum NodeRun {
     ///     action may run for minutes. A wait that runs out is an expected
     ///     outcome, not an error. Only the waiting paths consult this: a node
     ///     that is already answering is read straight away, each question
-    ///     bounded by `questionBudget`.
+    ///     bounded by the run's question bound (`questionBudget`, or the
+    ///     wider `watchQuestionBudget` on a budgeted run).
     ///   - privateNetworkGrace: the most the run will spend waiting for the
     ///     private network to establish, when the run requires it — the
     ///     snapshot's privacy setting, or a live requirement the launch
@@ -316,16 +346,27 @@ enum NodeRun {
     ///     whatever ends the wait, the run re-decides on live facts — node
     ///     state, conditions, the step — and a second wait-for-the-network
     ///     verdict declines rather than buying another wait with the same
-    ///     money. A non-`nil` grace also marks the run as budgeted for
-    ///     progress purposes: every fraction `onProgress` receives is
-    ///     compressed into `NodeAutomation.startUpBand` (`0...0.1`) so the
-    ///     watch stage has room to climb — the coupling T030's real flag
-    ///     replaces. Even at `nil`, a stall the launch boundary measured
+    ///     money. A non-`nil` grace — or a non-`nil` `syncBudget` — also
+    ///     marks the run as budgeted for progress purposes: every
+    ///     fraction `onProgress` receives is compressed into
+    ///     `NodeAutomation.startUpBand` (`0...0.1`) so the watch stage has
+    ///     room to climb — the coupling T030's real flag replaces. Even
+    ///     at `nil`, a stall the launch boundary measured
     ///     still routes through the re-decision — one extra conditions
     ///     gather (at most ~2 s of the short action's window) so the report
     ///     can carry the operative refusal — a device condition that
     ///     turned refusing mid-flight — rather than the privacy sentence
     ///     it displaced.
+    ///   - syncBudget: the most the run will watch a committed sync before
+    ///     ending `stillSyncing` — the watch stage's hard bound — or `nil`
+    ///     for a run that reports once it has its answer, the short
+    ///     action's contract. Its presence decides three things: every
+    ///     question's bound widens to `watchQuestionBudget` (the patience
+    ///     a budgeted run can afford), the landing consults the watch's
+    ///     entry gate once, and the run joins `privateNetworkGrace` in
+    ///     marking the run budgeted *for progress purposes* — the union
+    ///     `progress` is keyed on, and the coupling T030's real flag
+    ///     replaces.
     ///   - clock: the time source every wait, question bound, and deadline in
     ///     the run is measured on. Generic over `Clock<Duration>` rather than
     ///     `any` so instants stay `Comparable` — the erased `InstantProtocol`
@@ -346,9 +387,10 @@ enum NodeRun {
     ///   - onProgress: called as the wait proceeds, each call carrying a
     ///     `ProgressUpdate` — the bar's fraction today, the card's text once
     ///     the watch stage produces it. Fractions arrive on one scale per
-    ///     run: raw `0...1` positions while the run carries no
-    ///     `privateNetworkGrace`, or compressed into the start-up band
-    ///     (`0...0.1`) when it does — see that parameter.
+    ///     run: raw `0...1` positions while the run carries neither
+    ///     `privateNetworkGrace` nor `syncBudget`, or compressed into the
+    ///     start-up band (`0...0.1`) when it carries either — see the
+    ///     grace parameter.
     ///     The iOS 27 action forwards this to its progress display; advancing it
     ///     is also what keeps that longer time window open. Never call it from
     ///     inside a `withHardTimeout` operation: an abandoned question outlives
@@ -358,6 +400,7 @@ enum NodeRun {
         session: any RunSession,
         waitForFirstAnswer: Duration,
         privateNetworkGrace: Duration? = nil,
+        syncBudget: Duration? = nil,
         clock: C,
         now: @escaping @Sendable () -> Date = { Date() },
         defaults: UserDefaults,
@@ -424,16 +467,25 @@ enum NodeRun {
         // marker (the grace, this flag) and the loop is bounded by
         // construction, not by reasoning about which step follows which.
         var networkStalled = false
+        // Two implications resolved once, here — the `InitParameterInteraction`
+        // rule: nothing downstream re-derives them. The budgeted union is
+        // what bands the run's writes (a grace or a budget marks it — the
+        // placeholder T030's real flag replaces); `syncBudget` alone is
+        // what widens the question bound and admits the watch — a grace
+        // without a budget waits for a network, not for a sync.
+        let budgeted = privateNetworkGrace != nil || syncBudget != nil
+        let questionBound = syncBudget == nil ? questionBudget : watchQuestionBudget
         // `startUpBand`'s documented single application point: a budgeted
-        // run — today marked by carrying a grace, T030's real flag when it
-        // lands — wraps the run's whole callback once, so every pre-watch
+        // run wraps the run's whole callback once, so every pre-watch
         // write — the grace's ramp, the fixed milestones, the first-answer
         // ramp — lands inside `0 ... startUpBandEnd` on one scale and no
-        // second wrap can double-band it. An ungraced run keeps the full
+        // second wrap can double-band it. An unbudgeted run keeps the full
         // bar: with no watch to leave room for, its writes keep their raw
-        // positions (the doc's "an unbudgeted run never calls it").
+        // positions (the doc's "an unbudgeted run never calls it"). The
+        // watch's own writes take `onProgress` unwrapped — band positions
+        // already, not stage fractions (FR-004).
         let progress: @MainActor (ProgressUpdate) -> Void =
-            privateNetworkGrace == nil
+            !budgeted
             ? onProgress
             : { update in
                 onProgress(ProgressUpdate(
@@ -473,7 +525,10 @@ enum NodeRun {
                 // alone (ADR 0005).
                 log.notice("run: a node is already running — reading and leaving it alone")
                 return await report(
-                    session: session, clock: clock, defaults: defaults, onProgress: progress)
+                    session: session, syncBudget: syncBudget,
+                    questionBound: questionBound, clock: clock, now: now,
+                    defaults: defaults, onProgress: progress,
+                    watchProgress: onProgress)
 
             case .waitForStartingNode:
                 // Already on its way up: nothing to start, and nothing to read until
@@ -481,8 +536,10 @@ enum NodeRun {
                 // it started itself.
                 log.notice("run: a node is already starting — waiting on it")
                 return await waitForStarting(
-                    session: session, within: waitForFirstAnswer, clock: clock,
-                    defaults: defaults, onProgress: progress)
+                    session: session, within: waitForFirstAnswer,
+                    syncBudget: syncBudget, questionBound: questionBound,
+                    clock: clock, now: now, defaults: defaults,
+                    onProgress: progress, watchProgress: onProgress)
 
             case .waitForPrivateNetwork:
                 // The step was decided before the device-condition read, which can
@@ -494,8 +551,10 @@ enum NodeRun {
                     do {
                         return try await start(
                             session: session, settings: settings, defaults: defaults,
-                            waitForFirstAnswer: waitForFirstAnswer, clock: clock,
-                            onProgress: progress)
+                            waitForFirstAnswer: waitForFirstAnswer,
+                            syncBudget: syncBudget, questionBound: questionBound,
+                            clock: clock, now: now,
+                            onProgress: progress, watchProgress: onProgress)
                     } catch let refusal {
                         // A not-ready refusal — the only thing `start` throws —
                         // routed, not retried: a real stall marks the boundary's
@@ -547,8 +606,10 @@ enum NodeRun {
                 do {
                     return try await start(
                         session: session, settings: settings, defaults: defaults,
-                        waitForFirstAnswer: waitForFirstAnswer, clock: clock,
-                        onProgress: progress)
+                        waitForFirstAnswer: waitForFirstAnswer,
+                        syncBudget: syncBudget, questionBound: questionBound,
+                        clock: clock, now: now,
+                        onProgress: progress, watchProgress: onProgress)
                 } catch let refusal {
                     // The launch boundary found the network gone after the
                     // step committed — a stall routed so every "not ready"
@@ -574,8 +635,12 @@ enum NodeRun {
         settings: DaemonConfig.Snapshot,
         defaults: UserDefaults,
         waitForFirstAnswer: Duration,
+        syncBudget: Duration?,
+        questionBound: Duration,
         clock: C,
-        onProgress: @MainActor (ProgressUpdate) -> Void
+        now: @escaping @Sendable () -> Date,
+        onProgress: @MainActor (ProgressUpdate) -> Void,
+        watchProgress: @MainActor (ProgressUpdate) -> Void
     ) async throws(NodeAutomation.StartRefusal) -> NodeRunReport {
         // Privacy fails closed at the launch boundary — the one place this file
         // re-reads a live setting beside the snapshot. If the person turned Tor
@@ -663,14 +728,17 @@ enum NodeRun {
         ) else {
             log.notice("run: node moved off stopped during the condition read — waiting on whoever started it")
             return await waitForStarting(
-                session: session, within: waitForFirstAnswer, clock: clock,
-                defaults: defaults, onProgress: onProgress)
+                session: session, within: waitForFirstAnswer,
+                syncBudget: syncBudget, questionBound: questionBound,
+                clock: clock, now: now, defaults: defaults,
+                onProgress: onProgress, watchProgress: watchProgress)
         }
         log.notice("run: node start requested")
 
         guard
             let reading = await awaitFirstAnswer(
-                session: session, within: waitForFirstAnswer, clock: clock,
+                session: session, within: waitForFirstAnswer,
+                questionBound: questionBound, clock: clock,
                 onProgress: onProgress)
         else {
             // The wait can also end before its deadline: the run was cancelled, the
@@ -688,8 +756,16 @@ enum NodeRun {
         }
 
         log.notice("run: node answered at block \(reading.height, privacy: .public)")
+        if let syncBudget {
+            return await watch(
+                entry: reading, outcome: .started, previous: previous,
+                session: session, budget: syncBudget,
+                questionBound: questionBound, clock: clock, now: now,
+                onProgress: onProgress, watchProgress: watchProgress)
+        }
         return await measuredReport(
             outcome: .started, previous: previous, reading: reading,
+            questionBound: questionBound,
             session: session, clock: clock, onProgress: onProgress)
     }
 
@@ -697,16 +773,25 @@ enum NodeRun {
     /// ran out of time, or by the app itself — and reports what it finds.
     ///
     /// The wait is the same one a just-started node gets: `budget` bounds it and
-    /// every question inside it is bounded by `questionBudget`. An answer is
+    /// every question inside it is bounded by `questionBound`. An answer is
     /// reported `.alreadyRunning` rather than `.started` — this run did not start
     /// anything — and a wait that runs out is `.didNotComeUp`: "still starting"
     /// is literally true whoever started it.
+    ///
+    /// On a budgeted run the landing is different too: the entry gate decides
+    /// whether the answer begins a watch rather than ending the run, and
+    /// `watchProgress` carries the watch's own writes — band positions, not
+    /// the stage fractions the wrapped `onProgress` maps.
     private static func waitForStarting<C: Clock<Duration>>(
         session: any RunSession,
         within budget: Duration,
+        syncBudget: Duration?,
+        questionBound: Duration,
         clock: C,
+        now: @escaping @Sendable () -> Date,
         defaults: UserDefaults,
-        onProgress: @MainActor (ProgressUpdate) -> Void
+        onProgress: @MainActor (ProgressUpdate) -> Void,
+        watchProgress: @MainActor (ProgressUpdate) -> Void
     ) async -> NodeRunReport {
         // Captured before the wait for the same reason `start` captures it: once
         // the node reaches `.running` its own sync poll overwrites the
@@ -714,7 +799,8 @@ enum NodeRun {
         let previous = lastRunBaseline(in: defaults)
         guard
             let reading = await awaitFirstAnswer(
-                session: session, within: budget, clock: clock,
+                session: session, within: budget,
+                questionBound: questionBound, clock: clock,
                 onProgress: onProgress)
         else {
             guard answerIsStillWanted(session: session) else {
@@ -725,8 +811,16 @@ enum NodeRun {
             return didNotComeUpReport()
         }
         log.notice("run: starting node answered at block \(reading.height, privacy: .public)")
+        if let syncBudget {
+            return await watch(
+                entry: reading, outcome: .alreadyRunning, previous: previous,
+                session: session, budget: syncBudget,
+                questionBound: questionBound, clock: clock, now: now,
+                onProgress: onProgress, watchProgress: watchProgress)
+        }
         return await measuredReport(
             outcome: .alreadyRunning, previous: previous, reading: reading,
+            questionBound: questionBound,
             session: session, clock: clock, onProgress: onProgress)
     }
 
@@ -773,11 +867,14 @@ enum NodeRun {
     /// looking. Asking directly also yields the height without a second round trip.
     ///
     /// Each question is bounded by `withHardTimeout` at the smaller of the time
-    /// remaining and `questionBudget`. The remaining-time half makes the deadline a
-    /// hard one — a question cannot be called back once asked, so without its own
-    /// bound the loop would sit inside it past the deadline and never notice. The
-    /// ceiling half keeps one slow question from consuming a long wait whole: the
-    /// iOS 27 action waits minutes, and a question parked for all of them reports
+    /// remaining and `questionBound` — `questionBudget` on the short action's
+    /// run, the wider `watchQuestionBudget` on a budgeted one, where a slow
+    /// answer is the usual mid-IBD case rather than a dead node. The
+    /// remaining-time half makes the deadline a hard one — a question cannot
+    /// be called back once asked, so without its own bound the loop would
+    /// sit inside it past the deadline and never notice. The ceiling half
+    /// keeps one slow question from consuming a long wait whole: the iOS 27
+    /// action waits minutes, and a question parked for all of them reports
     /// nothing in between.
     ///
     /// One deadline is computed up front rather than accumulating intervals, state is
@@ -786,6 +883,7 @@ enum NodeRun {
     private static func awaitFirstAnswer<C: Clock<Duration>>(
         session: any RunSession,
         within budget: Duration,
+        questionBound: Duration,
         clock: C,
         onProgress: @MainActor (ProgressUpdate) -> Void
     ) async -> NodeAutomation.LiveReading? {
@@ -800,7 +898,7 @@ enum NodeRun {
             let remaining = clock.now.duration(to: deadline)
             let info = await ask(
                 "getblockchaininfo", session: session,
-                within: min(remaining, questionBudget), clock: clock
+                within: min(remaining, questionBound), clock: clock
             ) { try await reader.blockchainInfo() }
             if let info {
                 // Re-read both facts now the answer is actually here, rather than
@@ -941,7 +1039,7 @@ enum NodeRun {
     /// Takes `onProgress` for the same reason the waiting loop does. This path used to
     /// report nothing at all, so an extended run spent the whole read showing an empty
     /// bar and then jumped to full — the exact shape the action was written to avoid.
-    /// Each question is bounded by `questionBudget` for the same reason the waiting
+    /// Each question is bounded by `questionBound` for the same reason the waiting
     /// loop's are: an unbounded one could be the only thing between the run and a
     /// thirty-second silence the system reads as a stall. The repeating nudge in the
     /// iOS 27 action is what guarantees the run keeps reporting; these milestones
@@ -949,15 +1047,19 @@ enum NodeRun {
     /// invention.
     private static func report<C: Clock<Duration>>(
         session: any RunSession,
+        syncBudget: Duration?,
+        questionBound: Duration,
         clock: C,
+        now: @escaping @Sendable () -> Date,
         defaults: UserDefaults,
-        onProgress: @MainActor (ProgressUpdate) -> Void
+        onProgress: @MainActor (ProgressUpdate) -> Void,
+        watchProgress: @MainActor (ProgressUpdate) -> Void
     ) async -> NodeRunReport {
         let reader = session.reader
         onProgress(ProgressUpdate(fraction: 0.1))
         let info = await ask(
             "getblockchaininfo", session: session,
-            within: questionBudget, clock: clock
+            within: questionBound, clock: clock
         ) { try await reader.blockchainInfo() }
         guard let info else {
             // It says it is running but will not answer — the anomaly most worth
@@ -972,10 +1074,230 @@ enum NodeRun {
         // discarded answer: the run got nothing it can stand behind.
         guard answerIsStillWanted(session: session) else { return noAnswerReport() }
         onProgress(ProgressUpdate(fraction: 0.6))
+        let previous = lastRunBaseline(in: defaults)
+        let reading = NodeAutomation.reading(from: info)
+        if let syncBudget {
+            return await watch(
+                entry: reading, outcome: .alreadyRunning, previous: previous,
+                session: session, budget: syncBudget,
+                questionBound: questionBound, clock: clock, now: now,
+                onProgress: onProgress, watchProgress: watchProgress)
+        }
         return await measuredReport(
-            outcome: .alreadyRunning, previous: lastRunBaseline(in: defaults),
-            reading: NodeAutomation.reading(from: info),
+            outcome: .alreadyRunning, previous: previous,
+            reading: reading, questionBound: questionBound,
             session: session, clock: clock, onProgress: onProgress)
+    }
+
+    // MARK: - Watching
+
+    /// The watch stage (FR-001, FR-005, FR-009, FR-018, FR-019): asks the
+    /// node what it sees roughly every five seconds, on one absolute
+    /// deadline, until something true ends the run — the node catches up,
+    /// a leash trips, the budget is spent, or the node is stopped.
+    ///
+    /// `entry` is the live reading the landing path is already holding —
+    /// the first answer on the waiting paths, the read itself on the
+    /// already-running one — so the gate is consulted exactly once, here,
+    /// on the reading that earned the consult. A decline reports the
+    /// ending the gate carried and no watch runs; `.enter` commits the
+    /// watch and nothing re-consults it — a mid-watch reading that would
+    /// have declined at entry is judged by the pass's own `caughtUp`
+    /// proof instead, ending `caughtUp` rather than `alreadyAtTip`.
+    ///
+    /// Every pass asks one question, sequential and bounded at
+    /// `min(questionBound, remaining)` so the sync budget is a hard bound
+    /// rather than soft by a whole question (the same shape
+    /// `awaitFirstAnswer` already uses for its deadline). The pass then
+    /// feeds `SyncWatchState` — an answer, a flat one, or `nil` — and
+    /// applies `watchEnding` to candidacies computed from the pass's own
+    /// facts: the stop flag, the pass's own catch-up proof, the state's
+    /// leashes, the deadline. Cancellation is not a candidacy: it ends
+    /// the run, never the watch, so it is checked at the top of the pass
+    /// and again where an in-flight answer would be trusted — the same
+    /// two-point rule the first-answer wait keeps, and deliberately
+    /// separate from the node-stop flag.
+    ///
+    /// Two candidacies are constants for now: `conditionsChanged: false`
+    /// and `peers: []` — T024's drift gather and T025's `getpeerinfo`
+    /// ride-along fill them in. `watchEnding`'s signature is where they
+    /// land, so a pass already reads like the finished shape.
+    ///
+    /// A fresh write lands on every pass: the run's liveness on the
+    /// extended action, where the system ends a run that goes quiet. The
+    /// write carries the watch band position of the distance closed —
+    /// honest even when flat, since the same fraction rewritten claims
+    /// the same position, not new progress — plus the card's detail line.
+    /// The writes go to `watchProgress`, the raw callback: the wrap the
+    /// caller hands `onProgress` maps stage fractions into the start-up
+    /// band, and these positions are already band positions.
+    ///
+    /// The watch never touches the node — asking is all it does — and the
+    /// report it ends on is the measured one, carrying the ending the
+    /// watch earned and the heights gained since entry, from the last
+    /// good reading: `nodeStopped` ends on it exactly like `caughtUp`.
+    private static func watch<C: Clock<Duration>>(
+        entry reading: NodeAutomation.LiveReading,
+        outcome: NodeAutomation.Outcome,
+        previous: NodeAutomation.TipBaseline?,
+        session: any RunSession,
+        budget: Duration,
+        questionBound: Duration,
+        clock: C,
+        now: @escaping @Sendable () -> Date,
+        onProgress: @MainActor (ProgressUpdate) -> Void,
+        watchProgress: @MainActor (ProgressUpdate) -> Void
+    ) async -> NodeRunReport {
+        let reader = session.reader
+        switch NodeAutomation.watchEntry(reading: reading, now: now()) {
+        case .decline(let result):
+            // The gate's answer is the run's — no watch ran, and the
+            // carried result (already at the tip, or a self-defined chain
+            // that cannot claim one) collapses to the honest non-watch
+            // ending.
+            return await measuredReport(
+                outcome: outcome, previous: previous, reading: reading,
+                syncEnding: .init(collapsed: result),
+                questionBound: questionBound,
+                session: session, clock: clock, onProgress: onProgress)
+        case .enter:
+            break
+        }
+        // T023's entry weigh-in lands here, between the gate's admission
+        // and the commit below — the preflight-skipped paths owe one
+        // conditions gather before the first pass.
+
+        var state = NodeAutomation.SyncWatchState(
+            at: clock.now, entry: reading,
+            lowPowerMode: session.device.lowPowerModeEnabled)
+        var lastReading = reading
+        let deadline = clock.now.advanced(by: budget)
+
+        // The commit: the headline flips from "checking" to "syncing" and
+        // the bar parks at the band floor — the fraction of distance
+        // closed is zero by construction at entry — exactly where the
+        // start-up writes left it.
+        watchProgress(ProgressUpdate(
+            fraction: NodeAutomation.watchBand(0),
+            headline: NodeAutomation.watchingTitle,
+            detail: NodeAutomation.watchDetail(
+                height: reading.height, headers: reading.headers,
+                silentFor: nil)))
+
+        while true {
+            if Task.isCancelled { return noAnswerReport() }
+            var nodeStopped = session.nodeState.isStoppedOrStopping
+
+            // One question per pass, sequential, capped by the time left.
+            // A stopped node is never asked: the flag is the cheaper read
+            // and the pass already holds its verdict.
+            let remaining = clock.now.duration(to: deadline)
+            var info: BlockchainInfo?
+            if !nodeStopped, remaining > .zero {
+                info = await ask(
+                    "getblockchaininfo", session: session,
+                    within: min(questionBound, remaining), clock: clock
+                ) { try await reader.blockchainInfo() }
+            }
+            if Task.isCancelled { return noAnswerReport() }
+            // The flag is re-read rather than trusted from the top of the
+            // pass: a question already in flight cannot be called back,
+            // so its answer can land after someone stopped the node — a
+            // real answer describing a world that no longer exists.
+            nodeStopped = session.nodeState.isStoppedOrStopping
+            let freshReading = nodeStopped
+                ? nil
+                : info.map { NodeAutomation.reading(from: $0) }
+            if let freshReading { lastReading = freshReading }
+
+            state.advance(instant: clock.now, reading: freshReading)
+
+            let ending = NodeAutomation.watchEnding(
+                nodeStopped: nodeStopped,
+                caughtUp: freshReading.map {
+                    NodeAutomation.caughtUp(
+                        reading: $0, headersAdvanced: state.headersAdvanced,
+                        // T025's ride-along: qualifying flat passes will
+                        // spend one `getpeerinfo` question; until then a
+                        // pass carries no evidence.
+                        peers: [], now: now())
+                } ?? false,
+                // T024's drift check lands here — no per-pass gather yet.
+                conditionsChanged: false,
+                noProgress: state.stall != nil,
+                budgetSpent: clock.now.duration(to: deadline) <= .zero)
+
+            // The liveness write — one per pass, ending or not. Fraction
+            // and detail both come from the last good reading: a flat or
+            // silent pass rewrites the same position honestly rather
+            // than posing as earned progress.
+            let silence = state.unproductive + state.flatWindow
+            watchProgress(ProgressUpdate(
+                fraction: NodeAutomation.watchBand(
+                    NodeAutomation.syncFraction(
+                        height: lastReading.height,
+                        baselineHeight: state.baseline.height,
+                        liveHeaders: lastReading.headers)),
+                headline: NodeAutomation.watchingTitle,
+                detail: NodeAutomation.watchDetail(
+                    height: lastReading.height,
+                    headers: lastReading.headers,
+                    // Past the shorter leash the silence is worth a
+                    // clause — the detail format renders minutes and
+                    // hours, so anything smaller would churn on "0 min".
+                    silentFor: silence >= state.unproductiveLeash
+                        ? silence : nil)))
+
+            guard let ending else {
+                // Still watching: nap to the next pass, capped at the
+                // budget so a sleep cannot outlive the deadline it is
+                // waiting toward. The nap carries the run's shared
+                // tolerance only while the budget can still absorb it —
+                // tolerance is leeway spent *past* the requested wake,
+                // so once the time left could no longer contain a
+                // coalesced wake inside the deadline, the sleep asks for
+                // none.
+                let timeLeft = clock.now.duration(to: deadline)
+                let nap = min(watchPollInterval, timeLeft)
+                if nap > .zero {
+                    do {
+                        try await clock.sleep(
+                            for: nap,
+                            tolerance: timeLeft > watchPollInterval
+                                + sleepTolerance
+                                ? sleepTolerance : nil)
+                    } catch { return noAnswerReport() }
+                }
+                continue
+            }
+
+            let syncEnding: NodeAutomation.SyncEnding
+            switch ending {
+            case .nodeStopped: syncEnding = .nodeStopped
+            case .caughtUp: syncEnding = .caughtUp
+            case .conditionsChanged:
+                // Unreachable while the drift candidacy above is `false`
+                // — T024 will feed it and name the refusal it found.
+                syncEnding = .conditionsChanged(nil)
+            case .noProgress:
+                syncEnding = .noProgress(silentFor: silence)
+            case .stillSyncing: syncEnding = .stillSyncing
+            case .notMeasured:
+                // `watchEnding` can never emit it — a committed watch
+                // already holds an answer. The case maps only because the
+                // switch must be exhaustive.
+                syncEnding = .notMeasured
+            }
+            log.notice(
+                "run: watch ended — \(String(describing: syncEnding), privacy: .public)")
+            return await measuredReport(
+                outcome: outcome, previous: previous, reading: lastReading,
+                syncEnding: syncEnding,
+                blocksGainedThisRun: NodeAutomation.blocksSince(
+                    previous: state.baseline, to: lastReading),
+                questionBound: questionBound,
+                session: session, clock: clock, onProgress: onProgress)
+        }
     }
 
     /// The report for a run holding a real reading: asks the last question
@@ -984,8 +1306,9 @@ enum NodeRun {
     ///
     /// `previous` is captured by the caller before the wait it is about to
     /// do: the starting paths read it before `awaitFirstAnswer`, and
-    /// `report` reads it just before this call — after the node question,
-    /// before the peer-count one. It reads the run-owned `last_run_*`
+    /// `report` reads it once the node's answer is in — before the watch
+    /// consumes it, so a watched run's delta still measures from before
+    /// the run, not from inside it. It reads the run-owned `last_run_*`
     /// baseline — written only by a result that is actually returned — so the
     /// node's own sync poll (which writes the observational `last_known_*`
     /// every 30 seconds) can never collapse the delta toward zero just because
@@ -995,6 +1318,14 @@ enum NodeRun {
     /// behavior, self-correcting once a result lands. The delta itself is
     /// computed once and feeds both the named field and the sentence, so the
     /// two can never report different numbers.
+    ///
+    /// `syncEnding` and `blocksGainedThisRun` are the report's own data —
+    /// `NodeRunReport.init` requires both — passed in rather than derived
+    /// because the run that produced them already knows them: an
+    /// unmeasured run has the defaults, a watched one the ending its
+    /// watch earned and the gain its state measured. Behavior keys on the
+    /// ending's *class* — the still-wanted rule below applies only while
+    /// no measured ending exists — never on which ending arrived.
     ///
     /// Nothing is persisted here: the reading becomes a recorded tip only when
     /// the run's result is actually returned — a run cancelled or stopped
@@ -1007,32 +1338,46 @@ enum NodeRun {
         outcome: NodeAutomation.Outcome,
         previous: NodeAutomation.TipBaseline?,
         reading: NodeAutomation.LiveReading,
+        syncEnding: NodeAutomation.SyncEnding = .notMeasured,
+        blocksGainedThisRun: Int? = nil,
+        questionBound: Duration,
         session: any RunSession,
         clock: C,
         onProgress: @MainActor (ProgressUpdate) -> Void
     ) async -> NodeRunReport {
         let blocksSinceLastCheck = NodeAutomation.blocksSince(previous: previous, to: reading)
-        let connections = await connectionCount(session: session, clock: clock)
-        // The peer-count question above is another bounded wait — the same window
-        // every path in this file re-checks after. A node stopped in those last
-        // seconds, or a run cancelled there, must not be reported as running.
-        guard answerIsStillWanted(session: session) else { return noAnswerReport() }
+        // The peer question honors the watch's own rule: a node the watch
+        // proved stopped is never asked — its answer could only be nil,
+        // bought with up to `questionBound` spent against a dead bridge.
+        // Every other ending still asks: its node was alive on the last
+        // read, so the count may still be real.
+        let connections = syncEnding == .nodeStopped
+            ? nil
+            : await connectionCount(
+                session: session, within: questionBound, clock: clock)
+        // The peer-count question above is another bounded wait — the same
+        // window every path in this file re-checks after. Cancellation
+        // blanks either kind of report — a cancelled run reports nothing.
+        // A *stopped* node blanks only an unmeasured one: `nodeStopped` is
+        // itself an ending a watch can earn and the measured report is what
+        // carries it (FR-008), and the other watched endings are verdicts
+        // the watch already holds, not readings a stop erases.
+        let answerStillCounts = syncEnding.watched
+            ? !Task.isCancelled
+            : answerIsStillWanted(session: session)
+        guard answerStillCounts else { return noAnswerReport() }
         onProgress(ProgressUpdate(fraction: 1))
         return NodeRunReport(
             outcome: NodeRunOutcome(outcome),
-            // Until the watch exists, a measured run's sync answer is
-            // notMeasured and nothing is counted — on budgeted runs the gate
-            // and the watch bring their own (T011, T022); the short action
-            // keeps this answer permanently.
-            syncEnding: .notMeasured,
+            syncEnding: syncEnding,
             chain: reading.chain,
             blockHeight: reading.height,
             blocksBehind: reading.blocksBehind,
             blocksSinceLastCheck: blocksSinceLastCheck,
-            blocksGainedThisRun: nil,
+            blocksGainedThisRun: blocksGainedThisRun,
             connections: connections,
             dialogTemplate: NodeAutomation.summary(
-                outcome: outcome, syncEnding: .notMeasured,
+                outcome: outcome, syncEnding: syncEnding,
                 chain: reading.chain, height: reading.height,
                 blocksBehind: reading.blocksBehind, blocksSinceLastCheck: blocksSinceLastCheck,
                 declinedReason: nil))
@@ -1082,12 +1427,12 @@ enum NodeRun {
     /// zero: a run that gained nothing because it never found a peer would otherwise
     /// look identical to one that had peers and still gained nothing.
     private static func connectionCount<C: Clock<Duration>>(
-        session: any RunSession, clock: C
+        session: any RunSession, within budget: Duration, clock: C
     ) async -> Int? {
         let reader = session.reader
         let info = await ask(
             "getnetworkinfo", session: session,
-            within: questionBudget, clock: clock
+            within: budget, clock: clock
         ) { try await reader.networkInfo() }
         guard let info else { return nil }
         return info.connections
