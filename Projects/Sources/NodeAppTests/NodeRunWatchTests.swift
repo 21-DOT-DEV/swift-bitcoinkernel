@@ -405,6 +405,277 @@ struct NodeRunWatchTests {
         #expect(calls.withLock { $0 } == 1)
         #expect(durations.withLock { $0 }.allSatisfy { $0 <= .seconds(10) })
     }
+
+    /// Both paths that skipped preflight — reading a node already
+    /// running and waiting on one already starting — owe the entry
+    /// weigh-in once before the watch commits: a refusal ends
+    /// `watchRefused` naming the condition, the gather ran exactly once,
+    /// and the watch never began (FR-012).
+    @Test(
+        "a weigh-in refusal ends watchRefused before the watch commits",
+        .timeLimit(.minutes(1)),
+        arguments: [NodeState.running, .starting])
+    func weighInRefusalEndsWatchRefused(nodeState: NodeState) async throws {
+        let clock = watchClock()
+        let store = makeVolatileDefaults(distinguisher: nodeState.rawValue)
+        let reportAsked = Gate()
+        let device = FakeDeviceReadings(firstNetworkReport: {
+            reportAsked.open()
+            return NetworkCost(isMetered: true, isDataRestricted: false)
+        })
+        let calls = Mutex(0)
+        var emitted: [NodeRun.ProgressUpdate] = []
+        let session = FakeRunSession(
+            nodeState: nodeState,
+            reader: StagedReader(
+                blockchain: {
+                    calls.withLock { $0 += 1 }
+                    return try decodeWatchInfo()
+                },
+                network: { try decodeNetworkInfo() }),
+            device: device)
+        let done = Gate()
+        let run = Task { @MainActor in
+            defer { done.open() }
+            return await NodeRun.perform(
+                session: session, waitForFirstAnswer: .seconds(240),
+                syncBudget: .seconds(600),
+                clock: clock.clock, now: { watchNow }, defaults: store) {
+                emitted.append($0)
+            }
+        }
+        try await clock.questionArmed.wait()
+        // Order the drive after the gather: the report answers at virtual
+        // t=0, so it provably lands before a hop can reach the 2 s bound
+        // and drop it to `.unknown` — which is not metered, and would
+        // quietly pass the weigh-in.
+        try await reportAsked.wait()
+        try await clock.test.drive(untilDone: done, by: .seconds(5))
+        let report = await run.value
+
+        #expect(report.syncEnding == .watchRefused(.meteredNetwork))
+        #expect(report.syncResult == .conditionsChanged)
+        #expect(report.outcome == .alreadyRunning)
+        // Nobody watched — the run's gain field stays absent (FR-016).
+        #expect(report.blocksGainedThisRun == nil)
+        // The weigh-in ran exactly once — `networkFirst` has no other
+        // caller on the preflight-skipped paths — and its narrow gather
+        // never spent the filesystem reads `readConditions` would.
+        let deviceCalls = device.calls.withLock { $0 }
+        #expect(deviceCalls.filter { $0 == "networkFirst" }.count == 1)
+        #expect(!deviceCalls.contains("protectedDataAvailable"))
+        #expect(!deviceCalls.contains("prepareChainFolder"))
+        // The watch never committed: the entry read is the only
+        // `getblockchaininfo`, and no write carried the syncing headline.
+        #expect(calls.withLock { $0 } == 1)
+        #expect(emitted.allSatisfy { $0.headline == nil })
+    }
+
+    /// The start path already weighed conditions at preflight, so the
+    /// weigh-in never runs there — a link turning metered between that
+    /// weigh and the first answer is nobody's to re-read at commit, and
+    /// the flipped report is a tripwire, not a stimulus: an unconditional
+    /// weigh-in would refuse on it. FR-011's "already on at commit is
+    /// accepted" is only reachable because this path skips the weigh-in.
+    @Test(
+        "the start path skips the weigh-in — a condition turning mid-start still commits",
+        .timeLimit(.minutes(1)))
+    func startPathSkipsWeighIn() async throws {
+        let clock = watchClock()
+        let store = makeVolatileDefaults()
+        let networkReportCalls = Mutex(0)
+        let device = FakeDeviceReadings(firstNetworkReport: {
+            // Cheap for the preflight gather, metered for whatever asks
+            // next — the weigh-in would refuse on it, so its not running
+            // is what this test proves.
+            NetworkCost(
+                isMetered: networkReportCalls.withLock { n in
+                    n += 1
+                    return n > 1
+                },
+                isDataRestricted: false)
+        })
+        var emitted: [NodeRun.ProgressUpdate] = []
+        let session = FakeRunSession(
+            nodeState: .stopped,
+            reader: StagedReader(
+                blockchain: { try decodeWatchInfo() },
+                network: { try decodeNetworkInfo() }),
+            device: device)
+        session.startNodeResult = true
+        let done = Gate()
+        let run = Task { @MainActor in
+            defer { done.open() }
+            return await NodeRun.perform(
+                session: session, waitForFirstAnswer: .seconds(240),
+                syncBudget: .seconds(60),
+                clock: clock.clock, now: { watchNow }, defaults: store) {
+                emitted.append($0)
+            }
+        }
+        try await clock.questionArmed.wait()
+        try await clock.test.drive(untilDone: done, by: .seconds(5))
+        let report = await run.value
+
+        // The watch committed and spent its budget — the flipped report
+        // was never re-read, so no refusal could fire.
+        #expect(report.syncEnding == .stillSyncing)
+        // `networkFirst` answered exactly once — the preflight gather. A
+        // second call would be the weigh-in this path skips.
+        let deviceCalls = device.calls.withLock { $0 }
+        #expect(deviceCalls.filter { $0 == "networkFirst" }.count == 1)
+        // The commit write landed: a pass carried the syncing headline.
+        #expect(emitted.contains { $0.headline != nil })
+    }
+
+    /// The fallback owes no second weigh either: `startNode` refusing
+    /// means the node moved off `.stopped` on its own — someone else
+    /// started it — and the `.startNode` step's `readConditions` already
+    /// ran moments earlier, so the wait lands on the watch with the same
+    /// `false` the direct start carries.
+    @Test(
+        "the start-fallback path also skips the weigh-in — preflight already ran",
+        .timeLimit(.minutes(1)))
+    func startFallbackSkipsWeighIn() async throws {
+        let clock = watchClock()
+        let store = makeVolatileDefaults()
+        let networkReportCalls = Mutex(0)
+        let device = FakeDeviceReadings(firstNetworkReport: {
+            // Cheap for the preflight gather, metered for whatever asks
+            // next — a weigh-in on this path would refuse on it.
+            NetworkCost(
+                isMetered: networkReportCalls.withLock { n in
+                    n += 1
+                    return n > 1
+                },
+                isDataRestricted: false)
+        })
+        var emitted: [NodeRun.ProgressUpdate] = []
+        let session = FakeRunSession(
+            nodeState: .stopped,
+            reader: StagedReader(
+                blockchain: { try decodeWatchInfo() },
+                network: { try decodeNetworkInfo() }),
+            device: device)
+        // `startNode` declines with the node already `.starting` — the
+        // "moved off stopped" case the fallback exists for.
+        session.startNodeDeclinedState = .starting
+        let done = Gate()
+        let run = Task { @MainActor in
+            defer { done.open() }
+            return await NodeRun.perform(
+                session: session, waitForFirstAnswer: .seconds(240),
+                syncBudget: .seconds(60),
+                clock: clock.clock, now: { watchNow }, defaults: store) {
+                emitted.append($0)
+            }
+        }
+        try await clock.questionArmed.wait()
+        try await clock.test.drive(untilDone: done, by: .seconds(5))
+        let report = await run.value
+
+        #expect(report.syncEnding == .stillSyncing)
+        // One `networkFirst` — the step's own `readConditions`. A second
+        // would be a weigh-in nobody owes.
+        let deviceCalls = device.calls.withLock { $0 }
+        #expect(deviceCalls.filter { $0 == "networkFirst" }.count == 1)
+        #expect(emitted.contains { $0.headline != nil })
+    }
+
+    /// A stop landing inside the weigh-in's network wait outranks the
+    /// refusal the gather was about to return — the deliberate action
+    /// beats the conditions verdict (FR-019) — so the run falls through
+    /// to the first pass and ends `nodeStopped`, never `watchRefused`.
+    @Test(
+        "a stop inside the weigh-in's gather ends nodeStopped, not watchRefused",
+        .timeLimit(.minutes(1)))
+    func stopDuringWeighInEndsNodeStopped() async throws {
+        let clock = watchClock()
+        let store = makeVolatileDefaults()
+        let gatherParked = Gate()
+        let releaseReport = Gate()
+        let device = FakeDeviceReadings(firstNetworkReport: {
+            gatherParked.open()
+            await releaseReport.waitIgnoringCancellation()
+            return NetworkCost(isMetered: true, isDataRestricted: false)
+        })
+        var emitted: [NodeRun.ProgressUpdate] = []
+        let session = FakeRunSession(
+            nodeState: .running,
+            reader: StagedReader(
+                blockchain: { try decodeWatchInfo() },
+                network: { try decodeNetworkInfo() }),
+            device: device)
+        let done = Gate()
+        let run = Task { @MainActor in
+            defer { done.open() }
+            return await NodeRun.perform(
+                session: session, waitForFirstAnswer: .seconds(240),
+                syncBudget: .seconds(600),
+                clock: clock.clock, now: { watchNow }, defaults: store) {
+                emitted.append($0)
+            }
+        }
+        try await clock.questionArmed.wait()
+        // The gather is parked inside its network wait; the stop lands
+        // while the report is in flight.
+        try await gatherParked.wait()
+        session.nodeState = .stopping
+        releaseReport.open()
+        try await clock.test.drive(untilDone: done, by: .seconds(5))
+        let report = await run.value
+
+        #expect(report.syncEnding == .nodeStopped)
+        #expect(report.outcome == .alreadyRunning)
+        // The refusal was dropped, so the fall-through committed the
+        // watch — a `watchingTitle` write landed before the stop's pass.
+        // The flash is T022's per-pass liveness write, not the weigh-in's
+        // call: every pass writes the watch headline, ending or not.
+        #expect(emitted.contains { $0.headline != nil })
+    }
+
+    /// A cancellation inside the weigh-in's network wait discards the
+    /// gather with it — the verdict it parked is moot, and the run
+    /// reports `noAnswer` rather than either watch ending.
+    @Test(
+        "a cancel inside the weigh-in's gather reports noAnswer",
+        .timeLimit(.minutes(1)))
+    func cancelDuringWeighInReportsNoAnswer() async throws {
+        let clock = watchClock()
+        let store = makeVolatileDefaults()
+        let gatherParked = Gate()
+        let releaseReport = Gate()
+        let device = FakeDeviceReadings(firstNetworkReport: {
+            gatherParked.open()
+            await releaseReport.waitIgnoringCancellation()
+            return NetworkCost(isMetered: true, isDataRestricted: false)
+        })
+        let session = FakeRunSession(
+            nodeState: .running,
+            reader: StagedReader(
+                blockchain: { try decodeWatchInfo() },
+                network: { try decodeNetworkInfo() }),
+            device: device)
+        let done = Gate()
+        let run = Task { @MainActor in
+            defer { done.open() }
+            return await NodeRun.perform(
+                session: session, waitForFirstAnswer: .seconds(240),
+                syncBudget: .seconds(600),
+                clock: clock.clock, now: { watchNow }, defaults: store)
+        }
+        try await clock.questionArmed.wait()
+        // The run ends while the gather's report is parked; the verdict
+        // it finally returns is nobody's business.
+        try await gatherParked.wait()
+        run.cancel()
+        releaseReport.open()
+        try await clock.test.drive(untilDone: done, by: .seconds(5))
+        let report = await run.value
+
+        #expect(report.outcome == .noAnswer)
+        #expect(report.syncEnding == .notMeasured)
+    }
 }
 
 #endif

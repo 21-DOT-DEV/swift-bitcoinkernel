@@ -533,11 +533,13 @@ enum NodeRun {
             case .waitForStartingNode:
                 // Already on its way up: nothing to start, and nothing to read until
                 // its block index loads — so the run waits on it exactly like a node
-                // it started itself.
+                // it started itself. The step skipped preflight, so the weigh-in is
+                // owed at the watch (FR-012).
                 log.notice("run: a node is already starting — waiting on it")
                 return await waitForStarting(
                     session: session, within: waitForFirstAnswer,
-                    syncBudget: syncBudget, questionBound: questionBound,
+                    syncBudget: syncBudget, weighInOnEntry: true,
+                    questionBound: questionBound,
                     clock: clock, now: now, defaults: defaults,
                     onProgress: progress, watchProgress: onProgress)
 
@@ -727,9 +729,12 @@ enum NodeRun {
             torSocksPort: privacyEnabled ? session.torSocksPort : nil
         ) else {
             log.notice("run: node moved off stopped during the condition read — waiting on whoever started it")
+            // The `.startNode` step's own condition read already ran —
+            // nothing is owed again at the watch (FR-012).
             return await waitForStarting(
                 session: session, within: waitForFirstAnswer,
-                syncBudget: syncBudget, questionBound: questionBound,
+                syncBudget: syncBudget, weighInOnEntry: false,
+                questionBound: questionBound,
                 clock: clock, now: now, defaults: defaults,
                 onProgress: onProgress, watchProgress: watchProgress)
         }
@@ -757,8 +762,11 @@ enum NodeRun {
 
         log.notice("run: node answered at block \(reading.height, privacy: .public)")
         if let syncBudget {
+            // The `.startNode` step weighed conditions at preflight —
+            // nothing is owed again at the watch (FR-012).
             return await watch(
                 entry: reading, outcome: .started, previous: previous,
+                weighInOnEntry: false,
                 session: session, budget: syncBudget,
                 questionBound: questionBound, clock: clock, now: now,
                 onProgress: onProgress, watchProgress: watchProgress)
@@ -781,11 +789,15 @@ enum NodeRun {
     /// On a budgeted run the landing is different too: the entry gate decides
     /// whether the answer begins a watch rather than ending the run, and
     /// `watchProgress` carries the watch's own writes — band positions, not
-    /// the stage fractions the wrapped `onProgress` maps.
+    /// the stage fractions the wrapped `onProgress` maps. `weighInOnEntry`
+    /// says whether the path that got here owes the entry weigh-in before
+    /// the watch commits: the `.waitForStartingNode` step skipped preflight,
+    /// while `start`'s fallback already weighed it.
     private static func waitForStarting<C: Clock<Duration>>(
         session: any RunSession,
         within budget: Duration,
         syncBudget: Duration?,
+        weighInOnEntry: Bool,
         questionBound: Duration,
         clock: C,
         now: @escaping @Sendable () -> Date,
@@ -814,6 +826,7 @@ enum NodeRun {
         if let syncBudget {
             return await watch(
                 entry: reading, outcome: .alreadyRunning, previous: previous,
+                weighInOnEntry: weighInOnEntry,
                 session: session, budget: syncBudget,
                 questionBound: questionBound, clock: clock, now: now,
                 onProgress: onProgress, watchProgress: watchProgress)
@@ -1077,8 +1090,11 @@ enum NodeRun {
         let previous = lastRunBaseline(in: defaults)
         let reading = NodeAutomation.reading(from: info)
         if let syncBudget {
+            // Reached only from `.reportExistingNode`, which skipped
+            // preflight — the weigh-in is owed (FR-012).
             return await watch(
                 entry: reading, outcome: .alreadyRunning, previous: previous,
+                weighInOnEntry: true,
                 session: session, budget: syncBudget,
                 questionBound: questionBound, clock: clock, now: now,
                 onProgress: onProgress, watchProgress: watchProgress)
@@ -1100,10 +1116,26 @@ enum NodeRun {
     /// the first answer on the waiting paths, the read itself on the
     /// already-running one — so the gate is consulted exactly once, here,
     /// on the reading that earned the consult. A decline reports the
-    /// ending the gate carried and no watch runs; `.enter` commits the
+    /// ending the gate carried and no watch runs; `.enter` admits the
     /// watch and nothing re-consults it — a mid-watch reading that would
     /// have declined at entry is judged by the pass's own `caughtUp`
     /// proof instead, ending `caughtUp` rather than `alreadyAtTip`.
+    ///
+    /// Between the gate's admission and the commit sits the weigh-in
+    /// `weighInOnEntry` calls for (FR-012): the paths that skipped
+    /// preflight — the already-running read and the wait on an
+    /// already-starting node — owe T016's conditions check once before
+    /// committing, where the start path already weighed it. A refusal
+    /// ends `watchRefused` naming the condition — the node is already
+    /// running, so the story is a refused consent, not a failed start —
+    /// and no watch write lands. A node already stopped or stopping
+    /// owes nothing and skips the gather; one that stops inside the
+    /// network wait outranks the refusal that was about to be honored —
+    /// the deliberate action beats the conditions verdict (FR-019), and
+    /// the first pass ends it `nodeStopped`. The gather is charged to
+    /// the run, not the budget: the deadline and the leash clock below
+    /// both start past it, so at most ~2 s of entry work falls outside
+    /// `syncBudget`.
     ///
     /// Every pass asks one question, sequential and bounded at
     /// `min(questionBound, remaining)` so the sync budget is a hard bound
@@ -1140,6 +1172,7 @@ enum NodeRun {
         entry reading: NodeAutomation.LiveReading,
         outcome: NodeAutomation.Outcome,
         previous: NodeAutomation.TipBaseline?,
+        weighInOnEntry: Bool,
         session: any RunSession,
         budget: Duration,
         questionBound: Duration,
@@ -1163,9 +1196,25 @@ enum NodeRun {
         case .enter:
             break
         }
-        // T023's entry weigh-in lands here, between the gate's admission
-        // and the commit below — the preflight-skipped paths owe one
-        // conditions gather before the first pass.
+        // The weigh-in, when this path owes it: a dead node is never
+        // gathered for — its stop outranks any verdict — and the flag is
+        // re-read after the network wait because a stop landing inside
+        // it outranks the refusal too; in both cases the first pass
+        // below ends the run `nodeStopped` on the measured report. The
+        // cancellation check is the same two-point rule the pass keeps.
+        if weighInOnEntry, !session.nodeState.isStoppedOrStopping {
+            let refusal = await weighIn(device: session.device, clock: clock)
+            guard !Task.isCancelled else { return noAnswerReport() }
+            if let refusal, !session.nodeState.isStoppedOrStopping {
+                log.notice(
+                    "run: entry weigh-in refused — \(String(describing: refusal), privacy: .public)")
+                return await measuredReport(
+                    outcome: outcome, previous: previous, reading: reading,
+                    syncEnding: .watchRefused(refusal),
+                    questionBound: questionBound,
+                    session: session, clock: clock, onProgress: onProgress)
+            }
+        }
 
         var state = NodeAutomation.SyncWatchState(
             at: clock.now, entry: reading,
@@ -1574,6 +1623,26 @@ enum NodeRun {
 
     // MARK: - Device conditions
 
+    /// The one wait in either conditions gather — the live network-cost
+    /// report, bounded at two seconds, shared by `readConditions` and the
+    /// entry weigh-in's `weighIn`. `first()`, not the watcher check
+    /// `current` performs: a cold background launch means the watcher was
+    /// just started, so `current` would read the default `.unknown`
+    /// before the monitor's first fetch could land, and `unknown` passes
+    /// the metered test — failing open exactly where consent matters
+    /// most. Two seconds is long enough for a cold launch's report to
+    /// arrive on the watcher and short enough that one that never comes
+    /// falls back to the same not-known answer `current` would have
+    /// given.
+    private static func firstNetworkCost<C: Clock<Duration>>(
+        device: any DeviceReadings,
+        clock: C
+    ) async -> NetworkCost {
+        (try? await withHardTimeout(.seconds(2), clock: clock) {
+            await device.networkFirst()
+        }) ?? .unknown
+    }
+
     /// Gathers the seven conditions `NodePreflight` weighs — the full set the
     /// start paths consult — out of the raw readings `device` exposes. The
     /// combination is the part worth testing, so it lives here rather than in
@@ -1595,9 +1664,7 @@ enum NodeRun {
         device: any DeviceReadings,
         clock: C
     ) async -> NodePreflight.DeviceConditions {
-        let network = (try? await withHardTimeout(.seconds(2), clock: clock) {
-            await device.networkFirst()
-        }) ?? .unknown
+        let network = await firstNetworkCost(device: device, clock: clock)
         let filesReadable = device.protectedDataAvailable
         // The folder prepare is a write, attempted only when files can be
         // read at all: before the first unlock after a restart it is doomed
@@ -1605,8 +1672,11 @@ enum NodeRun {
         // refusal `filesNotReadable` already reports on its own. It also runs
         // before the disk read because free space is measured *on this
         // folder's volume*: until it exists the reading comes back unknown,
-        // which the space check deliberately treats as "do not refuse".
-        let chainFolderExists = filesReadable && device.prepareChainFolder()
+        // which the space check deliberately treats as "do not refuse". A
+        // cancelled run skips the write — its conditions are discarded
+        // either way.
+        let chainFolderExists =
+            filesReadable && !Task.isCancelled && device.prepareChainFolder()
         return NodePreflight.DeviceConditions(
             filesReadable: filesReadable,
             chainFolderExists: chainFolderExists,
@@ -1616,6 +1686,29 @@ enum NodeRun {
             thermalState: device.thermalState,
             freeDiskBytes: device.freeDiskBytes()
         )
+    }
+
+    /// The gather T016's `entryWeighIn` weighs — the conditions a
+    /// preflight-skipped path owes once before the watch commits
+    /// (FR-012). Deliberately narrower than `readConditions`: a node
+    /// answering RPCs has already proven its files readable and its
+    /// chain folder present, so neither `protectedDataAvailable` nor
+    /// `prepareChainFolder()` is consulted — no filesystem write belongs
+    /// to a watch that never makes one.
+    private static func weighIn<C: Clock<Duration>>(
+        device: any DeviceReadings,
+        clock: C
+    ) async -> NodePreflight.Refusal? {
+        let network = await firstNetworkCost(device: device, clock: clock)
+        // A cancelled run discards whatever the verdict would have been —
+        // skip the reads that remain rather than gather for nothing.
+        guard !Task.isCancelled else { return nil }
+        return NodeAutomation.entryWeighIn(
+            lowPowerModeEnabled: device.lowPowerModeEnabled,
+            networkIsMetered: network.isMetered,
+            networkIsDataRestricted: network.isDataRestricted,
+            thermalState: device.thermalState,
+            freeDiskBytes: device.freeDiskBytes())
     }
 }
 
