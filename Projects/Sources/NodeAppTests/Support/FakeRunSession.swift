@@ -41,6 +41,11 @@ final class FakeRunSession: RunSession {
     var torStillEnabled = false
     var torStartCalls = 0
     var startNodeResult = false
+    /// Where a refused `startNode` leaves the node — `.stopped` by
+    /// default. Production's `false` means the node moved off `.stopped`
+    /// on its own (someone else started it), which a test scripts as
+    /// `.starting` here to reach the fallback wait.
+    var startNodeDeclinedState: NodeState = .stopped
     var startNodeArguments: [String]?
     let reader: any DashboardDataSource
     /// The concrete fake beside the protocol member — an existential cannot
@@ -74,8 +79,10 @@ final class FakeRunSession: RunSession {
         startNodeArguments = arguments
         // A successful start moves the node toward `.starting` — leaving the
         // state at `.stopped` would read as "stopped mid-run" to the wait's
-        // still-wanted check and end the run early.
-        if startNodeResult { nodeState = .starting }
+        // still-wanted check and end the run early. The same is true of a
+        // declined one: `startNodeDeclinedState` scripts where the refusal
+        // left it.
+        nodeState = startNodeResult ? .starting : startNodeDeclinedState
         return startNodeResult
     }
 

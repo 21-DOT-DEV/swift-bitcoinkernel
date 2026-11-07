@@ -601,7 +601,7 @@ watch orchestration until the next group.
   `Sources/Shared/TorViewModel.swift`,
   `Sources/NodeAppTests/{NodeRunTests,TorViewModelRaceTests}.swift` ·
   needs T018, T018a, T020
-- [ ] T022 The watch stage — poll `blockchainInfo` every ~5 s bounded at
+- [x] T022 The watch stage — poll `blockchainInfo` every ~5 s bounded at
   `min(watchQuestionBudget, remaining)`, the same bound covering
   `awaitFirstAnswer` on budgeted runs (the short action keeps
   `questionBudget`, or a slow-but-alive ~11 s node never reaches the watch);
@@ -633,12 +633,22 @@ watch orchestration until the next group.
   the same suites re-homed, and a partial move leaves a half-split
   file — the worst of both) · `Sources/NodeAppTests/` — new `Support/`
   plus three suite files
-- [ ] T023 Weigh-in call site — the preflight-skipped paths
+- [x] T023 Weigh-in call site — the preflight-skipped paths
   (`reportExistingNode`, `waitForStartingNode`) run T016's `refusal(for:)`
   once before the watch commits; a refusal ends `conditionsChanged` naming
   the condition, its test asserting the weigh-in ran once and the watch
-  never committed (FR-012; verifies FR-012) (~110) ·
-  `Sources/NodeApp/NodeRun.swift`,
+  never committed (FR-012; verifies FR-012) (~110 — landed ~415: a
+  `weighInOnEntry` flag threads through `watch` and `waitForStarting`,
+  `true` only from the two skipped paths — `start` and its fallback
+  already weighed at `.startNode`; the two-second network wait lifts to
+  `firstNetworkCost`, shared with `readConditions`, and `weighIn` gathers
+  the narrower five conditions; a stopped/stopping node skips the gather
+  and a stop landing inside it outranks the refusal — FR-019's
+  precedence held at the boundary; the parameterized test covers
+  `.running`/`.starting`, a start-path exemption test and a
+  `startNodeDeclinedState`-driven fallback test pin that preflight is
+  not re-weighed, and boundary tests cover stop/cancel inside the
+  gather) · `Sources/NodeApp/NodeRun.swift`,
   `Sources/NodeAppTests/NodeRunWatchTests.swift` · needs T016, T018a, T022
 - [ ] T024 Drift call site — each pass runs T017's narrow gather; a found
   condition ends the run `conditionsChanged` mid-watch, its test injecting a
