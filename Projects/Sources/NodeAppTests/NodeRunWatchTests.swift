@@ -418,10 +418,8 @@ struct NodeRunWatchTests {
     func weighInRefusalEndsWatchRefused(nodeState: NodeState) async throws {
         let clock = watchClock()
         let store = makeVolatileDefaults(distinguisher: nodeState.rawValue)
-        let reportAsked = Gate()
         let device = FakeDeviceReadings(firstNetworkReport: {
-            reportAsked.open()
-            return NetworkCost(isMetered: true, isDataRestricted: false)
+            NetworkCost(isMetered: true, isDataRestricted: false)
         })
         let calls = Mutex(0)
         var emitted: [NodeRun.ProgressUpdate] = []
@@ -434,24 +432,32 @@ struct NodeRunWatchTests {
                 },
                 network: { try decodeNetworkInfo() }),
             device: device)
-        let done = Gate()
         let run = Task { @MainActor in
-            defer { done.open() }
-            return await NodeRun.perform(
+            await NodeRun.perform(
                 session: session, waitForFirstAnswer: .seconds(240),
                 syncBudget: .seconds(600),
                 clock: clock.clock, now: { watchNow }, defaults: store) {
                 emitted.append($0)
             }
         }
-        try await clock.questionArmed.wait()
-        // Order the drive after the gather: the report answers at virtual
-        // t=0, so it provably lands before a hop can reach the 2 s bound
-        // and drop it to `.unknown` — which is not metered, and would
-        // quietly pass the weigh-in.
-        try await reportAsked.wait()
-        try await clock.test.drive(untilDone: done, by: .seconds(5))
-        let report = await run.value
+        // No drive: the refusal path parks on zero clock sleeps — the
+        // first question, the gather, and `measuredReport` all answer on
+        // the spot — so `run.value` completes on real scheduling while
+        // the weigh-in's 2 s bound sits parked at virtual t=2, a deadline
+        // nobody advances the clock to. Nor can the answer lose the other
+        // arm: `withHardTimeout` drops a work reply stamped at or past
+        // the deadline, and `finishedAt` reads this same frozen `now` —
+        // the stamp is t=0 no matter how starved the runner. A watch
+        // that wrongly committed would nap instead — the handler below
+        // cancels the run out from under the await a `.timeLimit` cancel
+        // can't resume itself: the nap throws, the run unwinds to
+        // `noAnswer`, and the regression reads as a wrong ending, not a
+        // hang that leaks the parked task.
+        let report = await withTaskCancellationHandler {
+            await run.value
+        } onCancel: {
+            run.cancel()
+        }
 
         #expect(report.syncEnding == .watchRefused(.meteredNetwork))
         #expect(report.syncResult == .conditionsChanged)
