@@ -155,12 +155,17 @@ struct NodeRunWatchTests {
                 syncBudget: .seconds(600),
                 clock: clock.clock, now: { watchNow }, defaults: store)
         }
-        try await clock.questionArmed.wait()
-        try await clock.test.drive(untilDone: secondAsk, by: .seconds(5))
+        defer { run.cancel() }
+        // No drive: the first pass asks without any clock advance — the
+        // gate, not a hop, proves the answer is parked mid-flight.
+        try await secondAsk.wait()
         // The answer is in flight; the stop lands while it is.
         session.nodeState = .stopping
         releaseAnswer.open()
-        try await clock.test.drive(untilDone: done, by: .seconds(5))
+        // The released answer, the stopped pass, and the measured report
+        // all resolve on the spot — nothing owed the clock, so no armed
+        // bound can outrun the delivery it bounds.
+        try await done.wait()
         let report = await run.value
 
         #expect(report.syncEnding == .nodeStopped)
@@ -206,11 +211,16 @@ struct NodeRunWatchTests {
                 syncBudget: .seconds(600),
                 clock: clock.clock, now: { watchNow }, defaults: store)
         }
-        try await clock.questionArmed.wait()
-        try await clock.test.drive(untilDone: pollIssued, by: .seconds(5))
+        defer { run.cancel() }
+        // No drive: the first pass asks without any clock advance — the
+        // gate, not a hop, proves the question is parked mid-flight.
+        // This is the shape a starved runner once turned into a bound
+        // firing under an in-flight answer: with nothing owed the clock,
+        // delivery can only ever win.
+        try await pollIssued.wait()
         run.cancel()
         releaseAnswer.open()
-        try await clock.test.drive(untilDone: done, by: .seconds(5))
+        try await done.wait()
         let report = await run.value
 
         #expect(report.outcome == .noAnswer)
@@ -327,8 +337,10 @@ struct NodeRunWatchTests {
                 emitted.append($0)
             }
         }
-        try await clock.questionArmed.wait()
-        try await clock.test.drive(untilDone: done, by: .seconds(5))
+        defer { run.cancel() }
+        // No drive: a declined gate ends the run on the spot — every
+        // question answers immediately, so nothing is owed the clock.
+        try await done.wait()
         let report = await run.value
 
         #expect(report.syncEnding == .alreadyAtTip)
@@ -364,8 +376,10 @@ struct NodeRunWatchTests {
                 syncBudget: .seconds(600),
                 clock: clock.clock, now: { watchNow }, defaults: store)
         }
-        try await clock.questionArmed.wait()
-        try await clock.test.drive(untilDone: done, by: .seconds(5))
+        defer { run.cancel() }
+        // No drive: a declined gate ends the run on the spot — every
+        // question answers immediately, so nothing is owed the clock.
+        try await done.wait()
         let report = await run.value
 
         #expect(report.syncEnding == .notMeasured)
@@ -622,13 +636,16 @@ struct NodeRunWatchTests {
                 emitted.append($0)
             }
         }
-        try await clock.questionArmed.wait()
+        defer { run.cancel() }
         // The gather is parked inside its network wait; the stop lands
         // while the report is in flight.
         try await gatherParked.wait()
         session.nodeState = .stopping
         releaseReport.open()
-        try await clock.test.drive(untilDone: done, by: .seconds(5))
+        // No drive: the released gather, the fall-through commit, and
+        // the stopped first pass all resolve on the spot — nothing is
+        // owed the clock, so no armed bound can outrun the answer.
+        try await done.wait()
         let report = await run.value
 
         #expect(report.syncEnding == .nodeStopped)
@@ -670,13 +687,16 @@ struct NodeRunWatchTests {
                 syncBudget: .seconds(600),
                 clock: clock.clock, now: { watchNow }, defaults: store)
         }
-        try await clock.questionArmed.wait()
+        defer { run.cancel() }
         // The run ends while the gather's report is parked; the verdict
         // it finally returns is nobody's business.
         try await gatherParked.wait()
         run.cancel()
         releaseReport.open()
-        try await clock.test.drive(untilDone: done, by: .seconds(5))
+        // No drive: the cancel already released the gather's bound — the
+        // release only frees the parked fake — and `noAnswer` resolves
+        // on the spot.
+        try await done.wait()
         let report = await run.value
 
         #expect(report.outcome == .noAnswer)
@@ -764,12 +784,16 @@ struct NodeRunWatchTests {
                 emitted.append($0)
             }
         }
-        try await clock.questionArmed.wait()
-        try await clock.test.drive(untilDone: pollIssued, by: .seconds(5))
+        defer { run.cancel() }
+        // No drive: the first pass asks without any clock advance — the
+        // gate, not a hop, proves the answer is parked mid-flight.
+        try await pollIssued.wait()
         // The condition lands while the first poll's answer is in flight.
         drift.inject(on: device)
         releaseAnswer.open()
-        try await clock.test.drive(untilDone: done, by: .seconds(5))
+        // The released answer, the drift gather, and the
+        // `conditionsChanged` ending all resolve on the spot.
+        try await done.wait()
         let report = await run.value
 
         #expect(report.syncEnding == .conditionsChanged(drift.refusal))
@@ -806,6 +830,7 @@ struct NodeRunWatchTests {
         let device = FakeDeviceReadings()
         let firstAnswerIssued = Gate()
         let releaseEntry = Gate()
+        let committed = Gate()
         let calls = Mutex(0)
         var emitted: [NodeRun.ProgressUpdate] = []
         let session = FakeRunSession(
@@ -835,10 +860,13 @@ struct NodeRunWatchTests {
                 syncBudget: .seconds(30),
                 clock: clock.clock, now: { watchNow }, defaults: store) {
                 emitted.append($0)
+                if $0.headline != nil { committed.open() }
             }
         }
-        try await clock.questionArmed.wait()
-        try await clock.test.drive(untilDone: firstAnswerIssued, by: .seconds(5))
+        defer { run.cancel() }
+        // No drive to reach the parked question — the first-answer
+        // wait's ask issues without any clock advance.
+        try await firstAnswerIssued.wait()
         // `.serious` lands after preflight read `.nominal`; Low Power
         // lands between the gather's off reading and the commit's
         // snapshot — `lowPowerModeAtEntry` is then true, so the per-pass
@@ -846,6 +874,11 @@ struct NodeRunWatchTests {
         device.scriptedThermalState = .serious
         device.isLowPowerModeEnabled = true
         releaseEntry.open()
+        // The commit's headline proves the released answer landed — the
+        // ask's 30 s bound sits exactly at the budget's end, so driving
+        // before this gate could still hop onto it under the in-flight
+        // stamp.
+        try await committed.wait()
         try await clock.test.drive(untilDone: done, by: .seconds(5))
         let report = await run.value
 

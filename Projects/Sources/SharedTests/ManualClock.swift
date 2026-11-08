@@ -235,10 +235,16 @@ extension ManualClock {
     /// fires only after spending a `step`-proportional budget of real
     /// executor windows waiting on the work; starvation past that budget
     /// still flips the verdict honestly, it just can't be caused by the
-    /// drive. When nothing is parked the run is mid-hop: the drive
-    /// suspends on the next armed deadline racing `done`, never polling —
-    /// the suite's `.timeLimit` reaps a wedged drive by cancelling that
-    /// wait.
+    /// drive. `done` must therefore be a gate every verdict opens — the
+    /// run's own completion is the canonical one. A gate only one verdict
+    /// produces (a mid-run progress marker) turns an honest flip into a
+    /// `.timeLimit` hang: await progress gates directly instead of
+    /// folding them into the drive. The drive's own negative tests are
+    /// the deliberate exception — a `Gate` nobody opens is how
+    /// `ManualClockTests` proves cancellation reaps a wedged drive. When
+    /// nothing is parked the run is mid-hop: the drive suspends on the
+    /// next armed deadline racing `done`, never polling — the suite's
+    /// `.timeLimit` reaps a wedged drive by cancelling that wait.
     func drive(untilDone done: Gate, by step: Duration) async throws {
         precondition(step > .zero, "drive needs a positive step")
         while !done.isOpen {
