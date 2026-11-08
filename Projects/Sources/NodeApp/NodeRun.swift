@@ -153,9 +153,10 @@ protocol DeviceReadings: Sendable {
     nonisolated func networkFirst() async -> NetworkCost
 
     /// The latest network-cost answer without waiting — `.unknown` until the
-    /// watcher has reported. Nothing reads it yet: it exists for T024's
-    /// mid-watch drift check, which re-weighs conditions on a change the
-    /// first-report wait cannot see.
+    /// watcher has reported, reading as not-costly. The mid-watch drift
+    /// gather's network read: a per-pass gather must be incapable of
+    /// suspending, and `networkFirst` is not — by the time any watch
+    /// exists the first report has long landed anyway.
     var networkCurrent: NetworkCost { get }
 }
 
@@ -1143,17 +1144,19 @@ enum NodeRun {
     /// `awaitFirstAnswer` already uses for its deadline). The pass then
     /// feeds `SyncWatchState` — an answer, a flat one, or `nil` — and
     /// applies `watchEnding` to candidacies computed from the pass's own
-    /// facts: the stop flag, the pass's own catch-up proof, the state's
-    /// leashes, the deadline. Cancellation is not a candidacy: it ends
-    /// the run, never the watch, so it is checked at the top of the pass
-    /// and again where an in-flight answer would be trusted — the same
-    /// two-point rule the first-answer wait keeps, and deliberately
-    /// separate from the node-stop flag.
+    /// facts: the stop flag, the pass's own catch-up proof, the drift
+    /// gather's refusal, the state's leashes, the deadline. Cancellation
+    /// is not a candidacy: it ends the run, never the watch, so it is
+    /// checked at the top of the pass and again where an in-flight
+    /// answer would be trusted — the same two-point rule the first-answer
+    /// wait keeps, and deliberately separate from the node-stop flag.
     ///
-    /// Two candidacies are constants for now: `conditionsChanged: false`
-    /// and `peers: []` — T024's drift gather and T025's `getpeerinfo`
-    /// ride-along fill them in. `watchEnding`'s signature is where they
-    /// land, so a pass already reads like the finished shape.
+    /// One candidacy stays a constant for now: `peers: []` — T025's
+    /// `getpeerinfo` ride-along fills it in. `conditionsChanged` is fed
+    /// by `drift`, the narrow per-pass gather — `networkCurrent` never
+    /// waits, so a ~180-pass watch can afford the read every pass
+    /// (FR-010, FR-011). `watchEnding`'s signature is where they land,
+    /// so a pass already reads like the finished shape.
     ///
     /// A fresh write lands on every pass: the run's liveness on the
     /// extended action, where the system ends a run that goes quiet. The
@@ -1261,6 +1264,16 @@ enum NodeRun {
 
             state.advance(instant: clock.now, reading: freshReading)
 
+            // The pass's drift weigh — gathered at decision time so a
+            // condition that landed mid-answer is caught on the pass
+            // that saw it rather than one late. It runs on flat, silent,
+            // and stopped passes alike: `watchEnding` ranks it against
+            // the pass's other facts, so a gather that another verdict
+            // outranks still costs only three reads.
+            let refusal = drift(
+                device: session.device,
+                lowPowerModeAtEntry: state.lowPowerModeAtEntry)
+
             let ending = NodeAutomation.watchEnding(
                 nodeStopped: nodeStopped,
                 caughtUp: freshReading.map {
@@ -1271,8 +1284,7 @@ enum NodeRun {
                         // pass carries no evidence.
                         peers: [], now: now())
                 } ?? false,
-                // T024's drift check lands here — no per-pass gather yet.
-                conditionsChanged: false,
+                conditionsChanged: refusal != nil,
                 noProgress: state.stall != nil,
                 budgetSpent: clock.now.duration(to: deadline) <= .zero)
 
@@ -1325,9 +1337,10 @@ enum NodeRun {
             case .nodeStopped: syncEnding = .nodeStopped
             case .caughtUp: syncEnding = .caughtUp
             case .conditionsChanged:
-                // Unreachable while the drift candidacy above is `false`
-                // — T024 will feed it and name the refusal it found.
-                syncEnding = .conditionsChanged(nil)
+                // The drift gather's refusal rides the ending so the
+                // report can name what turned — worded mid-watch, not
+                // the weigh-in's present tense.
+                syncEnding = .conditionsChanged(refusal)
             case .noProgress:
                 syncEnding = .noProgress(silentFor: silence)
             case .stillSyncing: syncEnding = .stillSyncing
@@ -1633,7 +1646,8 @@ enum NodeRun {
     /// most. Two seconds is long enough for a cold launch's report to
     /// arrive on the watcher and short enough that one that never comes
     /// falls back to the same not-known answer `current` would have
-    /// given.
+    /// given. `drift` deliberately never shares it — a per-pass gather
+    /// must be incapable of suspending, not merely bounded.
     private static func firstNetworkCost<C: Clock<Duration>>(
         device: any DeviceReadings,
         clock: C
@@ -1709,6 +1723,25 @@ enum NodeRun {
             networkIsDataRestricted: network.isDataRestricted,
             thermalState: device.thermalState,
             freeDiskBytes: device.freeDiskBytes())
+    }
+
+    /// The gather T017's `driftedCondition` weighs — the conditions a
+    /// committed watch re-reads every pass (FR-010, FR-011). Narrower
+    /// again than `weighIn`: `networkCurrent` never waits — `.unknown`
+    /// reads as not-costly, and a report the first-report wait would
+    /// have caught lands on the next pass instead — and nothing touching
+    /// the filesystem or the disk belongs to a ~180-pass loop (research
+    /// §5).
+    /// Nothing but these three.
+    private static func drift(
+        device: any DeviceReadings,
+        lowPowerModeAtEntry: Bool
+    ) -> NodePreflight.Refusal? {
+        NodeAutomation.driftedCondition(
+            network: device.networkCurrent,
+            thermalState: device.thermalState,
+            lowPowerModeEnabled: device.lowPowerModeEnabled,
+            lowPowerModeAtEntry: lowPowerModeAtEntry)
     }
 }
 

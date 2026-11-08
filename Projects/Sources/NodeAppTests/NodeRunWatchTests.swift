@@ -682,6 +682,190 @@ struct NodeRunWatchTests {
         #expect(report.outcome == .noAnswer)
         #expect(report.syncEnding == .notMeasured)
     }
+
+    /// The device drift a pass can refuse on — one case per verdict the
+    /// narrow gather weighs; the weigh-in's wider refusals are not
+    /// re-polled mid-watch — a spec-deferred check, not an impossible one.
+    enum MidWatchDrift {
+        case metered, dataRestricted, criticalHeat, lowPowerMode
+
+        /// The refusal `driftedCondition` names for this flip.
+        var refusal: NodePreflight.Refusal {
+            switch self {
+            case .metered: .meteredNetwork
+            case .dataRestricted: .dataRestrictedNetwork
+            case .criticalHeat: .overheating
+            case .lowPowerMode: .lowPowerMode
+            }
+        }
+
+        /// The one reading each case turns mid-watch. `@MainActor` like
+        /// the fake it scripts — a nested type does not inherit the
+        /// suite's isolation.
+        @MainActor
+        func inject(on device: FakeDeviceReadings) {
+            switch self {
+            case .metered:
+                device.scriptedNetworkCurrent = NetworkCost(
+                    isMetered: true, isDataRestricted: false)
+            case .dataRestricted:
+                device.scriptedNetworkCurrent = NetworkCost(
+                    isMetered: false, isDataRestricted: true)
+            case .criticalHeat:
+                device.scriptedThermalState = .critical
+            case .lowPowerMode:
+                device.isLowPowerModeEnabled = true
+            }
+        }
+    }
+
+    /// Every pass weighs the narrow drift gather: a condition flipped on
+    /// while the answer is in flight ends the run `conditionsChanged` on
+    /// the pass that saw it — never one late — naming what turned
+    /// (FR-010, FR-011). `networkCurrent`'s one read pins the gather to
+    /// exactly that pass, and `networkFirst`'s one — the weigh-in's —
+    /// proves the drift check never waits on the network.
+    @Test(
+        "a condition landing mid-watch ends conditionsChanged naming it",
+        .timeLimit(.minutes(1)),
+        arguments: [
+            MidWatchDrift.metered, .dataRestricted,
+            .criticalHeat, .lowPowerMode])
+    func midWatchDriftEndsConditionsChanged(drift: MidWatchDrift) async throws {
+        let clock = watchClock()
+        let store = makeVolatileDefaults(distinguisher: String(describing: drift))
+        let device = FakeDeviceReadings()
+        let pollIssued = Gate()
+        let releaseAnswer = Gate()
+        let calls = Mutex(0)
+        var emitted: [NodeRun.ProgressUpdate] = []
+        let session = FakeRunSession(
+            nodeState: .running,
+            reader: StagedReader(
+                blockchain: {
+                    let n = calls.withLock { n in n += 1; return n }
+                    if n == 1 { return try decodeWatchInfo() }
+                    // The watch's first question parks until the flipped
+                    // condition has landed — the pass then gathers drift
+                    // at decision time, not at ask time.
+                    pollIssued.open()
+                    try await releaseAnswer.wait()
+                    return try decodeWatchInfo()
+                },
+                network: { try decodeNetworkInfo() }),
+            device: device)
+        let done = Gate()
+        let run = Task { @MainActor in
+            defer { done.open() }
+            return await NodeRun.perform(
+                session: session, waitForFirstAnswer: .seconds(240),
+                syncBudget: .seconds(600),
+                clock: clock.clock, now: { watchNow }, defaults: store) {
+                emitted.append($0)
+            }
+        }
+        try await clock.questionArmed.wait()
+        try await clock.test.drive(untilDone: pollIssued, by: .seconds(5))
+        // The condition lands while the first poll's answer is in flight.
+        drift.inject(on: device)
+        releaseAnswer.open()
+        try await clock.test.drive(untilDone: done, by: .seconds(5))
+        let report = await run.value
+
+        #expect(report.syncEnding == .conditionsChanged(drift.refusal))
+        #expect(report.syncResult == .conditionsChanged)
+        // The node is left running and the card showed a headline —
+        // the watch committed before the drifted pass.
+        #expect(report.outcome == .alreadyRunning)
+        #expect(emitted.contains { $0.headline != nil })
+        // A flat answer against the entry reading earned nothing.
+        #expect(report.blocksGainedThisRun == 0)
+        let deviceCalls = device.calls.withLock { $0 }
+        // One pass lived — the gather's `networkCurrent` read happened
+        // exactly once — and `networkFirst` is the weigh-in's alone.
+        #expect(deviceCalls.filter { $0 == "networkCurrent" }.count == 1)
+        #expect(deviceCalls.filter { $0 == "networkFirst" }.count == 1)
+    }
+
+    /// The two states the drift check deliberately tolerates, scripted
+    /// together on the only path that can produce them: thermal
+    /// `.serious` lands mid-watch and changes nothing — `.critical` is
+    /// the bar — and Low Power Mode on *when the watch commits* is a
+    /// standing preference, not a delta (FR-011). Only the start path
+    /// reaches that shape: preflight reads the mode before the flip, and
+    /// every other consent refuses it outright, so it only ever arrives
+    /// switched on between consent and commit — here, while the first
+    /// answer waits. The watch runs its whole budget on both and ends on
+    /// time, not on a condition.
+    @Test(
+        "tolerated states never end the watch — serious heat, Low Power at entry",
+        .timeLimit(.minutes(1)))
+    func toleratedStatesNeverEndWatch() async throws {
+        let clock = watchClock()
+        let store = makeVolatileDefaults()
+        let device = FakeDeviceReadings()
+        let firstAnswerIssued = Gate()
+        let releaseEntry = Gate()
+        let calls = Mutex(0)
+        var emitted: [NodeRun.ProgressUpdate] = []
+        let session = FakeRunSession(
+            nodeState: .stopped,
+            reader: StagedReader(
+                blockchain: {
+                    let n = calls.withLock { n in n += 1; return n }
+                    if n == 1 {
+                        // The first-answer wait's question parks until
+                        // both tolerated states are in place: they must
+                        // land after preflight's gather — which refuses
+                        // either — and before the commit's Low-Power
+                        // snapshot.
+                        firstAnswerIssued.open()
+                        try await releaseEntry.wait()
+                    }
+                    return try decodeWatchInfo()
+                },
+                network: { try decodeNetworkInfo() }),
+            device: device)
+        session.startNodeResult = true
+        let done = Gate()
+        let run = Task { @MainActor in
+            defer { done.open() }
+            return await NodeRun.perform(
+                session: session, waitForFirstAnswer: .seconds(240),
+                syncBudget: .seconds(30),
+                clock: clock.clock, now: { watchNow }, defaults: store) {
+                emitted.append($0)
+            }
+        }
+        try await clock.questionArmed.wait()
+        try await clock.test.drive(untilDone: firstAnswerIssued, by: .seconds(5))
+        // `.serious` lands after preflight read `.nominal`; Low Power
+        // lands between the gather's off reading and the commit's
+        // snapshot — `lowPowerModeAtEntry` is then true, so the per-pass
+        // reads see no delta, and `.serious` stays under the mid-watch bar.
+        device.scriptedThermalState = .serious
+        device.isLowPowerModeEnabled = true
+        releaseEntry.open()
+        try await clock.test.drive(untilDone: done, by: .seconds(5))
+        let report = await run.value
+
+        #expect(report.syncEnding == .stillSyncing)
+        #expect(report.syncResult == .stillSyncing)
+        // The start path's own outcome — the node is left running.
+        #expect(report.outcome == .started)
+        #expect(emitted.contains { $0.headline != nil })
+        let deviceCalls = device.calls.withLock { $0 }
+        // `networkCurrent` is the drift gather's alone — nothing else
+        // reads it — so its count is the pass count, and a pass is the
+        // headline write: one lands every pass, ending or not, beside
+        // the commit's one. Gathers == headline writes − commit == passes.
+        #expect(
+            deviceCalls.filter { $0 == "networkCurrent" }.count
+                == emitted.filter { $0.headline != nil }.count - 1)
+        // `networkFirst` is the preflight gather's one — the watch never
+        // waited on the network across every pass it lived.
+        #expect(deviceCalls.filter { $0 == "networkFirst" }.count == 1)
+    }
 }
 
 #endif

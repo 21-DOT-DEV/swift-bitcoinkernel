@@ -650,11 +650,29 @@ watch orchestration until the next group.
   not re-weighed, and boundary tests cover stop/cancel inside the
   gather) · `Sources/NodeApp/NodeRun.swift`,
   `Sources/NodeAppTests/NodeRunWatchTests.swift` · needs T016, T018a, T022
-- [ ] T024 Drift call site — each pass runs T017's narrow gather; a found
+- [x] T024 Drift call site — each pass runs T017's narrow gather; a found
   condition ends the run `conditionsChanged` mid-watch, its test injecting a
   metered answer mid-watch (FR-010, FR-011; verifies FR-010, FR-011)
-  (~110) · `Sources/NodeApp/NodeRun.swift`,
-  `Sources/NodeAppTests/NodeRunWatchTests.swift` · needs T017, T018a, T022
+  (~110 — landed ~290: `drift(device:lowPowerModeAtEntry:)` is the third
+  named conditions gather beside `readConditions`/`weighIn` — non-async,
+  every read synchronous — feeding `watchEnding`'s `conditionsChanged`
+  candidacy and riding the ending so the report names what turned; the
+  gather runs on every pass — flat, silent, stopped, and the terminal
+  no-ask pass alike — read after the question so a condition landing
+  mid-answer is caught the same pass, with `SyncWatchState`'s
+  `lowPowerModeAtEntry` snapshot the delta baseline. `FakeDeviceReadings`
+  records the three drift reads behind scripted fields so the tests count
+  one gather per pass and pin `networkFirst` at one — the entry gather's —
+  proving the drift check never waits on the network; the `MidWatchDrift`
+  parameterized matrix covers all four refusals (metered, data-restricted,
+  `.critical` heat, the Low-Power delta) and a tolerated-states test runs
+  `.serious` heat plus Low Power already-on-at-commit to `stillSyncing` on
+  the start path — the only path that shape is reachable from — pinning
+  both halves of FR-011 rather than the written single injection) ·
+  `Sources/NodeApp/NodeRun.swift`,
+  `Sources/NodeAppTests/NodeRunWatchTests.swift`,
+  `Sources/NodeAppTests/Support/FakeDeviceReadings.swift` ·
+  needs T017, T018a, T022
 - [ ] T025 `getpeerinfo` ride-along — on each qualifying flat pass (flag
   clear, gap closed, headers never advanced) one `getpeerinfo`, bounded like
   every question, feeds T012's confirmation count; an absent or timed-out
