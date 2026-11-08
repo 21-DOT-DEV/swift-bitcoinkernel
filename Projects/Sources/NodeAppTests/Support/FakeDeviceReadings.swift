@@ -26,9 +26,9 @@ import Synchronization
 /// The reads whose order the run relies on are recorded in `calls`, in the
 /// order made — a test pinning "files were checked before the folder was
 /// prepared" compares positions in that list rather than inferring order
-/// from side effects. The later-condition fields (`lowPowerModeEnabled`,
-/// `thermalState`, `networkCurrent`) stay plain: nothing yet weighs their
-/// order.
+/// from side effects. The drift gather's three reads join the same log,
+/// where the count, not the order, is what proves the gather ran on every
+/// watch pass.
 @MainActor
 final class FakeDeviceReadings: DeviceReadings {
     /// Each `DeviceReadings` member name, in the order the run read it —
@@ -39,11 +39,15 @@ final class FakeDeviceReadings: DeviceReadings {
     /// The scripted value behind `protectedDataAvailable`; the read itself
     /// is recorded, which is what lets the ordering tests see it.
     var isProtectedDataAvailable = true
-    var lowPowerModeEnabled = false
-    var thermalState: ProcessInfo.ThermalState = .nominal
+    /// The scripted value behind `lowPowerModeEnabled`; a test flips it
+    /// mid-watch to script the delta the drift check refuses on.
+    var isLowPowerModeEnabled = false
+    /// The scripted value behind `thermalState`; flippable mid-watch.
+    var scriptedThermalState: ProcessInfo.ThermalState = .nominal
     var chainFolderPrepared = true
     var freeDiskBytesResult: Int64? = 1 << 40
-    var networkCurrent: NetworkCost = .unknown
+    /// The scripted value behind `networkCurrent`; flippable mid-watch.
+    var scriptedNetworkCurrent: NetworkCost = .unknown
     /// A `let`, not a `var`: `networkFirst` is `nonisolated` to stay off the
     /// main actor like the production read, and only an immutable member is
     /// reachable without the hop a `var` would force.
@@ -62,6 +66,21 @@ final class FakeDeviceReadings: DeviceReadings {
     var protectedDataAvailable: Bool {
         calls.withLock { $0.append("protectedDataAvailable") }
         return isProtectedDataAvailable
+    }
+
+    var lowPowerModeEnabled: Bool {
+        calls.withLock { $0.append("lowPowerModeEnabled") }
+        return isLowPowerModeEnabled
+    }
+
+    var thermalState: ProcessInfo.ThermalState {
+        calls.withLock { $0.append("thermalState") }
+        return scriptedThermalState
+    }
+
+    var networkCurrent: NetworkCost {
+        calls.withLock { $0.append("networkCurrent") }
+        return scriptedNetworkCurrent
     }
 
     func startWatchingNetworkCost() {
