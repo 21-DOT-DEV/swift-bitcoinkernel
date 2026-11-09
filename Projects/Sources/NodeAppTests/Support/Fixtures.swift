@@ -12,8 +12,30 @@ import Bitcoin
 import Foundation
 
 // `NodeRun` and `NodeRunReport` exist only in phone and tablet builds — the
-// same compile-time gate as the sources, so these helpers are empty on a
-// Mac build.
+// same compile-time gate as the sources, so the helpers under the gate are
+// empty on a Mac build. `decodePeer` stays above it: `PeerInfo` decodes on
+// every platform, and the ungated `NodeAutomationTests` consumes this on
+// the macOS CI leg too.
+
+/// A `getpeerinfo` row carrying the two fields `PeerEvidence` reads — the
+/// rest exist only because the decoder requires them. File scope, not a
+/// suite member, so the `@Sendable` question closures can reach it without
+/// an actor hop.
+func decodePeer(
+    connectionType: String?, inbound: Bool, syncedHeaders: Int = 876_000
+) throws -> PeerInfo {
+    let connField = connectionType.map { "\"connection_type\":\"\($0)\"," } ?? ""
+    return try JSONDecoder().decode(
+        PeerInfo.self,
+        from: Data(
+            """
+            {"id":0,"addr":"10.0.0.1:8333","services":"0000000000000409","relaytxes":true,
+             "lastsend":1713300000,"lastrecv":1713300000,"bytessent":1000,"bytesrecv":2000,
+             "conntime":1713200000,"timeoffset":0,"version":70016,"subver":"/Satoshi:31.0.0/",
+             \(connField)"inbound":\(inbound),"synced_headers":\(syncedHeaders),"synced_blocks":876000}
+            """.utf8))
+}
+
 #if os(iOS)
 
 /// A `getblockchaininfo` answer mid-IBD — the same shape the production

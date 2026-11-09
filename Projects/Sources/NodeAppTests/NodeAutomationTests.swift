@@ -299,7 +299,7 @@ struct NodeAutomationTests {
 
     @Test("a peer's evidence carries its announced best-known height and resolved kind")
     func peerEvidenceMapsFields() throws {
-        let peer = try Self.decodePeer(connectionType: "outbound-full-relay", inbound: false)
+        let peer = try decodePeer(connectionType: "outbound-full-relay", inbound: false)
         let evidence = NodeAutomation.PeerEvidence(peer)
         #expect(evidence.syncedHeaders == 876_000)
         #expect(evidence.connectionType == .outboundFullRelay)
@@ -307,13 +307,13 @@ struct NodeAutomationTests {
 
     @Test("a missing connection type falls back to direction — inbound resolves to the real kind")
     func peerEvidenceInboundFallback() throws {
-        let peer = try Self.decodePeer(connectionType: nil, inbound: true)
+        let peer = try decodePeer(connectionType: nil, inbound: true)
         #expect(NodeAutomation.PeerEvidence(peer).connectionType == .inbound)
     }
 
     @Test("a missing connection type on an outbound peer resolves to no countable kind")
     func peerEvidenceUnresolvedOutboundFailsClosed() throws {
-        let peer = try Self.decodePeer(connectionType: nil, inbound: false)
+        let peer = try decodePeer(connectionType: nil, inbound: false)
         let resolved = NodeAutomation.PeerEvidence(peer).connectionType
         // The generic "outbound" an absent field yields is a real resolution, but
         // it equals neither kind the catch-up proof counts — a peer the node
@@ -332,7 +332,7 @@ struct NodeAutomationTests {
             ("feeler", .feeler), ("addr-fetch", .addrFetch),
             ("private-broadcast", .privateBroadcast),
         ] as [(String, NodeAutomation.PeerEvidence.ConnectionType)] {
-            let peer = try Self.decodePeer(connectionType: wire, inbound: wire == "inbound")
+            let peer = try decodePeer(connectionType: wire, inbound: wire == "inbound")
             #expect(NodeAutomation.PeerEvidence(peer).connectionType == kind)
         }
     }
@@ -349,23 +349,6 @@ struct NodeAutomationTests {
       "size_on_disk": 12345, "pruned": false, "warnings": []
     }
     """
-
-    /// A `getpeerinfo` row carrying the two fields `PeerEvidence` reads — the
-    /// rest exist only because the decoder requires them.
-    private static func decodePeer(
-        connectionType: String?, inbound: Bool, syncedHeaders: Int = 876_000
-    ) throws -> PeerInfo {
-        let connField = connectionType.map { "\"connection_type\":\"\($0)\"," } ?? ""
-        return try JSONDecoder().decode(
-            PeerInfo.self,
-            from: Data(
-                """
-                {"id":0,"addr":"10.0.0.1:8333","services":"0000000000000409","relaytxes":true,
-                 "lastsend":1713300000,"lastrecv":1713300000,"bytessent":1000,"bytesrecv":2000,
-                 "conntime":1713200000,"timeoffset":0,"version":70016,"subver":"/Satoshi:31.0.0/",
-                 \(connField)"inbound":\(inbound),"synced_headers":\(syncedHeaders),"synced_blocks":876000}
-                """.utf8))
-    }
 
     @Test("blocks since a baseline is the difference between two readings")
     func blocksSince() {
@@ -1687,7 +1670,7 @@ struct NodeAutomationTests {
         connectionType: String?, inbound: Bool, syncedHeaders: Int
     ) throws -> NodeAutomation.PeerEvidence {
         try NodeAutomation.PeerEvidence(
-            Self.decodePeer(
+            decodePeer(
                 connectionType: connectionType, inbound: inbound,
                 syncedHeaders: syncedHeaders))
     }

@@ -275,7 +275,9 @@ enum NodeRun {
     /// The watch's poll cadence — about five seconds between passes
     /// (FR-001). The loop is sequential — a pass asks its question, then
     /// naps — so a question that runs to its bound stretches that pass to
-    /// `questionBound + cadence`: it delays the next pass, never cancels
+    /// `questionBound + cadence` (a qualifying flat pass can carry a
+    /// second one, the `getpeerinfo` ride-along, for `2 × questionBound +
+    /// cadence`): it delays the next pass, never cancels
     /// it, and the leashes measure wall time rather than pass counts, so
     /// the stretch spends budget, not correctness. The nap carries the
     /// run's shared tolerance whenever enough budget remains to absorb a
@@ -1138,7 +1140,7 @@ enum NodeRun {
     /// both start past it, so at most ~2 s of entry work falls outside
     /// `syncBudget`.
     ///
-    /// Every pass asks one question, sequential and bounded at
+    /// Every pass asks one chain question, sequential and bounded at
     /// `min(questionBound, remaining)` so the sync budget is a hard bound
     /// rather than soft by a whole question (the same shape
     /// `awaitFirstAnswer` already uses for its deadline). The pass then
@@ -1151,21 +1153,36 @@ enum NodeRun {
     /// answer would be trusted — the same two-point rule the first-answer
     /// wait keeps, and deliberately separate from the node-stop flag.
     ///
-    /// One candidacy stays a constant for now: `peers: []` — T025's
-    /// `getpeerinfo` ride-along fills it in. `conditionsChanged` is fed
-    /// by `drift`, the narrow per-pass gather — `networkCurrent` never
-    /// waits, so a ~180-pass watch can afford the read every pass
-    /// (FR-010, FR-011). `watchEnding`'s signature is where they land,
-    /// so a pass already reads like the finished shape.
+    /// The proof's peer leg is fed by the `getpeerinfo` ride-along
+    /// (FR-006): a pass that fed the `.flatWindow` leash *and* cannot
+    /// otherwise prove a catch-up — `wantsPeerEvidence`'s shape, with
+    /// `caughtUp`'s non-peer legs tried first so a fresh tip ends on
+    /// that leg unasked — spends one more bounded question on the
+    /// node's peer view: the only shape in which a pass asks twice, so
+    /// a run whose passes advance never asks at all. The answer is
+    /// `caughtUp` evidence only — never a chain reading, feeding no
+    /// leash — and a timed-out or failed ask is simply no evidence.
+    /// `conditionsChanged` is fed by `drift`, the
+    /// narrow per-pass gather — `networkCurrent` never waits, so a
+    /// ~180-pass watch can afford the read every pass (FR-010, FR-011).
+    /// `watchEnding`'s signature is where they land, so a pass already
+    /// reads like the finished shape.
     ///
-    /// A fresh write lands on every pass: the run's liveness on the
-    /// extended action, where the system ends a run that goes quiet. The
-    /// write carries the watch band position of the distance closed —
-    /// honest even when flat, since the same fraction rewritten claims
-    /// the same position, not new progress — plus the card's detail line.
-    /// The writes go to `watchProgress`, the raw callback: the wrap the
-    /// caller hands `onProgress` maps stage fractions into the start-up
-    /// band, and these positions are already band positions.
+    /// A fresh write lands on every pass — ahead of the ride-along's
+    /// question, deliberately: a `getpeerinfo` parked at its question
+    /// bound cannot delay a write already earned, and the freshest
+    /// reading is on record before the pass spends it. The write-to-
+    /// write period is the same wherever the write sits — the peer ask
+    /// is inside the cycle either way, so a qualifying pass can stretch
+    /// to two bounds plus the nap — ~65 s at the wired figures; the
+    /// extended action's actual silence coverage is the iOS 27
+    /// action's ~5 s repeating nudge, not these writes. The write
+    /// carries the watch band position of the distance closed — honest
+    /// even when flat, since the same fraction rewritten claims the
+    /// same position, not new progress — plus the card's detail line.
+    /// The writes go to `watchProgress`, the raw callback: the wrap
+    /// the caller hands `onProgress` maps stage fractions into the
+    /// start-up band, and these positions are already band positions.
     ///
     /// The watch never touches the node — asking is all it does — and the
     /// report it ends on is the measured one, carrying the ending the
@@ -1240,9 +1257,10 @@ enum NodeRun {
             if Task.isCancelled { return noAnswerReport() }
             var nodeStopped = session.nodeState.isStoppedOrStopping
 
-            // One question per pass, sequential, capped by the time left.
-            // A stopped node is never asked: the flag is the cheaper read
-            // and the pass already holds its verdict.
+            // One chain question per pass, sequential, capped by the
+            // time left — the ride-along below is the only second a pass
+            // may spend. A stopped node is never asked: the flag is the
+            // cheaper read and the pass already holds its verdict.
             let remaining = clock.now.duration(to: deadline)
             var info: BlockchainInfo?
             if !nodeStopped, remaining > .zero {
@@ -1262,36 +1280,16 @@ enum NodeRun {
                 : info.map { NodeAutomation.reading(from: $0) }
             if let freshReading { lastReading = freshReading }
 
-            state.advance(instant: clock.now, reading: freshReading)
+            let leashFed = state.advance(instant: clock.now, reading: freshReading)
 
-            // The pass's drift weigh — gathered at decision time so a
-            // condition that landed mid-answer is caught on the pass
-            // that saw it rather than one late. It runs on flat, silent,
-            // and stopped passes alike: `watchEnding` ranks it against
-            // the pass's other facts, so a gather that another verdict
-            // outranks still costs only three reads.
-            let refusal = drift(
-                device: session.device,
-                lowPowerModeAtEntry: state.lowPowerModeAtEntry)
-
-            let ending = NodeAutomation.watchEnding(
-                nodeStopped: nodeStopped,
-                caughtUp: freshReading.map {
-                    NodeAutomation.caughtUp(
-                        reading: $0, headersAdvanced: state.headersAdvanced,
-                        // T025's ride-along: qualifying flat passes will
-                        // spend one `getpeerinfo` question; until then a
-                        // pass carries no evidence.
-                        peers: [], now: now())
-                } ?? false,
-                conditionsChanged: refusal != nil,
-                noProgress: state.stall != nil,
-                budgetSpent: clock.now.duration(to: deadline) <= .zero)
-
-            // The liveness write — one per pass, ending or not. Fraction
-            // and detail both come from the last good reading: a flat or
-            // silent pass rewrites the same position honestly rather
-            // than posing as earned progress.
+            // The liveness write — one per pass, ending or not, and ahead
+            // of the ride-along's question so a peer ask parked at its
+            // bound cannot postpone a write already earned. The action's
+            // repeating nudge is what the ~30 s silence kill actually
+            // sees; this write keeps the freshest reading on record.
+            // Fraction and detail both come from the last good reading:
+            // a flat or silent pass rewrites the same position honestly
+            // rather than posing as earned progress.
             let silence = state.unproductive + state.flatWindow
             watchProgress(ProgressUpdate(
                 fraction: NodeAutomation.watchBand(
@@ -1308,6 +1306,63 @@ enum NodeRun {
                     // hours, so anything smaller would churn on "0 min".
                     silentFor: silence >= state.unproductiveLeash
                         ? silence : nil)))
+
+            // The `getpeerinfo` ride-along (FR-006): the qualifier is the
+            // leash the pass just fed — a `.flatWindow` pass spends one
+            // bounded question on the node's peer view, and only once the
+            // pass's non-peer proof has failed: `caughtUp` on an empty
+            // peer list is the freshness and headers legs checked first,
+            // so a flat pass whose tip reads fresh ends on that leg
+            // without ever asking — `wantsPeerEvidence`'s "already ended
+            // on the freshness leg" premise is kept true by ordering it
+            // so. The answer is `caughtUp` evidence only, never a
+            // reading: it feeds no leash, and a timed-out or failed ask
+            // is simply no evidence.
+            var peers: [NodeAutomation.PeerEvidence] = []
+            let peerBound = min(
+                questionBound, clock.now.duration(to: deadline))
+            if leashFed == .flatWindow, let freshReading, peerBound > .zero,
+                NodeAutomation.wantsPeerEvidence(
+                    reading: freshReading,
+                    headersAdvanced: state.headersAdvanced),
+                !NodeAutomation.caughtUp(
+                    reading: freshReading,
+                    headersAdvanced: state.headersAdvanced,
+                    peers: [], now: now())
+            {
+                let answer = await ask(
+                    "getpeerinfo", session: session,
+                    within: peerBound, clock: clock
+                ) { try await reader.peers() }
+                if Task.isCancelled { return noAnswerReport() }
+                // The flag is re-read like after the chain question: an
+                // answer already in flight cannot be called back, and a
+                // stop that landed inside it outranks whatever the pass
+                // proved.
+                nodeStopped = session.nodeState.isStoppedOrStopping
+                peers = (answer ?? []).map { NodeAutomation.PeerEvidence($0) }
+            }
+
+            // The pass's drift weigh — gathered at decision time so a
+            // condition that landed mid-answer is caught on the pass
+            // that saw it rather than one late. It runs on flat, silent,
+            // and stopped passes alike: `watchEnding` ranks it against
+            // the pass's other facts, so a gather that another verdict
+            // outranks still costs only three reads.
+            let refusal = drift(
+                device: session.device,
+                lowPowerModeAtEntry: state.lowPowerModeAtEntry)
+
+            let ending = NodeAutomation.watchEnding(
+                nodeStopped: nodeStopped,
+                caughtUp: freshReading.map {
+                    NodeAutomation.caughtUp(
+                        reading: $0, headersAdvanced: state.headersAdvanced,
+                        peers: peers, now: now())
+                } ?? false,
+                conditionsChanged: refusal != nil,
+                noProgress: state.stall != nil,
+                budgetSpent: clock.now.duration(to: deadline) <= .zero)
 
             guard let ending else {
                 // Still watching: nap to the next pass, capped at the

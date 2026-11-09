@@ -673,7 +673,7 @@ watch orchestration until the next group.
   `Sources/NodeAppTests/NodeRunWatchTests.swift`,
   `Sources/NodeAppTests/Support/FakeDeviceReadings.swift` ·
   needs T017, T018a, T022
-- [ ] T025 `getpeerinfo` ride-along — on each qualifying flat pass (flag
+- [x] T025 `getpeerinfo` ride-along — on each qualifying flat pass (flag
   clear, gap closed, headers never advanced) one `getpeerinfo`, bounded like
   every question, feeds T012's confirmation count; an absent or timed-out
   answer is no evidence — the pass falls through to the leashes, and a peer
