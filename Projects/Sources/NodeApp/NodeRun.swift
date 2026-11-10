@@ -1073,6 +1073,16 @@ enum NodeRun {
     ) async -> NodeRunReport {
         let reader = session.reader
         onProgress(ProgressUpdate(fraction: 0.1))
+        // A stopped node is never asked — the rule the watch's pass and
+        // the closing peer question already keep, held at the read's own
+        // boundary. `step` sends a `.stopping` node here on purpose — it
+        // cannot be started, so it is read like a running one — but its
+        // answer could only arrive already discarded: `answerIsStillWanted`
+        // below refuses on this same flag, so the question would be up to
+        // `questionBound` spent against a node that stops answering first.
+        guard !session.nodeState.isStoppedOrStopping else {
+            return noAnswerReport()
+        }
         let info = await ask(
             "getblockchaininfo", session: session,
             within: questionBound, clock: clock
