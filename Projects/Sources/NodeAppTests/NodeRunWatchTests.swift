@@ -125,7 +125,9 @@ struct NodeRunWatchTests {
     /// A deliberate stop outranks whatever the pass proved — here a fresh
     /// answer parked mid-flight lands after the stop and is discarded —
     /// and still reports on the measured report rather than a blanked
-    /// `noAnswer`: `nodeStopped` is itself an ending (FR-008).
+    /// `noAnswer`: `nodeStopped` is itself an ending (FR-008). The closing
+    /// peer count is spent nowhere — a stopped node is never asked — so
+    /// `connections` reads absent rather than carrying a dead figure.
     @Test("a node stopped mid-watch ends nodeStopped, answer in flight discarded", .timeLimit(.minutes(1)))
     func stoppedMidWatchEndsNodeStopped() async throws {
         let clock = watchClock()
@@ -133,6 +135,7 @@ struct NodeRunWatchTests {
         let secondAsk = Gate()
         let releaseAnswer = Gate()
         let calls = Mutex(0)
+        let networkCalls = Mutex(0)
         let session = FakeRunSession(
             nodeState: .running,
             reader: StagedReader(
@@ -146,7 +149,10 @@ struct NodeRunWatchTests {
                     try await releaseAnswer.wait()
                     return try decodeWatchInfo(blocks: 150, headers: 200)
                 },
-                network: { try decodeNetworkInfo() }))
+                network: {
+                    networkCalls.withLock { $0 += 1 }
+                    return try decodeNetworkInfo()
+                }))
         let done = Gate()
         let run = Task { @MainActor in
             defer { done.open() }
@@ -169,10 +175,194 @@ struct NodeRunWatchTests {
         let report = await run.value
 
         #expect(report.syncEnding == .nodeStopped)
+        #expect(report.syncResult == .nodeStopped)
         #expect(report.outcome == .alreadyRunning)
         // The discarded answer earned nothing — the gain is still the
         // pre-stop zero, not the 150 the answer carried.
         #expect(report.blocksGainedThisRun == 0)
+        // The closing peer-count question was never spent — absent, not
+        // a figure read off a node already gone.
+        #expect(report.connections == nil)
+        #expect(networkCalls.withLock { $0 } == 0)
+    }
+
+    /// `step` reads a node still on its way down like a running one — it
+    /// cannot be started, so the read is where its `noAnswer` is earned —
+    /// but the read's own boundary honors the watch's rule: a stopped
+    /// node is never asked. `getblockchaininfo` is spent nowhere on
+    /// either budget shape; asking and then discarding would cost up to
+    /// `questionBound` against a node that stops answering first.
+    @Test(
+        "a node already stopping is never asked — noAnswer costs no question",
+        .timeLimit(.minutes(1)),
+        arguments: [Duration.seconds(600), nil] as [Duration?])
+    func stoppingNodeIsNeverAsked(syncBudget: Duration?) async throws {
+        let test = ManualClock()
+        let store = makeVolatileDefaults(
+            distinguisher: syncBudget == nil ? "unbudgeted" : "budgeted")
+        let calls = Mutex(0)
+        let networkCalls = Mutex(0)
+        let session = FakeRunSession(
+            nodeState: .stopping,
+            reader: StagedReader(
+                blockchain: {
+                    calls.withLock { $0 += 1 }
+                    return try decodeWatchInfo()
+                },
+                network: {
+                    networkCalls.withLock { $0 += 1 }
+                    return try decodeNetworkInfo()
+                }))
+        let report = await NodeRun.perform(
+            session: session, waitForFirstAnswer: .seconds(240),
+            syncBudget: syncBudget,
+            clock: test, now: { watchNow }, defaults: store)
+
+        #expect(report.outcome == .noAnswer)
+        #expect(report.syncEnding == .notMeasured)
+        #expect(report.syncResult == .notMeasured)
+        #expect(report.blockHeight == nil)
+        #expect(report.blocksGainedThisRun == nil)
+        #expect(report.connections == nil)
+        // The refusal, not the report, is what this test weighs: a
+        // question asked and then discarded would show exactly one call.
+        #expect(calls.withLock { $0 } == 0)
+        #expect(networkCalls.withLock { $0 } == 0)
+    }
+
+    /// A deliberate stop outranks a drifted condition standing on the
+    /// same pass — the precedence `watchEnding` owns, exercised where it
+    /// lives: critical heat lands while the first poll's answer is
+    /// parked and the node is stopped beside it, so the pass reaches its
+    /// gather holding both facts and ends `nodeStopped`, never
+    /// `conditionsChanged` (spec scenario 18).
+    @Test("a same-pass stop outranks a drifted condition — nodeStopped, not conditionsChanged", .timeLimit(.minutes(1)))
+    func stoppedMidWatchBeatsDrift() async throws {
+        let clock = watchClock()
+        let store = makeVolatileDefaults()
+        let device = FakeDeviceReadings()
+        let pollIssued = Gate()
+        let releaseAnswer = Gate()
+        let calls = Mutex(0)
+        let session = FakeRunSession(
+            nodeState: .running,
+            reader: StagedReader(
+                blockchain: {
+                    let n = calls.withLock { n in n += 1; return n }
+                    if n == 1 { return try decodeWatchInfo() }
+                    // The watch's first question parks until both facts
+                    // have landed — the pass gathers drift at decision
+                    // time beside the stop.
+                    pollIssued.open()
+                    try await releaseAnswer.wait()
+                    return try decodeWatchInfo()
+                },
+                network: { try decodeNetworkInfo() }),
+            device: device)
+        let done = Gate()
+        let run = Task { @MainActor in
+            // `pollIssued` is awaited directly below — opened on every
+            // verdict, an early exit fails on the ending it earned
+            // instead of wedging the await to `.timeLimit`.
+            defer { pollIssued.open(); done.open() }
+            return await NodeRun.perform(
+                session: session, waitForFirstAnswer: .seconds(240),
+                syncBudget: .seconds(600),
+                clock: clock.clock, now: { watchNow }, defaults: store)
+        }
+        defer { run.cancel() }
+        // No drive: the first pass asks without any clock advance — the
+        // gate, not a hop, proves the answer is parked mid-flight.
+        try await pollIssued.wait()
+        // The stop and the drift land together inside the parked answer.
+        session.nodeState = .stopping
+        device.scriptedThermalState = .critical
+        releaseAnswer.open()
+        try await done.wait()
+        let report = await run.value
+
+        #expect(report.syncEnding == .nodeStopped)
+        #expect(report.syncResult == .nodeStopped)
+        #expect(report.outcome == .alreadyRunning)
+        // The drift gather still ran on the stopped pass — `networkCurrent`
+        // is its read alone — so the ending is a ranked win, not a
+        // skipped gather.
+        let deviceCalls = device.calls.withLock { $0 }
+        #expect(deviceCalls.filter { $0 == "networkCurrent" }.count == 1)
+    }
+
+    /// The stop ends the watch on the last good reading — not the entry
+    /// figure, and never the answer that landed after the stop. Pass one
+    /// banks a real gain; the node stops inside pass two's in-flight
+    /// question; the measured report carries the earned height and the
+    /// earned gain (FR-008's "earned outcome, last good reading").
+    @Test("a stop mid-watch reports the last good reading — banked gain, late answer discarded", .timeLimit(.minutes(1)))
+    func stoppedMidWatchKeepsEarnedGain() async throws {
+        let clock = watchClock()
+        let store = makeVolatileDefaults()
+        let secondPoll = Gate()
+        let releaseAnswer = Gate()
+        let calls = Mutex(0)
+        let networkCalls = Mutex(0)
+        let session = FakeRunSession(
+            nodeState: .running,
+            reader: StagedReader(
+                blockchain: {
+                    let n = calls.withLock { n in n += 1; return n }
+                    switch n {
+                    case 1: return try decodeWatchInfo()
+                    // Pass one: a real +10 the watch banks.
+                    case 2: return try decodeWatchInfo(blocks: 110, headers: 200)
+                    // Pass two: parked until the stop has landed — its
+                    // 150 is real but describes a node already gone.
+                    default:
+                        secondPoll.open()
+                        try await releaseAnswer.wait()
+                        return try decodeWatchInfo(blocks: 150, headers: 200)
+                    }
+                },
+                network: {
+                    networkCalls.withLock { $0 += 1 }
+                    return try decodeNetworkInfo()
+                }))
+        let done = Gate()
+        let run = Task { @MainActor in
+            // `secondPoll` must open on every verdict, not only the parked
+            // one — the drive below targets it, and a run that ended early
+            // would otherwise wedge the drive to `.timeLimit` rather than
+            // failing on the ending it actually earned.
+            defer { secondPoll.open(); done.open() }
+            return await NodeRun.perform(
+                session: session, waitForFirstAnswer: .seconds(240),
+                syncBudget: .seconds(600),
+                clock: clock.clock, now: { watchNow }, defaults: store)
+        }
+        defer { run.cancel() }
+        try await clock.questionArmed.wait()
+        // The first pass answers on the spot; the nap to the second is
+        // the only armed deadline, so the drive lands exactly on the
+        // parked second poll. The half-second step buys the parked body
+        // ~60 real executor windows before its 30 s bound, where the
+        // 5 s cadence would offer ~6.
+        try await clock.test.drive(untilDone: secondPoll, by: .milliseconds(500))
+        session.nodeState = .stopping
+        releaseAnswer.open()
+        try await done.wait()
+        let report = await run.value
+
+        #expect(report.syncEnding == .nodeStopped)
+        #expect(report.syncResult == .nodeStopped)
+        #expect(report.outcome == .alreadyRunning)
+        // Pass one's 110 is what the report stands behind — not the
+        // entry's 100, not the discarded 150.
+        #expect(report.blockHeight == 110)
+        #expect(report.blocksGainedThisRun == 10)
+        // A stopped node is never asked — the closing peer count was
+        // spent nowhere.
+        #expect(report.connections == nil)
+        #expect(networkCalls.withLock { $0 } == 0)
+        // Three chain questions: the entry, the banked pass, the parked.
+        #expect(calls.withLock { $0 } == 3)
     }
 
     /// `Task.isCancelled` is consulted separately from the stop flag —

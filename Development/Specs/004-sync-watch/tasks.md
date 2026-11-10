@@ -682,13 +682,27 @@ watch orchestration until the next group.
   `Sources/NodeApp/NodeRun.swift`,
   `Sources/NodeAppTests/NodeRunWatchTests.swift`
   · needs T012, T022 · provisional on T039
-- [ ] T026 `nodeStopped` ending — `isStoppedOrStopping` checked at the top of
+- [x] T026 `nodeStopped` ending — `isStoppedOrStopping` checked at the top of
   each pass, again before accepting each answer, and as `report()`'s
   pre-check, deliberately separate
   from `Task.isCancelled`; the run ends on the normal measured report —
   earned outcome, last good reading — never a blanked `noAnswer` or a false
   `noProgress`; the test stops the node mid-watch and reads the measured
-  report's ending (FR-008, FR-009; verifies FR-008, FR-009) (~180) ·
+  report's ending (FR-008, FR-009; verifies FR-008, FR-009) (~180 — landed
+  ~210, most of it already inside T022's oversized stage: the top-of-pass
+  check, both post-answer re-reads, `measuredReport`'s watched-ending
+  carve-out and its `getnetworkinfo` skip all predated this task, as did
+  the mid-watch stop test itself. What this change adds is the one missing
+  check site — `report()`'s pre-check, so a `.stopping` node the step reads
+  like a running one is never asked at all — and the coverage the written
+  task left unpinned: the refusal test asserting a `.stopping` node costs
+  zero `getblockchaininfo` calls on either budget shape (the call count is
+  the assertion — ask-then-discard lands the same `noAnswer`), the public
+  `syncResult == .nodeStopped` and `connections == nil` assertions on the
+  mid-watch test, a pass-level stop-beats-drift precedence test (scenario
+  18 — the pair was previously pinned only at `watchEnding`), and a
+  banked-gain test proving the report stands behind the last good reading
+  and its earned gain, not the entry figure or the discarded answer) ·
   `Sources/NodeApp/NodeRun.swift`,
   `Sources/NodeAppTests/NodeRunWatchTests.swift` · needs T022
 - [ ] T027 `previous` snapshot captured at attach on `reportExistingNode` —
