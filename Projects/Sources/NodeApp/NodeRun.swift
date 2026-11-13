@@ -1072,6 +1072,15 @@ enum NodeRun {
         watchProgress: @MainActor (ProgressUpdate) -> Void
     ) async -> NodeRunReport {
         let reader = session.reader
+        // The baseline the delta is measured from — the last tip a check
+        // stood behind — is pinned at attach, before the first question:
+        // the ask below can sit unanswered up to `questionBound`, and
+        // inside that window a sibling run's returned result can move
+        // `last_run_*`, or the sync poll the `last_known_*` fallback on a
+        // first-ever run. Read after the answer, the snapshot would carry
+        // that move already and collapse `blocksSinceLastCheck` toward
+        // zero for a run that watched real gains (FR-017).
+        let previous = lastRunBaseline(in: defaults)
         onProgress(ProgressUpdate(fraction: 0.1))
         // A stopped node is never asked — the rule the watch's pass and
         // the closing peer question already keep, held at the read's own
@@ -1100,7 +1109,6 @@ enum NodeRun {
         // discarded answer: the run got nothing it can stand behind.
         guard answerIsStillWanted(session: session) else { return noAnswerReport() }
         onProgress(ProgressUpdate(fraction: 0.6))
-        let previous = lastRunBaseline(in: defaults)
         let reading = NodeAutomation.reading(from: info)
         if let syncBudget {
             // Reached only from `.reportExistingNode`, which skipped
@@ -1433,8 +1441,9 @@ enum NodeRun {
     ///
     /// `previous` is captured by the caller before the wait it is about to
     /// do: the starting paths read it before `awaitFirstAnswer`, and
-    /// `report` reads it once the node's answer is in — before the watch
-    /// consumes it, so a watched run's delta still measures from before
+    /// `report` reads it at attach — before its first question, whose
+    /// in-flight span is the last window the store can move through ahead
+    /// of the read — so a watched run's delta still measures from before
     /// the run, not from inside it. It reads the run-owned `last_run_*`
     /// baseline — written only by a result that is actually returned — so the
     /// node's own sync poll (which writes the observational `last_known_*`

@@ -303,8 +303,11 @@ is dead peers, a lost network, a wedged validation thread.
   attempt's writes. What is not bounded is the retry itself — `restartPerform`
   re-runs `perform` from the top, up to ~21 minutes per attempt, with the node
   left running between attempts (spec edge cases). The `previous` snapshot is
-  captured *before* the watch on
-  the `reportExistingNode` path — the baseline can still move mid-watch (the
+  captured *at attach* on
+  the `reportExistingNode` path — before the path's first question, whose
+  in-flight span was the remaining window a sibling run or the poll could
+  move the store through ahead of the read. The baseline can
+  still move mid-watch (the
   poll writes the `last_known_*` fallback until any run returns, and a
   concurrent run's returned result moves `last_run_*` thereafter) —
   reporting ~0 for a run that watched real gains.

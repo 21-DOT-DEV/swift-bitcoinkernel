@@ -421,6 +421,145 @@ struct NodeRunWatchTests {
         #expect(calls.withLock { $0 } == 2)
     }
 
+    /// The baseline stores a mid-flight overwrite can move — the
+    /// run-owned `last_run_*` a sibling run's returned result writes, and
+    /// the observational `last_known_*` the sync poll rewrites every
+    /// ~30 s, which a first-ever run still reads as its fallback.
+    enum BaselineStore {
+        case run, known
+
+        /// Writes this leg's store — the seed before the run attaches,
+        /// the overwrite while its first question is in flight.
+        /// `@MainActor` like the persist helpers it wraps — a nested type
+        /// does not inherit the suite's isolation.
+        @MainActor
+        func persist(height: Int, in defaults: UserDefaults) {
+            switch self {
+            case .run:
+                NodeViewModel.persistLastRun(
+                    height: height, chain: "signet", in: defaults)
+            case .known:
+                NodeViewModel.persistLastKnown(
+                    height: height, chain: "signet", in: defaults)
+            }
+        }
+
+        /// What the store holds now — proof the overwrite landed.
+        @MainActor
+        func persistedHeight(in defaults: UserDefaults) -> Int? {
+            switch self {
+            case .run: NodeViewModel.lastRun(in: defaults)?.height
+            case .known: NodeViewModel.lastKnown(in: defaults)?.height
+            }
+        }
+    }
+
+    /// `previous` is pinned at attach — before the already-running
+    /// path's first question — so a baseline that moves while that
+    /// question is in flight cannot shrink the delta the report counts
+    /// (FR-017). The parked answer holds the exact window: the ask can
+    /// sit unanswered up to `questionBound`, and inside it a sibling
+    /// run's returned result moves `last_run_*` — or, on a first-ever
+    /// run, the poll moves the `last_known_*` fallback.
+    @Test(
+        "a baseline moved inside the first question still measures from attach",
+        .timeLimit(.minutes(1)),
+        arguments: [BaselineStore.run, .known])
+    func baselinePinnedAtAttach(store: BaselineStore) async throws {
+        let clock = watchClock()
+        let defaults = makeVolatileDefaults(distinguisher: "\(store)")
+        // The tip the last check stood behind when the run attaches.
+        store.persist(height: 90, in: defaults)
+        let answerParked = Gate()
+        let releaseAnswer = Gate()
+        let committed = Gate()
+        let calls = Mutex(0)
+        let session = FakeRunSession(
+            nodeState: .running,
+            reader: StagedReader(
+                blockchain: {
+                    let n = calls.withLock { n in n += 1; return n }
+                    if n == 1 {
+                        // The entry question parks mid-flight — the window
+                        // between attach and the weigh-in a baseline read
+                        // *after* the answer would see the overwrite in.
+                        answerParked.open()
+                        try await releaseAnswer.wait()
+                        return try decodeWatchInfo()
+                    }
+                    // One banked gain, then flat: the watch earns a real
+                    // figure and ends on the 60 s budget, under every leash.
+                    return try decodeWatchInfo(blocks: 110, headers: 200)
+                },
+                network: { try decodeNetworkInfo() }))
+        let done = Gate()
+        let run = Task { @MainActor in
+            // `answerParked`/`committed` are awaited below — opened on
+            // every verdict, an early exit fails on the ending it earned
+            // instead of wedging the awaits to `.timeLimit`.
+            defer { answerParked.open(); committed.open(); done.open() }
+            return await NodeRun.perform(
+                session: session, waitForFirstAnswer: .seconds(240),
+                syncBudget: .seconds(60),
+                clock: clock.clock, now: { watchNow }, defaults: defaults) {
+                if $0.headline != nil { committed.open() }
+            }
+        }
+        defer { run.cancel() }
+        // No drive to reach the parked question — the first ask issues
+        // without any clock advance.
+        try await answerParked.wait()
+        // The overwrite lands while the entry answer is in flight — a
+        // sibling run's result moving `last_run_*`, or the poll moving
+        // `last_known_*`: the tip *that* check saw.
+        store.persist(height: 105, in: defaults)
+        releaseAnswer.open()
+        // The commit's headline proves the released answer landed and the
+        // weigh-in passed before any clock hop can reach the armed bound.
+        try await committed.wait()
+        try await clock.test.drive(untilDone: done, by: .seconds(5))
+        let report = await run.value
+
+        #expect(report.syncEnding == .stillSyncing)
+        #expect(report.outcome == .alreadyRunning)
+        // Measured from the attach-time 90 — a baseline read after the
+        // answer would start at the overwritten 105 and report 5.
+        #expect(report.blocksSinceLastCheck == 20)
+        // The run's own watch baseline is untouched: the watch banked
+        // 100 → 110 on its first pass.
+        #expect(report.blockHeight == 110)
+        #expect(report.blocksGainedThisRun == 10)
+        // The overwrite genuinely landed — the store holds 105, so the
+        // pinned baseline is the only reason the delta reads 20.
+        #expect(store.persistedHeight(in: defaults) == 105)
+    }
+
+    /// The run-owned store wins whenever both answer: the delta is "since
+    /// the last check", not "since the last poll" — a poll that ran in the
+    /// last thirty seconds must not collapse it.
+    @Test("a populated run baseline outranks the poll's newer tip")
+    func prefersRunBaselineOverPoll() async throws {
+        let clock = watchClock()
+        let defaults = makeVolatileDefaults()
+        NodeViewModel.persistLastRun(height: 90, chain: "signet", in: defaults)
+        NodeViewModel.persistLastKnown(height: 105, chain: "signet", in: defaults)
+        let session = FakeRunSession(
+            nodeState: .running,
+            reader: StagedReader(
+                blockchain: { try decodeWatchInfo(blocks: 110) },
+                network: { try decodeNetworkInfo() }))
+        // Unbudgeted: one question, then `measuredReport` — no watch needed
+        // to expose which store `lastRunBaseline` consulted.
+        let report = await NodeRun.perform(
+            session: session, waitForFirstAnswer: .seconds(240),
+            clock: clock.clock, now: { watchNow }, defaults: defaults
+        ) { _ in }
+        // 110 − 90 = 20 measures from the run baseline; preferring the
+        // poll's 105 would have read 5.
+        #expect(report.blocksSinceLastCheck == 20)
+        #expect(report.outcome == .alreadyRunning)
+    }
+
     /// A tripped leash and a spent budget standing on the same pass ends
     /// `noProgress` — the verdict outranks the bound, per the precedence
     /// `watchEnding` is the single owner of.

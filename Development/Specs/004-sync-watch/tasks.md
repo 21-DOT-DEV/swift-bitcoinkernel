@@ -705,14 +705,22 @@ watch orchestration until the next group.
   and its earned gain, not the entry figure or the discarded answer) ·
   `Sources/NodeApp/NodeRun.swift`,
   `Sources/NodeAppTests/NodeRunWatchTests.swift` · needs T022
-- [ ] T027 `previous` snapshot captured at attach on `reportExistingNode` —
+- [x] T027 `previous` snapshot captured at attach on `reportExistingNode` —
   before the weigh-in, not merely before the watch: the run-owned
   `last_run_*` baseline cannot be moved by the poll, but a concurrent run's
   returned result can — and on a first-ever run the `last_known_*` fallback
   is poll-writable — so a watched run's report is
   built from the last good reading, not the first answer's — the test
   overwrites `lastRun` between attach and weigh-in and reads the surviving
-  baseline (FR-017; verifies FR-017) (~140) ·
+  baseline. Landed as specced, two points sharpened in review: the capture
+  sits at the top of `report()` — the earliest line inside the consuming
+  unit, the same per-path convention `start`/`waitForStarting` keep —
+  and the regression is a `@Test(arguments:)` pair over both stores
+  `lastRunBaseline` consults, `last_run_*` overwritten as a sibling run's
+  returned result and `last_known_*` overwritten as the poll's write on a
+  first-ever run, each leg parking the entry `getblockchaininfo` answer
+  mid-flight to hold the window
+  (FR-017; verifies FR-017) (~140) ·
   `Sources/NodeApp/NodeRun.swift`,
   `Sources/NodeAppTests/NodeRunWatchTests.swift` · needs T022
 - [ ] T028 Suppress `measuredReport`'s closing `onProgress(1)` on budgeted
