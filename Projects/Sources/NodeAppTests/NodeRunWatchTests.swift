@@ -80,6 +80,20 @@ struct NodeRunWatchTests {
                 $0 >= NodeAutomation.watchBand(0)
                     && $0 <= NodeAutomation.watchBandEnd
             })
+        // The *full* sequence is sorted, not just the watch writes —
+        // filtering first is what let the measured report's closing
+        // "bar full" claim land unchallenged: banded to the start-up
+        // ceiling, it would read here as a 0.95 → 0.1 retreat the
+        // meter's floor hides but the sequence must not contain.
+        let emittedFractions = emitted.map(\.fraction)
+        #expect(emittedFractions == emittedFractions.sorted())
+        // The band-separation invariant: every write either
+        // self-identifies as a watch write or stays strictly inside the
+        // start-up band — the suppressed closing claim is the one
+        // emission that could break it (headline-less, at the ceiling).
+        #expect(emitted.allSatisfy {
+            $0.headline != nil || $0.fraction < NodeAutomation.startUpBandEnd
+        })
     }
 
     /// The 30 s question bound covers the first-answer wait's questions
@@ -677,6 +691,11 @@ struct NodeRunWatchTests {
         #expect(report.blocksGainedThisRun == nil)
         #expect(calls.withLock { $0 } == 1)
         #expect(emitted.allSatisfy { $0.headline == nil })
+        // And none of them claimed the bar's end: no watch committed, so
+        // every write stays strictly inside the start-up band — a
+        // closing `fraction: 1` folded to the ceiling is the only
+        // emission that would break it.
+        #expect(emitted.allSatisfy { $0.fraction < NodeAutomation.startUpBandEnd })
     }
 
     /// A self-defined chain declines the gate as `notMeasured` — "still
@@ -818,6 +837,9 @@ struct NodeRunWatchTests {
         // `getblockchaininfo`, and no write carried the syncing headline.
         #expect(calls.withLock { $0 } == 1)
         #expect(emitted.allSatisfy { $0.headline == nil })
+        // Nor did any claim the bar's end — the refusal's writes all
+        // stay strictly inside the start-up band.
+        #expect(emitted.allSatisfy { $0.fraction < NodeAutomation.startUpBandEnd })
     }
 
     /// The start path already weighed conditions at preflight, so the
@@ -1131,6 +1153,15 @@ struct NodeRunWatchTests {
         // the watch committed before the drifted pass.
         #expect(report.outcome == .alreadyRunning)
         #expect(emitted.contains { $0.headline != nil })
+        // The band-separation invariant holds on every drift variant:
+        // a flat watch is where sortedness alone goes blind — every
+        // pass rewrites the same position — so the pin is that each
+        // write either self-identifies as a watch write or stays
+        // strictly inside the start-up band; the closing claim is the
+        // only emission that could violate it.
+        #expect(emitted.allSatisfy {
+            $0.headline != nil || $0.fraction < NodeAutomation.startUpBandEnd
+        })
         // A flat answer against the entry reading earned nothing.
         #expect(report.blocksGainedThisRun == 0)
         let deviceCalls = device.calls.withLock { $0 }
@@ -1216,6 +1247,16 @@ struct NodeRunWatchTests {
         // The start path's own outcome — the node is left running.
         #expect(report.outcome == .started)
         #expect(emitted.contains { $0.headline != nil })
+        // The watch ran flat — every pass rewrote the same band
+        // position — so this is also where sortedness must hold over
+        // the *full* sequence (a terminal ceiling write sorts cleanly
+        // here) and the invariant does the catching: each write is a
+        // self-identified watch write or strictly inside the band.
+        let emittedFractions = emitted.map(\.fraction)
+        #expect(emittedFractions == emittedFractions.sorted())
+        #expect(emitted.allSatisfy {
+            $0.headline != nil || $0.fraction < NodeAutomation.startUpBandEnd
+        })
         let deviceCalls = device.calls.withLock { $0 }
         // `networkCurrent` is the drift gather's alone — nothing else
         // reads it — so its count is the pass count, and a pass is the
