@@ -69,6 +69,38 @@ struct NodeRunDrivabilityTests {
         #expect(emitted.allSatisfy { $0.headline == nil && $0.detail == nil })
     }
 
+    /// The same closing claim on the run's other two unbudgeted landings:
+    /// `start`'s site after a stopped node comes up, `waitForStarting`'s
+    /// after a starting one answers. `progressReportsArriveAsUpdates` pins
+    /// `report`'s exactly; these two assert only the tail — the ramp's
+    /// intermediate writes are scheduling-shaped, the closing `1` is the
+    /// contract `completionWrite` carries. Dropped to `nil` there, the run
+    /// ends claiming nine-tenths — the short action's start path never
+    /// showing a full bar.
+    @Test(
+        "the closing bar-fill claim lands on every unbudgeted landing",
+        arguments: [NodeState.stopped, .starting])
+    func unbudgetedLandingsClaimTheBar(nodeState: NodeState) async throws {
+        let session = FakeRunSession(
+            nodeState: nodeState,
+            reader: StagedReader(
+                blockchain: { try decodeBlockchainInfo() },
+                network: { try decodeNetworkInfo() }))
+        // Consulted only by the `.stopped` path — a `.starting` session is
+        // already past the launch gate.
+        session.startNodeResult = true
+        var emitted: [NodeRun.ProgressUpdate] = []
+        let report = await NodeRun.perform(
+            session: session, waitForFirstAnswer: .seconds(30),
+            clock: ManualClock(),
+            defaults: makeVolatileDefaults(distinguisher: nodeState.rawValue)
+        ) { emitted.append($0) }
+        #expect(report.outcome == (nodeState == .stopped ? .started : .alreadyRunning))
+        #expect(report.blockHeight == 100)
+        #expect(emitted.map(\.fraction) == emitted.map(\.fraction).sorted())
+        #expect(emitted.last?.fraction == 1)
+    }
+
     @Test("a run cancelled mid-question reports nothing measured and persists nothing")
     func cancellationMidQuestionPersistsNothing() async throws {
         let store = makeVolatileDefaults()
@@ -87,10 +119,11 @@ struct NodeRunDrivabilityTests {
             try await Gate().wait()
             return try decodeNetworkInfo()
         })
+        var emitted: [NodeRun.ProgressUpdate] = []
         let run = Task { @MainActor in
             await NodeRun.perform(
                 session: session, waitForFirstAnswer: .seconds(30),
-                clock: ManualClock(), defaults: store)
+                clock: ManualClock(), defaults: store) { emitted.append($0) }
         }
         // Ordered on the event, not a guess at elapsed time: the cancel lands
         // only once the last question is provably in flight.
@@ -101,6 +134,9 @@ struct NodeRunDrivabilityTests {
         // measurement — and the seeded baselines come through untouched,
         // which is the "persists nothing" the name claims.
         #expect(report.outcome == .noAnswer)
+        // Nor does the emitted trace claim a finish the report doesn't:
+        // question milestones only, no closing `1` from a cancelled run.
+        #expect(emitted.map(\.fraction) == [0.1, 0.6])
         #expect(report.blockHeight == nil)
         #expect(NodeViewModel.lastRun(in: store)?.height == 90)
         #expect(NodeViewModel.lastRun(in: store)?.chain == "signet")
@@ -127,16 +163,20 @@ struct NodeRunDrivabilityTests {
             await answerReleased.waitIgnoringCancellation()
             return try decodeNetworkInfo()
         })
+        var emitted: [NodeRun.ProgressUpdate] = []
         let run = Task { @MainActor in
             await NodeRun.perform(
                 session: session, waitForFirstAnswer: .seconds(30),
-                clock: ManualClock(), defaults: store)
+                clock: ManualClock(), defaults: store) { emitted.append($0) }
         }
         try await questionEntered.wait()
         session.nodeState = .stopping   // the app stops the node while the question is out
         answerReleased.open()           // the answer lands anyway — and must be discarded
         let report = await run.value
         #expect(report.outcome == .noAnswer)
+        // Same honesty pin as the cancellation case: a discarded reading
+        // must not emit the bar-fill claim a measured run earns.
+        #expect(emitted.map(\.fraction) == [0.1, 0.6])
         #expect(report.blockHeight == nil)
         #expect(NodeViewModel.lastRun(in: store)?.height == 90)
         #expect(NodeViewModel.lastRun(in: store)?.chain == "signet")

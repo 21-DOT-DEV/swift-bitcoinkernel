@@ -776,6 +776,7 @@ enum NodeRun {
         }
         return await measuredReport(
             outcome: .started, previous: previous, reading: reading,
+            completionWrite: ProgressUpdate(fraction: 1),
             questionBound: questionBound,
             session: session, clock: clock, onProgress: onProgress)
     }
@@ -836,6 +837,7 @@ enum NodeRun {
         }
         return await measuredReport(
             outcome: .alreadyRunning, previous: previous, reading: reading,
+            completionWrite: ProgressUpdate(fraction: 1),
             questionBound: questionBound,
             session: session, clock: clock, onProgress: onProgress)
     }
@@ -1122,7 +1124,8 @@ enum NodeRun {
         }
         return await measuredReport(
             outcome: .alreadyRunning, previous: previous,
-            reading: reading, questionBound: questionBound,
+            reading: reading, completionWrite: ProgressUpdate(fraction: 1),
+            questionBound: questionBound,
             session: session, clock: clock, onProgress: onProgress)
     }
 
@@ -1228,7 +1231,7 @@ enum NodeRun {
             // ending.
             return await measuredReport(
                 outcome: outcome, previous: previous, reading: reading,
-                syncEnding: .init(collapsed: result),
+                syncEnding: .init(collapsed: result), completionWrite: nil,
                 questionBound: questionBound,
                 session: session, clock: clock, onProgress: onProgress)
         case .enter:
@@ -1248,7 +1251,7 @@ enum NodeRun {
                     "run: entry weigh-in refused — \(String(describing: refusal), privacy: .public)")
                 return await measuredReport(
                     outcome: outcome, previous: previous, reading: reading,
-                    syncEnding: .watchRefused(refusal),
+                    syncEnding: .watchRefused(refusal), completionWrite: nil,
                     questionBound: questionBound,
                     session: session, clock: clock, onProgress: onProgress)
             }
@@ -1430,14 +1433,15 @@ enum NodeRun {
                 syncEnding: syncEnding,
                 blocksGainedThisRun: NodeAutomation.blocksSince(
                     previous: state.baseline, to: lastReading),
+                completionWrite: nil,
                 questionBound: questionBound,
                 session: session, clock: clock, onProgress: onProgress)
         }
     }
 
     /// The report for a run holding a real reading: asks the last question
-    /// (the peer count, bounded like every other), and fills the bar only once
-    /// nothing is still outstanding.
+    /// (the peer count, bounded like every other), and emits the caller's
+    /// closing write only once nothing is still outstanding.
     ///
     /// `previous` is captured by the caller before the wait it is about to
     /// do: the starting paths read it before `awaitFirstAnswer`, and
@@ -1463,6 +1467,16 @@ enum NodeRun {
     /// ending's *class* — the still-wanted rule below applies only while
     /// no measured ending exists — never on which ending arrived.
     ///
+    /// `completionWrite` is the bar-end claim the caller declares a
+    /// completed run may make — `ProgressUpdate(fraction: 1)` from the
+    /// unbudgeted landing paths, the bar-full the short action always
+    /// ended on; `nil` on every path a watch can reach. A budgeted run's
+    /// pre-watch writes are banded into `0 ... startUpBandEnd`, so a bare
+    /// `1` there would fold to the band's ceiling — a retreat behind the
+    /// watch's own writes, claiming an end the emitter did not earn. The
+    /// bar's end belongs to the action's own `finish()`, not to a claim
+    /// the report makes for itself.
+    ///
     /// Nothing is persisted here: the reading becomes a recorded tip only when
     /// the run's result is actually returned — a run cancelled or stopped
     /// between the last question and that return reports nothing, so it must
@@ -1476,6 +1490,7 @@ enum NodeRun {
         reading: NodeAutomation.LiveReading,
         syncEnding: NodeAutomation.SyncEnding = .notMeasured,
         blocksGainedThisRun: Int? = nil,
+        completionWrite: ProgressUpdate?,
         questionBound: Duration,
         session: any RunSession,
         clock: C,
@@ -1502,7 +1517,7 @@ enum NodeRun {
             ? !Task.isCancelled
             : answerIsStillWanted(session: session)
         guard answerStillCounts else { return noAnswerReport() }
-        onProgress(ProgressUpdate(fraction: 1))
+        if let completionWrite { onProgress(completionWrite) }
         return NodeRunReport(
             outcome: NodeRunOutcome(outcome),
             syncEnding: syncEnding,

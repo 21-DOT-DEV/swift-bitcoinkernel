@@ -723,12 +723,28 @@ watch orchestration until the next group.
   (FR-017; verifies FR-017) (~140) ·
   `Sources/NodeApp/NodeRun.swift`,
   `Sources/NodeAppTests/NodeRunWatchTests.swift` · needs T022
-- [ ] T028 Suppress `measuredReport`'s closing `onProgress(1)` on budgeted
+- [x] T028 Suppress `measuredReport`'s closing `onProgress(1)` on budgeted
   runs only — the unbudgeted `answerIsStillWanted` guard stays
   byte-identical; the test records the write sequence on both paths,
   asserting sortedness over the *full* emitted sequence (T022 review: the
   watch suite's monotonicity check filters to headline-bearing writes,
-  which the offending terminal write does not carry)
+  which the offending terminal write does not carry). Landed as:
+  `measuredReport` gains `completionWrite: ProgressUpdate?` — the closing
+  claim is the caller's to declare, so the three watch-reached call
+  sites pass `nil` while the three unbudgeted landing paths pass
+  `ProgressUpdate(fraction: 1)`, keeping the write behind the
+  still-wanted guard and the unbudgeted `[0.1, 0.6, 1]` sequence
+  byte-identical; a grace-only run keeps its folded ceiling write —
+  harmless, monotone. The pins land beside their scenarios: on
+  `advancesToCaughtUp` the filtered check becomes sortedness over the
+  *full* emitted sequence plus the band-separation invariant — every
+  write either carries the watching headline or sits strictly inside
+  `startUpBandEnd` — the same invariant on
+  `midWatchDriftEndsConditionsChanged` (all four drift variants) and on
+  `toleratedStatesNeverEndWatch`'s flat watch, where sortedness alone
+  is blind, and a band-interior pin on `gateDeclineEndsAlreadyAtTip` and
+  `weighInRefusalEndsWatchRefused`; the unbudgeted leg is
+  `NodeRunDrivabilityTests`' existing exact pin
   (FR-014; verifies FR-014) (~70) · `Sources/NodeApp/NodeRun.swift`,
   `Sources/NodeAppTests/NodeRunWatchTests.swift` · needs T022
 - [ ] T029 `WithHardTimeout`'s pile-up comment is re-derived — the loop is
