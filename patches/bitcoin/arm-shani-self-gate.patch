@@ -1,0 +1,24 @@
+diff --git a/src/crypto/sha256.cpp b/src/crypto/sha256.cpp
+--- a/src/crypto/sha256.cpp
++++ b/src/crypto/sha256.cpp
+@@ -651,7 +651,7 @@
+ #endif
+ #endif // defined(HAVE_GETCPUID)
+ 
+-#if defined(ENABLE_ARM_SHANI)
++#if defined(ENABLE_ARM_SHANI) && (defined(__aarch64__) || defined(__arm__))
+     bool have_arm_shani = false;
+     if (use_implementation & sha256_implementation::USE_SHANI) {
+ #if defined(__linux__)
+diff --git a/src/crypto/sha256_arm_shani.cpp b/src/crypto/sha256_arm_shani.cpp
+--- a/src/crypto/sha256_arm_shani.cpp
++++ b/src/crypto/sha256_arm_shani.cpp
+@@ -8,7 +8,7 @@
+ // Barry O'Rourke for the mbedTLS project.
+ // Variant specialized for 64-byte inputs added by Pieter Wuille.
+ 
+-#ifdef ENABLE_ARM_SHANI
++#if defined(ENABLE_ARM_SHANI) && (defined(__ARM_FEATURE_CRYPTO) || defined(__ARM_FEATURE_SHA2))
+ 
+ #include <array>
+ #include <cstdint>

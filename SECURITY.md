@@ -74,5 +74,6 @@ Every patch is documented in [`patches/`](patches/) with an upstreaming plan. Th
 | `src/init.cpp` | Reset process-global state at shutdown so a second `bitcoind_main()` can run |
 | `src/compat/compat.h` | Guard `MAIN_FUNCTION` so the host app can own `main()` |
 | `src/logging.cpp` | Prevent a teardown assertion when logging stops |
+| `src/crypto/sha256.cpp`, `src/crypto/sha256_arm_shani.cpp` | Self-gate the ARMv8 SHA-2 dispatch and implementation on target/capability macros so `ENABLE_ARM_SHANI` can be a flat build define |
 
 No patch modifies `src/consensus/`, `src/script/`, validation, or serialization. Subtree syncs overwrite the vendored sources wholesale, so drift outside `patches/` is structurally impossible. See [`patches/README.md`](patches/README.md) for the diffs and the upstreaming campaign.

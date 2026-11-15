@@ -98,9 +98,21 @@ let package = Package(
             resources: [.copy("Fixtures")],
             swiftSettings: SwiftSetting.bitcoinSettings
         ),
+        // Test-only C++ probe reporting which SHA-256 implementation the
+        // dispatcher selects at runtime. BitcoinKernelTests asserts on the
+        // string directly instead of racing the kernel's once-per-process
+        // selection log line.
+        .target(
+            name: "SHA256DispatchProbe",
+            dependencies: ["libbitcoinkernel"],
+            path: "Tests/SHA256DispatchProbe",
+            cxxSettings: [
+                .headerSearchPath("../../Sources/libbitcoinkernel/src"),
+            ]
+        ),
         .testTarget(
             name: "BitcoinKernelTests",
-            dependencies: ["BitcoinKernel"]
+            dependencies: ["BitcoinKernel", "SHA256DispatchProbe"]
         ),
     ],
     // Matches the vendored secp256k1 C sources, which are written to C89.
@@ -223,5 +235,16 @@ extension CXXSetting {
         shared + [
             .define("BITCOINKERNEL_BUILD", to: "1"),
             .define("HAVE_SYSTEM", to: "1", .when(platforms: [.linux])),
+            // Turn on Bitcoin Core's ARMv8 SHA-2 path (upstream PR #24115).
+            // Upstream's CMake gates it behind a per-file -march probe that
+            // SwiftPM can't express, so the define is set once for every slice
+            // and the vendored sources self-gate instead (see
+            // patches/bitcoin/arm-shani-self-gate.patch): the dispatch block in
+            // sha256.cpp needs an ARM target macro, the implementation file
+            // needs __ARM_FEATURE_CRYPTO, and every non-ARM object compiles
+            // empty. Apple-scoped: every Apple arm64 toolchain guarantees the
+            // crypto baseline, and scoping avoids a dispatch-on/impl-off link
+            // gap on crypto-less aarch64 (e.g. baseline Linux armv8-a).
+            .define("ENABLE_ARM_SHANI", .when(platforms: [.macOS, .iOS, .macCatalyst, .tvOS, .visionOS])),
         ]
 }

@@ -4,23 +4,24 @@ How we contribute the patches in [`bitcoin/`](bitcoin/) back to Bitcoin Core: wh
 
 House rule for this folder: every file must read cold. Plain words, short sentences, and a one-phrase explanation the first time any project term or issue number appears.
 
-Issue states and every "still needed?" check were last verified **2026-07-02** against Bitcoin Core's development branch (`master`). All five `.patch` files were verified to apply cleanly to the vendored v31.0 tree (`Vendor/bitcoin`, per `subtree.yaml`) on **2026-07-17**. Re-verify all of this before filing anything.
+Issue states and every "still needed?" check were last verified **2026-07-02** against Bitcoin Core's development branch (`master`). The five pre-SHANI `.patch` files were verified to apply cleanly to the vendored v31.0 tree (`Vendor/bitcoin`, per `subtree.yaml`) on **2026-07-17**; `arm-shani-self-gate.patch` was verified on **2026-11-14**. Re-verify all of this before filing anything.
 
 ## The pipeline
 
-Five patches, one discussion thread, six filings. Three patches stand alone; the restart work is sequenced. Nothing in the first group blocks on anything.
+Six patches, one discussion thread, seven filings. Four patches stand alone; the restart work is sequenced. Nothing in the first group blocks on anything.
 
 **File anytime, in any order, one at a time — no thread needed:**
 
 1. [Compile the network-interface file on iPhone-family SDKs](bitcoin/ios-netif-guard.md) — the same one-line `__has_include` change at two guard sites. Smallest first: it builds the track record.
 2. [Stop the late-log crash during teardown](bitcoin/logging-teardown-assertion.md) — a one-line fix to a code path Bitcoin Core's own test framework runs on every teardown.
 3. [Let the host app own `main()`](bitcoin/main-function-guard.md) — a two-line macro guard.
+4. [Let flat build systems define `ENABLE_ARM_SHANI` once](bitcoin/arm-shani-self-gate.md) — two preprocessor gates, inert in the CMake build, that unlock the ARMv8 SHA-2 path for every build system without per-file flags.
 
 **The restart work — in this order:**
 
-4. **Open the discussion thread** (pre-written text below). It states the problem — the node cannot restart inside one process — and asks maintainers to approve the approach before any code arrives.
-5. [Make the RPC server restartable](bitcoin/rpc-server-reset.md) — a pull request that fixes a real, still-reproducing startup crash and can be judged on that alone; it links the thread only as context. Merging it also unlocks step 6, which needs `InterruptRPC()`/`StopRPC()` to be callable again in a second lifecycle. (The small `ResetRPC()` helper ships upstream with its caller in step 6, not here.)
-6. [Reset four globals at shutdown](bitcoin/shutdown-reset.md) — the restart patch itself. Wait for approval on the thread (a "concept ACK": a maintainer thumbs-up on the idea), then open the pull request. It closes the thread.
+5. **Open the discussion thread** (pre-written text below). It states the problem — the node cannot restart inside one process — and asks maintainers to approve the approach before any code arrives.
+6. [Make the RPC server restartable](bitcoin/rpc-server-reset.md) — a pull request that fixes a real, still-reproducing startup crash and can be judged on that alone; it links the thread only as context. Merging it also unlocks step 7, which needs `InterruptRPC()`/`StopRPC()` to be callable again in a second lifecycle. (The small `ResetRPC()` helper ships upstream with its caller in step 7, not here.)
+7. [Reset four globals at shutdown](bitcoin/shutdown-reset.md) — the restart patch itself. Wait for approval on the thread (a "concept ACK": a maintainer thumbs-up on the idea), then open the pull request. It closes the thread.
 
 **Optional, independent, low priority:**
 
@@ -54,7 +55,7 @@ Post as a new issue on `bitcoin/bitcoin`. Fill each ⟨placeholder⟩ when the t
 
 ## Platform reach
 
-The three restart patches and the `main()` guard are OS-agnostic: they matter wherever bitcoind is embedded inside a host process, on any OS Bitcoin Core supports. Only the netif guard is Apple-specific, and its virtue upstream is being inert everywhere else.
+The three restart patches and the `main()` guard are OS-agnostic: they matter wherever bitcoind is embedded inside a host process, on any OS Bitcoin Core supports. Only the netif guard is Apple-specific, and its virtue upstream is being inert everywhere else. The SHANI gates are build-system glue, not platform work: inert in the CMake build on every OS, and they take effect only where a flat build defines `ENABLE_ARM_SHANI` (today: Apple platforms in this package, where the dispatcher then selects `arm_shani` on ARM hardware).
 
 | Platform | Restart trio | `main()` guard | netif guard | Tested? |
 |---|---|---|---|---|
@@ -97,6 +98,7 @@ One row per Bitcoin Core issue or pull request our cards and the thread draft ci
 | [#35658](https://github.com/bitcoin/bitcoin/pull/35658) | Merged 2026-07-06 | Maintainer include-hygiene PR in `netif.cpp`; the description style model (mechanical claims, no failure narrative, unsupported platform as reference only) and evidence the file is actively groomed. |
 | [#34995](https://github.com/bitcoin/bitcoin/pull/34995) | Open | Include-what-you-use enforcement for `src/common/`; filing watchpoint — if it merges first, re-run the apply-check and rebase. |
 | [#33435](https://github.com/bitcoin/bitcoin/pull/33435) | Merged 2025-09-22 | Merged PR whose prose uses "unsupported platforms" verbatim; vocabulary precedent for the netif description. |
+| [#24115](https://github.com/bitcoin/bitcoin/pull/24115) | Merged 2022 | Added the ARMv8 SHA-2 intrinsics implementation and the `ENABLE_ARM_SHANI`/`-march` mechanism the SHANI-gates patch extends; the feature being unlocked for flat build systems. |
 | [#12557](https://github.com/bitcoin/bitcoin/pull/12557) | Closed unmerged 2020-04-23 | The old cross-compile-for-iOS attempt; same direction, never precedent. |
 | [#27711](https://github.com/bitcoin/bitcoin/pull/27711) | Closed unmerged 2023-07-08 | Tried removing shutdown globals from the kernel; same direction, never precedent. |
 | [#31382](https://github.com/bitcoin/bitcoin/pull/31382) | Closed unmerged 2026-02-20 | Tried automatic flush-on-destroy cleanup; same direction, never precedent. |

@@ -8,7 +8,7 @@
 // Barry O'Rourke for the mbedTLS project.
 // Variant specialized for 64-byte inputs added by Pieter Wuille.
 
-#ifdef ENABLE_ARM_SHANI
+#if defined(ENABLE_ARM_SHANI) && (defined(__ARM_FEATURE_CRYPTO) || defined(__ARM_FEATURE_SHA2))
 
 #include <array>
 #include <cstdint>

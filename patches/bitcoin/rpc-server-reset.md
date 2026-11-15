@@ -8,7 +8,7 @@
 | **Touches** | `src/rpc/server.cpp`, `src/rpc/server.h` |
 | **Depends on** | Nothing. |
 | **Unlocks** | [Reset four globals at shutdown](shutdown-reset.md) — it needs `InterruptRPC()`/`StopRPC()` to be restartable first. Locally this patch also carries the `ResetRPC()` helper; upstream that helper ships with the shutdown PR (see the must-not list below). |
-| **File as** | Direct pull request, step 5 of [the pipeline](../UPSTREAMING.md#the-pipeline). Link the discussion thread for context; the crash fix justifies the PR on its own. |
+| **File as** | Direct pull request, step 6 of [the pipeline](../UPSTREAMING.md#the-pipeline). Link the discussion thread for context; the crash fix justifies the PR on its own. |
 | **PR title** | `rpc: remove once_flag from InterruptRPC/StopRPC` |
 | **Cite** | [#31289](https://github.com/bitcoin/bitcoin/issues/31289) — the startup crash this removes (closed 2024 with no fix; still reproduces). [#19111](https://github.com/bitcoin/bitcoin/pull/19111) — precedent: the same locks were already narrowed once, on the same reasoning. |
 

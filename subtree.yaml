@@ -74,7 +74,7 @@ subtrees:
     - src/kernel/{bitcoinkernel,chain,checks,chainparams,coinstats,context,cs_main,disconnected_transactions,mempool_removal_reason}.cpp
     - src/{arith_uint256,chain,clientversion,coins,compressor,dbwrapper,deploymentinfo,deploymentstatus,flatfile,hash,logging,pow,pubkey,random,randomenv,signet,streams,sync,txdb,txgraph,txmempool,uint256,validation,validationinterface,versionbits}.cpp
     - src/consensus/{merkle,tx_check,tx_verify}.cpp
-    - src/crypto/{aes,chacha20,chacha20poly1305,hex_base,hkdf_sha256_32,hmac_sha256,hmac_sha512,muhash,poly1305,ripemd160,sha1,sha256,sha256_sse4,sha3,sha512,siphash}.cpp
+    - src/crypto/{aes,chacha20,chacha20poly1305,hex_base,hkdf_sha256_32,hmac_sha256,hmac_sha512,muhash,poly1305,ripemd160,sha1,sha256,sha256_arm_shani,sha256_sse4,sha3,sha512,siphash}.cpp
     - src/crypto/ctaes/ctaes.c
     - src/node/{blockstorage,chainstate,utxo_snapshot}.cpp
     - src/policy/{ephemeral_policy,feerate,packages,policy,rbf,settings,truc_policy}.cpp
@@ -117,7 +117,7 @@ subtrees:
     - src/kernel/{bitcoinkernel,chain,checks,chainparams,coinstats,context,cs_main,disconnected_transactions,mempool_removal_reason}.cpp
     - src/{arith_uint256,chain,clientversion,coins,compressor,dbwrapper,deploymentinfo,deploymentstatus,flatfile,hash,logging,pow,pubkey,random,randomenv,signet,streams,sync,txdb,txgraph,txmempool,uint256,validation,validationinterface,versionbits}.cpp
     - src/consensus/{merkle,tx_check,tx_verify}.cpp
-    - src/crypto/{aes,chacha20,chacha20poly1305,hex_base,hkdf_sha256_32,hmac_sha256,hmac_sha512,muhash,poly1305,ripemd160,sha1,sha256,sha256_sse4,sha3,sha512,siphash}.cpp
+    - src/crypto/{aes,chacha20,chacha20poly1305,hex_base,hkdf_sha256_32,hmac_sha256,hmac_sha512,muhash,poly1305,ripemd160,sha1,sha256,sha256_arm_shani,sha256_sse4,sha3,sha512,siphash}.cpp
     - src/crypto/ctaes/ctaes.c
     - src/node/{blockstorage,chainstate,utxo_snapshot}.cpp
     - src/policy/{ephemeral_policy,feerate,packages,policy,rbf,settings,truc_policy}.cpp

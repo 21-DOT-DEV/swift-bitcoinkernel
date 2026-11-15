@@ -651,7 +651,7 @@ std::string SHA256AutoDetect(sha256_implementation::UseImplementation use_implem
 #endif
 #endif // defined(HAVE_GETCPUID)
 
-#if defined(ENABLE_ARM_SHANI)
+#if defined(ENABLE_ARM_SHANI) && (defined(__aarch64__) || defined(__arm__))
     bool have_arm_shani = false;
     if (use_implementation & sha256_implementation::USE_SHANI) {
 #if defined(__linux__)

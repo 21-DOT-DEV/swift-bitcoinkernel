@@ -38,9 +38,13 @@
 		</dict>
 		<dict>
 			<!-- randomenv.cpp mixes kern.boottime (via sysctl) into the RNG
-			     entropy pool. No approved reason literally says "entropy";
-			     35F9.1 is the closest sanctioned fit — the value never
-			     leaves the device. -->
+			     entropy pool — 35F9.1 is the closest sanctioned fit for
+			     "entropy". crypto/sha256.cpp's
+			     sysctlbyname("hw.optional.arm.FEAT_SHA256") CPU-feature
+			     query rides the same entry: sysctl functions are
+			     declared under this category and no sanctioned reason
+			     literally means "CPU feature". No queried value leaves
+			     the device. -->
 			<key>NSPrivacyAccessedAPIType</key>
 			<string>NSPrivacyAccessedAPICategorySystemBootTime</string>
 			<key>NSPrivacyAccessedAPITypeReasons</key>

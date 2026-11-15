@@ -11,7 +11,7 @@ Contributing one upstream? The order of work, the pre-written discussion thread,
 
 ## The patches (Bitcoin Core v31.x)
 
-All five are applied locally and none has been filed upstream yet. Per-patch status lives on each card.
+All six are applied locally and none has been filed upstream yet. Per-patch status lives on each card.
 
 ### Restart support
 
@@ -31,6 +31,9 @@ All five are applied locally and none has been filed upstream yet. Per-patch sta
 
 5. **[Compile the network-interface file on iPhone-family SDKs](bitcoin/ios-netif-guard.md)** — `src/common/netif.cpp` · [diff](bitcoin/ios-netif-guard.patch)
    One header this file includes ships only in the Mac SDK, so the file fails to compile for iPhone-family targets. The guard compiles that code only where the header exists (`__has_include`, the same idiom `randomenv.cpp` uses); Apple platforms without it take the existing unsupported-platform fallback.
+
+6. **[Let flat build systems define `ENABLE_ARM_SHANI` once](bitcoin/arm-shani-self-gate.md)** — `src/crypto/sha256.cpp`, `src/crypto/sha256_arm_shani.cpp` · [diff](bitcoin/arm-shani-self-gate.patch)
+   Upstream gates the ARMv8 SHA-2 implementation behind a per-file `-march` flag SwiftPM can't express, so the dispatch block and the implementation file gate themselves instead: dispatch exists only on ARM targets, the intrinsics only where the toolchain can emit crypto instructions, and non-ARM objects compile empty — the `sha256_sse4.cpp` idiom. Enables `ENABLE_ARM_SHANI` as an ordinary target define.
 
 ## Verification memos
 
