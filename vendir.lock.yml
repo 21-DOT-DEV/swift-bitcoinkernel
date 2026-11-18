@@ -1,0 +1,11 @@
+apiVersion: vendir.k14s.io/v1alpha1
+directories:
+- contents:
+  - directory: {}
+    path: .
+  path: /tmp/test-crc32c
+- contents:
+  - directory: {}
+    path: .
+  path: Sources/crc32c
+kind: LockConfig

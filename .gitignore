@@ -160,3 +160,35 @@ Tuist/.build
 .docc-suite-state/
 .tuist/
 .cache/
+
+# Credential-hygiene — shapes that carry tokens and key material, never meant
+# to be stageable here. The staged diff is what `jury` sends to external
+# model providers — the .jury/secret-patterns grep is opt-in, this block is
+# the always-on guard between a stray secrets file and the panel (mirrors
+# swift-secp256k1; .vscode/ is deliberately absent — shared editor settings
+# are committed).
+.env
+.env.*
+!.env.example
+.envrc
+*.pem
+*.key
+*.p12
+*.mobileprovision
+.mcp.json
+
+# vendir scratch — `.vendir-tmp*` staging plus the gitignored upstream
+# checkout `.vendir-upstream/` that vendir.yml's `git:` entry populates and
+# the `directory:` slices copy from (replaces the committed Vendor/ mirror).
+.vendir-tmp*
+.vendir-upstream/
+
+# Stray compiler artifacts from ad-hoc root-level compiles (observed:
+# main.{swiftmodule,swiftdoc,swiftsourceinfo,abi.json} — module outputs and
+# an ABI descriptor dropped at repo root). Root-anchored so they can't be
+# swept into `git add -A`, while deliberate uses deeper in the tree still
+# show up as untracked.
+/*.swiftmodule
+/*.swiftdoc
+/*.swiftsourceinfo
+/*.abi.json
