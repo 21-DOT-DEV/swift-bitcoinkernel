@@ -29,6 +29,11 @@ on:
         description: Number of iterations to run
         type: string
         default: "100"
+      tests:
+        description: 'Optional -only-testing: filter (e.g. NodeAppTests/NodeRunWatchTests) — empty runs the whole bundle. Scoping shortens each iteration, so more fit the timeout.'
+        type: string
+        required: false
+        default: ""
       stop_early:
         description: Stop at the first failure (off = run all iterations and count them)
         type: boolean
@@ -184,12 +189,28 @@ jobs:
           PLATFORM: ${{ inputs.platform }}
           ITERATIONS: ${{ inputs.iterations }}
           STOP_EARLY: ${{ inputs.stop_early }}
+          TESTS: ${{ inputs.tests }}
         run: |
           RESULTS="${RUNNER_TEMP:-/tmp}/xcresults"
+          LOG="${RUNNER_TEMP:-/tmp}/hunt-xcodebuild.log"
           mkdir -p "$RESULTS"
-          # Positional params keep the optional flag quote-safe.
+          # Nothing outside this set is usable in a filter anyway — and
+          # rejecting the rest keeps a newline in the input out of the
+          # echoes below, where it could smuggle ::commands:: onto a
+          # line of its own.
+          if [[ $TESTS =~ [^A-Za-z0-9_/().-] ]]; then
+            echo "::error::tests input carries characters -only-testing cannot use"; exit 1
+          fi
+          # Positional params keep the optional flags quote-safe.
           if [ "$STOP_EARLY" = "true" ]; then set -- -run-tests-until-failure; else set --; fi
-          echo "Running $ITERATIONS iterations (stop_early=$STOP_EARLY)"
+          if [ -n "$TESTS" ]; then set -- "$@" -only-testing:"$TESTS"; fi
+          echo "Running $ITERATIONS iterations (stop_early=$STOP_EARLY, tests=${TESTS:-<all>})"
+          # set +e / PIPESTATUS / set -e, the tuist-apps.yml pattern:
+          # tee stays on the log while $rc carries xcodebuild's own
+          # status — a failed hunt must fail the step with its real
+          # code, not fall through to the count check, which would
+          # blame the filter for an unrelated abort.
+          set +e
           xcodebuild test-without-building \
             -skipMacroValidation -skipPackagePluginValidation \
             -scmProvider system -disablePackageRepositoryCache \
@@ -197,7 +218,34 @@ jobs:
             -destination "$DESTINATION" -derivedDataPath "$DERIVED_DATA" \
             -test-iterations "$ITERATIONS" "$@" \
             -resultBundlePath "$RESULTS/$SCHEME-$PLATFORM-hunt.xcresult" \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO 2>&1 | tee "$LOG"
+          rc=${PIPESTATUS[0]}
+          set -e
+          # A hunt that executed zero tests — a filter that matched
+          # nothing, a selection of only skipped tests, or a broken
+          # test plan — must never read as clean. The summary counts
+          # passed and failed tests separately from skipped ones, so
+          # passedTests + failedTests is the executed count and zero
+          # means nothing ran. It runs only on a clean xcodebuild: a
+          # failure exits below with its own status and message.
+          if [ "$rc" -eq 0 ]; then
+            EXECUTED=$(xcrun xcresulttool get test-results summary \
+              --path "$RESULTS/$SCHEME-$PLATFORM-hunt.xcresult" \
+              --compact 2>/dev/null \
+              | jq -r '(.passedTests // 0) + (.failedTests // 0)' 2>/dev/null || true)
+            if [ -z "$EXECUTED" ]; then
+              # xcresult unreadable — fall back to the log's own
+              # positive count. `test` matches the one-test "1 test"
+              # line too; `[1-9]` still excludes a "0 tests" run.
+              grep -qE 'Test run with [1-9][0-9]* test|Executed [1-9][0-9]* test' "$LOG" \
+                && EXECUTED=1 || EXECUTED=0
+            fi
+            if [ "$EXECUTED" -lt 1 ]; then
+              echo "::error::hunt executed no tests — nothing measured"
+              exit 1
+            fi
+          fi
+          exit "$rc"
 
       # always(), not failure(): a clean hunt's bundle carries the per-iteration
       # timings that justify calling a flake fixed.

@@ -104,4 +104,5 @@ disagree. Do not hand-edit it.
 | 003 | Action that runs the node unattended from a Shortcuts automation | — | In Progress | [plan.md](003-node-automation-action/plan.md) |
 | 004 | The long-running action watches the node sync toward the tip | — | Planned | [plan.md](004-sync-watch/plan.md) |
 | 005 | Authenticate github.com clones and retry fetch flakes in CI | — | Planned | [plan.md](005-reliable-clones/plan.md) |
+| 006 | Migrate Bitcoin Core vendoring from subtree extraction to vendir | 10 · Vendir Migration | In Progress | [plan.md](006-vendir-migration/plan.md) |
 <!-- END GENERATED INDEX -->

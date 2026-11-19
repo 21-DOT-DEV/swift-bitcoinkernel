@@ -221,8 +221,8 @@ struct WithHardTimeoutTests {
         try await finished.wait()
     }
 
-    @Test("a stepped drive under the bound leaves in-flight work its real turns")
-    func steppedDriveLetsWorkAnswer() async throws {
+    @Test("a drive holds on the bound until in-flight work answers")
+    func driveHoldsUntilWorkAnswers() async throws {
         let clock = ManualClock()
         let done = Gate()
         let call = Task {
@@ -230,20 +230,53 @@ struct WithHardTimeoutTests {
             return try await withHardTimeout(.seconds(10), clock: clock) {
                 // In-flight work needing real executor turns, never a
                 // clock park: five hops, then the answer. The bound is
-                // the only parked deadline, so a driver that jumped
-                // straight to it would stamp this answer late and have
-                // it discarded — the step cap is what buys the work its
-                // turns.
+                // the only parked deadline — a driver that fired it
+                // would stamp this answer late and have it discarded, so
+                // the drive must hold time until the answer cancels it.
                 for _ in 0..<5 { await Task.yield() }
                 return 42
             }
         }
-        // The grace suite's shared driver at ~400 turns of budget (10 s
-        // ÷ 25 ms) for the ~5 the work needs: a driver that jumped
-        // straight to the bound fires it on hop one, so this still fails
-        // against the naive shape — but the budget is engineered margin,
-        // not a guarantee, since unparked work is invisible to the clock.
-        try await clock.drive(untilDone: done, by: .milliseconds(25))
+        // The bound holds the clock for exactly as long as the work
+        // needs — not a hop budget to engineer, a guarantee: the answer
+        // can never be stamped late by the drive itself.
+        try await clock.drive(untilDone: done)
         #expect(try await call.value == 42)
+    }
+
+    @Test("a withHardTimeout timer is classified as a bound — the drive holds on it")
+    func timerIsClassifiedAsBound() async throws {
+        // The pin the drive's design rests on: `withHardTimeout` runs its
+        // timer in `Task.detached`, where `ClockSubject.isCurrent` can
+        // never read true — so inside a marked run the parked timer is a
+        // bound the clock owes to work, never a nap the drive may fire.
+        // If the timer ever moved into a `Task { }` child it would
+        // inherit the mark instead, `nextStep` would read `.advance`,
+        // and this check would fail rather than the suite's verdicts.
+        let clock = ManualClock()
+        let entered = Gate()
+        let call = ClockSubject.$isCurrent.withValue(true) {
+            Task {
+                try await withHardTimeout(.seconds(30), clock: clock) {
+                    entered.open()
+                    // Real delay so the bound's timer provably parks
+                    // before the answer — the classification is what the
+                    // check below reads, not the answer's timing.
+                    try await Task.sleep(for: .milliseconds(20))
+                    return 7
+                }
+            }
+        }
+        defer { call.cancel() }
+        try await entered.wait()
+        // The bound is the only sleeper that can be parked — wait for
+        // the park itself so the sample below can't race the timer task.
+        _ = try await clock.waitForNextDeadline()
+        guard case .hold? = clock.nextStep.step else {
+            Issue.record(
+                "a parked withHardTimeout timer did not classify as a bound")
+            return
+        }
+        #expect(try await call.value == 7)
     }
 }
