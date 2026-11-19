@@ -44,13 +44,13 @@ let package = Package(
         .target(
             name: "libbitcoinkernel",
             dependencies: Target.Dependency.kernelDeps,
-            exclude: ["src/crypto/ctaes/ctaes.c"],
+            exclude: ["COPYING", "src/crypto/ctaes/ctaes.c"],
             cxxSettings: CXXSetting.kernelSettings
         ),
         .target(
             name: "bitcoind",
             dependencies: Target.Dependency.bitcoinDeps,
-            exclude: ["src/bridge/README.md"],
+            exclude: ["COPYING", "src/bridge/README.md"],
             cxxSettings: CXXSetting.bitcoinSettings,
             linkerSettings: [
                 .linkedLibrary("sqlite3")
@@ -59,9 +59,10 @@ let package = Package(
 
         // MARK: - Vendored C/C++ Libraries
 
-        .target(name: "crc32c"),
+        .target(name: "crc32c", exclude: ["LICENSE"]),
         .target(
             name: "leveldb",
+            exclude: ["LICENSE"],
             cxxSettings: [
                 // See CXXSetting.shared: override the toolchain's Debug default of
                 // libc++ DEBUG hardening (O(n) container-invariant checks) with FAST.
@@ -76,9 +77,10 @@ let package = Package(
                 .headerSearchPath("."),
             ]
         ),
-        .target(name: "minisketch"),
+        .target(name: "minisketch", exclude: ["LICENSE"]),
         .target(
             name: "secp256k1",
+            exclude: ["COPYING"],
             cSettings: [
                 .define("ECMULT_GEN_PREC_BITS", to: "4"),
                 .define("ECMULT_WINDOW_SIZE", to: "15"),

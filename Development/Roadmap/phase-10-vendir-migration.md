@@ -1,8 +1,8 @@
 # Phase 10: Vendir Migration
 
-**Goal**: Adopt vendir-driven vendoring for the Bitcoin Core upstream sync (blueprint: swift-openssl), retiring the subtree machinery  
-**Status**: PLANNED  
-**Last Updated**: 2026-08-01  
+**Goal**: Adopt vendir-driven vendoring for the Bitcoin Core upstream sync — one `git:`-sourced checkout feeding `directory:` slices (blueprint: swift-secp256k1 spec 002, adapted for this repo's scale), retiring the subtree machinery  
+**Status**: IN PROGRESS  
+**Last Updated**: 2026-11-16  
 **Funding**: Inside the 2026 funding window — Q2 (months 4–6) of the shared 2026 roadmap
 
 ---
@@ -33,9 +33,11 @@
 
 ## Sequencing
 
-1. Stand up vendir alongside subtree; verify identical extraction at the pinned release
-2. Switch CI + docs to vendir
-3. Remove subtree config, plugin, and workflows
+1. Write `vendir.yml` + `Scripts/vendor-sync.sh` (vendir + patch re-apply + fixups); verify identical extraction at the pinned release
+2. Remove `Vendor/` mirror, `subtree.yaml`, and the plugin dependency
+3. Add the `vendir-check` CI gate; switch docs to vendir
+
+Tracked as spec `Development/Specs/006-vendir-migration/`; durable decisions in ADRs 0010–0011.
 
 ---
 

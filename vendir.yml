@@ -1,0 +1,441 @@
+# Managed by vendir — https://carvel.dev/vendir
+#
+# Declarative source-vendoring config that will replace `subtree.yaml`,
+# the `swift package plugin subtree-sync` plugin, and the committed
+# `Vendor/bitcoin` mirror (git-subtree squashes) — the teardown is a
+# separate change; until it lands both systems coexist and this file is
+# the authority for the extracted trees. Drive it through
+# `Scripts/vendor-sync.sh`, not bare `vendir sync` — the vendored trees are
+# only correct after that script's patch-apply and fixup stages (below).
+#
+# Fetch shape: ONE `git:` contents entry clones bitcoin/bitcoin at the
+# pinned ref into `.vendir-upstream/bitcoin/` — gitignored scratch that also
+# serves as the `git apply --check` validation tree for patches/ (the role
+# `Vendor/bitcoin` played). Every other entry is a `directory:` slice that
+# copies a filtered subset of that checkout — local copies, no refetch.
+# Why: released vendir fetches once per `git:` contents entry with no
+# cross-entry cache (carvel-dev/vendir#101) and fetches *every* ref for a
+# named tag (carvel-dev/vendir#453, unshipped at 0.47.0). bitcoin/bitcoin
+# carries ~715 refs, so per-destination `git:` entries would download the
+# same several-hundred-MB pack ~8 times. This is swift-openssl's
+# cache+slice shape, minus its wrapper and provenance sidecar — our cache
+# entry IS a git source, so `vendir.lock.yml` records the real upstream
+# commit SHA.
+#
+# ignorePaths contract: vendir wipes each `directories[].path` before
+# copying; `ignorePaths` carries the listed destination files across the
+# wipe — hand-written modulemaps, build-config headers, the
+# `src/bridge/` shims, and the `include/` umbrella trees (patches/README.md
+# § "Custom build files"). Entries must be literal FILE paths: vendir
+# stats each glob match and aborts on a directory, so `include/**` is
+# fatal wherever `include/` holds a subdirectory (observed at
+# Sources/bitcoind/include/config). Patch-touched files are NOT
+# ignored: they sync fresh and `vendor-sync.sh` re-applies the `.patch`
+# artifacts, so upstream drift under a patch fails loudly at sync time.
+# `src/compat/compat.h` therefore rides the normal `src/**/*.h` sync — its
+# subtree-era exclusion is dropped and `main-function-guard.patch` owns the
+# delta. Caveat: a future upstream file landing at one of these exact
+# destination paths would be silently shadowed — the planned
+# `vendir-check.yml` (T010/T011, not yet landed) probes the synced cache
+# for that.
+#
+# License files ride with the vendored code (the sibling spec's precedent):
+# bitcoin's `COPYING` into the two bitcoin-code targets, each vendored
+# library's own license into its tree — all excluded in Package.swift so
+# SPM doesn't warn on unhandled files.
+#
+# `includePaths`/`excludePaths` match upstream-repo-relative paths BEFORE
+# `newRootPath` re-roots, and `ignorePaths` are destination-relative.
+# Brace groups from subtree.yaml are expanded to explicit globs.
+
+apiVersion: vendir.k14s.io/v1alpha1
+kind: Config
+minimumRequiredVersion: 0.47.0
+
+directories:
+
+# === Upstream checkout — the only network fetch ===
+# Pristine bitcoin/bitcoin at the pinned ref. vendir syncs directories in
+# config order, so this lands first and every slice below copies from it.
+- path: .vendir-upstream/bitcoin
+  contents:
+  - path: .
+    git:
+      url: https://github.com/bitcoin/bitcoin.git
+      ref: v31.0 # annotated, GPG-signed upstream release tag
+      depth: 1
+      skipInitSubmodules: true
+    legalPaths: []
+
+# === Vendored C/C++ libraries (each its own SPM target) ===
+
+- path: Sources/crc32c
+  contents:
+  - path: .
+    directory: {path: .vendir-upstream/bitcoin}
+    newRootPath: src/crc32c
+    includePaths:
+    - src/crc32c/include/**/*.h
+    - src/crc32c/include/**/*.cc
+    - src/crc32c/src/**/*.h
+    - src/crc32c/src/**/*.cc
+    - src/crc32c/LICENSE
+    excludePaths:
+    - '**/*_unittest*'
+    - '**/*_test_main*'
+    - '**/*_benchmark*'
+    - '**/*_capi_*'
+    - '**/*_extend_*'
+    ignorePaths:
+    - include/module.modulemap
+    - include/crc32c/crc32c_config.h # generated; upstream ships only crc32c_config.h.cmakein
+    legalPaths: []
+
+- path: Sources/leveldb
+  contents:
+  - path: .
+    directory: {path: .vendir-upstream/bitcoin}
+    newRootPath: src/leveldb
+    includePaths:
+    - src/leveldb/include/**/*.h
+    - src/leveldb/include/**/*.cc
+    - src/leveldb/db/**/*.h
+    - src/leveldb/db/**/*.cc
+    - src/leveldb/helpers/**/*.h
+    - src/leveldb/helpers/**/*.cc
+    - src/leveldb/port/**/*.h
+    - src/leveldb/port/**/*.cc
+    - src/leveldb/table/**/*.h
+    - src/leveldb/table/**/*.cc
+    - src/leveldb/util/**/*.h
+    - src/leveldb/util/**/*.cc
+    - src/leveldb/LICENSE
+    excludePaths:
+    - '**/*_test.cc'
+    - '**/testharness*'
+    - '**/testutil*'
+    - '**/env_windows*'
+    - '**/leveldbutil*'
+    - '**/port_example*'
+    - '**/windows_logger*'
+    ignorePaths:
+    - include/module.modulemap
+    - include/port/port_config.h # generated; upstream ships only port_config.h.in
+    legalPaths: []
+
+- path: Sources/minisketch
+  contents:
+  - path: .
+    directory: {path: .vendir-upstream/bitcoin}
+    newRootPath: src/minisketch
+    includePaths:
+    - src/minisketch/include/**/*.h
+    - src/minisketch/include/**/*.cpp
+    - src/minisketch/src/**/*.h
+    - src/minisketch/src/**/*.cpp
+    - src/minisketch/LICENSE
+    excludePaths:
+    - '**/bench*'
+    - '**/test*'
+    - '**/clmul_*'
+    ignorePaths:
+    - include/module.modulemap
+    legalPaths: []
+
+- path: Sources/secp256k1
+  contents:
+  - path: .
+    directory: {path: .vendir-upstream/bitcoin}
+    newRootPath: src/secp256k1
+    includePaths:
+    - src/secp256k1/include/**/*.h
+    - src/secp256k1/include/**/*.c
+    - src/secp256k1/src/**/*.h
+    - src/secp256k1/src/**/*.c
+    - src/secp256k1/COPYING
+    excludePaths:
+    - '**/bench*'
+    - '**/test*'
+    - '**/unit_test*'
+    - '**/ctime_tests*'
+    - '**/precompute_ecmult*'
+    - '**/scalar_low*'
+    - '**/field_5x52_asm_impl*'
+    - '**/wycheproof/**'
+    ignorePaths:
+    - include/module.modulemap
+    legalPaths: []
+
+# === libbitcoinkernel — headers at src/**/*.h plus the kernel .cpp set ===
+# Repo-relative copy (no newRootPath): the whole destination is one
+# contents entry so `src/kernel/x.cpp` lands `Sources/libbitcoinkernel/
+# src/kernel/x.cpp`, matching the pre-migration layout exactly.
+# `src/compat/compat.h` is deliberately NOT excluded here — it syncs fresh
+# and `main-function-guard.patch` re-applies on top (see header comment).
+- path: Sources/libbitcoinkernel
+  contents:
+  - path: .
+    directory: {path: .vendir-upstream/bitcoin}
+    includePaths:
+    - COPYING
+    - src/**/*.h
+    - src/kernel/bitcoinkernel.cpp
+    - src/kernel/chain.cpp
+    - src/kernel/checks.cpp
+    - src/kernel/chainparams.cpp
+    - src/kernel/coinstats.cpp
+    - src/kernel/context.cpp
+    - src/kernel/cs_main.cpp
+    - src/kernel/disconnected_transactions.cpp
+    - src/kernel/mempool_removal_reason.cpp
+    - src/arith_uint256.cpp
+    - src/chain.cpp
+    - src/clientversion.cpp
+    - src/coins.cpp
+    - src/compressor.cpp
+    - src/dbwrapper.cpp
+    - src/deploymentinfo.cpp
+    - src/deploymentstatus.cpp
+    - src/flatfile.cpp
+    - src/hash.cpp
+    - src/logging.cpp
+    - src/pow.cpp
+    - src/pubkey.cpp
+    - src/random.cpp
+    - src/randomenv.cpp
+    - src/signet.cpp
+    - src/streams.cpp
+    - src/sync.cpp
+    - src/txdb.cpp
+    - src/txgraph.cpp
+    - src/txmempool.cpp
+    - src/uint256.cpp
+    - src/validation.cpp
+    - src/validationinterface.cpp
+    - src/versionbits.cpp
+    - src/consensus/merkle.cpp
+    - src/consensus/tx_check.cpp
+    - src/consensus/tx_verify.cpp
+    - src/crypto/aes.cpp
+    - src/crypto/chacha20.cpp
+    - src/crypto/chacha20poly1305.cpp
+    - src/crypto/hex_base.cpp
+    - src/crypto/hkdf_sha256_32.cpp
+    - src/crypto/hmac_sha256.cpp
+    - src/crypto/hmac_sha512.cpp
+    - src/crypto/muhash.cpp
+    - src/crypto/poly1305.cpp
+    - src/crypto/ripemd160.cpp
+    - src/crypto/sha1.cpp
+    - src/crypto/sha256.cpp
+    - src/crypto/sha256_sse4.cpp
+    - src/crypto/sha3.cpp
+    - src/crypto/sha512.cpp
+    - src/crypto/siphash.cpp
+    - src/crypto/ctaes/ctaes.c
+    - src/node/blockstorage.cpp
+    - src/node/chainstate.cpp
+    - src/node/utxo_snapshot.cpp
+    - src/policy/ephemeral_policy.cpp
+    - src/policy/feerate.cpp
+    - src/policy/packages.cpp
+    - src/policy/policy.cpp
+    - src/policy/rbf.cpp
+    - src/policy/settings.cpp
+    - src/policy/truc_policy.cpp
+    - src/primitives/block.cpp
+    - src/primitives/transaction.cpp
+    - src/script/interpreter.cpp
+    - src/script/script.cpp
+    - src/script/script_error.cpp
+    - src/script/sigcache.cpp
+    - src/script/solver.cpp
+    - src/support/cleanse.cpp
+    - src/support/lockedpool.cpp
+    - src/util/chaintype.cpp
+    - src/util/check.cpp
+    - src/util/expected.cpp
+    - src/util/feefrac.cpp
+    - src/util/fs.cpp
+    - src/util/fs_helpers.cpp
+    - src/util/hasher.cpp
+    - src/util/moneystr.cpp
+    - src/util/rbf.cpp
+    - src/util/serfloat.cpp
+    - src/util/signalinterrupt.cpp
+    - src/util/syserror.cpp
+    - src/util/threadnames.cpp
+    - src/util/time.cpp
+    - src/util/tokenpipe.cpp
+    excludePaths:
+    - '**/crc32c/**'
+    - '**/leveldb/**'
+    - '**/minisketch/**'
+    - '**/secp256k1/**'
+    - '**/wallet/**'
+    - '**/zmq/**'
+    - '**/qt/**'
+    - '**/test/**'
+    - '**/bench/**'
+    - '**/ipc/**'
+    ignorePaths:
+    - include/bitcoinkernel.h
+    - include/libbitcoinkernel.apinotes
+    - include/module.modulemap
+    - src/bitcoin-build-config.h
+    - src/bitcoin-build-info.h
+    legalPaths: []
+
+# === bitcoind — all remaining sources, repo-relative ===
+# `**/ipc/**` narrows to `**/ipc/**/*.{cpp,c}` so the lone extracted
+# `src/ipc/exception.h` header survives; every other ipc file stays out.
+- path: Sources/bitcoind
+  contents:
+  - path: .
+    directory: {path: .vendir-upstream/bitcoin}
+    includePaths:
+    - COPYING
+    - src/ipc/exception.h
+    - src/wallet/**/*.h
+    - src/**/*.cpp
+    - src/**/*.c
+    excludePaths:
+    - '**/crc32c/**'
+    - '**/leveldb/**'
+    - '**/minisketch/**'
+    - '**/secp256k1/**'
+    - '**/dummywallet.cpp'
+    - '**/zmq/**'
+    - '**/qt/**'
+    - '**/test/**'
+    - '**/bench/**'
+    - '**/ipc/**/*.cpp'
+    - '**/ipc/**/*.c'
+    - '**/bitcoin.cpp'
+    - '**/bitcoin-cli.cpp'
+    - '**/bitcoin-tx.cpp'
+    - '**/bitcoin-wallet.cpp'
+    - '**/bitcoin-util.cpp'
+    - '**/bitcoin-chainstate.cpp'
+    - '**/bitcoin-node.cpp'
+    - '**/bitcoin-gui.cpp'
+    - '**/bitcoin-qt.cpp'
+    - '**/crypto/ctaes/bench.c'
+    - '**/crypto/ctaes/test.c'
+    # --- the libbitcoinkernel .cpp set (same literal list, negative polarity) ---
+    - src/kernel/bitcoinkernel.cpp
+    - src/kernel/chain.cpp
+    - src/kernel/checks.cpp
+    - src/kernel/chainparams.cpp
+    - src/kernel/coinstats.cpp
+    - src/kernel/context.cpp
+    - src/kernel/cs_main.cpp
+    - src/kernel/disconnected_transactions.cpp
+    - src/kernel/mempool_removal_reason.cpp
+    - src/arith_uint256.cpp
+    - src/chain.cpp
+    - src/clientversion.cpp
+    - src/coins.cpp
+    - src/compressor.cpp
+    - src/dbwrapper.cpp
+    - src/deploymentinfo.cpp
+    - src/deploymentstatus.cpp
+    - src/flatfile.cpp
+    - src/hash.cpp
+    - src/logging.cpp
+    - src/pow.cpp
+    - src/pubkey.cpp
+    - src/random.cpp
+    - src/randomenv.cpp
+    - src/signet.cpp
+    - src/streams.cpp
+    - src/sync.cpp
+    - src/txdb.cpp
+    - src/txgraph.cpp
+    - src/txmempool.cpp
+    - src/uint256.cpp
+    - src/validation.cpp
+    - src/validationinterface.cpp
+    - src/versionbits.cpp
+    - src/consensus/merkle.cpp
+    - src/consensus/tx_check.cpp
+    - src/consensus/tx_verify.cpp
+    - src/crypto/aes.cpp
+    - src/crypto/chacha20.cpp
+    - src/crypto/chacha20poly1305.cpp
+    - src/crypto/hex_base.cpp
+    - src/crypto/hkdf_sha256_32.cpp
+    - src/crypto/hmac_sha256.cpp
+    - src/crypto/hmac_sha512.cpp
+    - src/crypto/muhash.cpp
+    - src/crypto/poly1305.cpp
+    - src/crypto/ripemd160.cpp
+    - src/crypto/sha1.cpp
+    - src/crypto/sha256.cpp
+    - src/crypto/sha256_sse4.cpp
+    - src/crypto/sha3.cpp
+    - src/crypto/sha512.cpp
+    - src/crypto/siphash.cpp
+    - src/crypto/ctaes/ctaes.c
+    - src/node/blockstorage.cpp
+    - src/node/chainstate.cpp
+    - src/node/utxo_snapshot.cpp
+    - src/policy/ephemeral_policy.cpp
+    - src/policy/feerate.cpp
+    - src/policy/packages.cpp
+    - src/policy/policy.cpp
+    - src/policy/rbf.cpp
+    - src/policy/settings.cpp
+    - src/policy/truc_policy.cpp
+    - src/primitives/block.cpp
+    - src/primitives/transaction.cpp
+    - src/script/interpreter.cpp
+    - src/script/script.cpp
+    - src/script/script_error.cpp
+    - src/script/sigcache.cpp
+    - src/script/solver.cpp
+    - src/support/cleanse.cpp
+    - src/support/lockedpool.cpp
+    - src/util/chaintype.cpp
+    - src/util/check.cpp
+    - src/util/expected.cpp
+    - src/util/feefrac.cpp
+    - src/util/fs.cpp
+    - src/util/fs_helpers.cpp
+    - src/util/hasher.cpp
+    - src/util/moneystr.cpp
+    - src/util/rbf.cpp
+    - src/util/serfloat.cpp
+    - src/util/signalinterrupt.cpp
+    - src/util/syserror.cpp
+    - src/util/threadnames.cpp
+    - src/util/time.cpp
+    - src/util/tokenpipe.cpp
+    ignorePaths:
+    - include/bitcoin-build-config.h
+    - include/bitcoin-build-info.h
+    - include/bitcoin-config.h
+    - include/bitcoind.h
+    - include/config/bitcoin-config.h
+    - include/module.modulemap
+    - src/bridge/README.md
+    - src/bridge/bitcoin_hmac_sha256.cpp
+    - src/bridge/bitcoin_rpc.cpp
+    - src/bridge/bitcoin_socks_reset.cpp
+    legalPaths: []
+
+# === Test fixtures — nested landing, flattened by vendor-sync.sh ===
+# The four JSONs come from two different upstream dirs and must land flat
+# in Fixtures/ (test code loads them via subdirectory: "Fixtures"). vendir
+# forbids overlapping contents paths, so they arrive repo-relative and the
+# wrapper's fixup stage moves them up and removes the skeleton dirs.
+- path: Tests/BitcoinTests/Fixtures
+  contents:
+  - path: .
+    directory: {path: .vendir-upstream/bitcoin}
+    includePaths:
+    - test/functional/data/rpc_getblockstats.json
+    - test/functional/data/rpc_decodescript.json
+    - test/functional/data/rpc_psbt.json
+    - src/test/data/blockfilters.json
+    legalPaths: []
