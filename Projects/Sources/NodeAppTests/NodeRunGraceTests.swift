@@ -29,12 +29,11 @@ import Testing
 /// could relaunch a node someone just stopped); and the same verdict
 /// reached at the launch boundary lands on the same grace rather than
 /// declining out of order. The waits under test nap only on the injected
-/// `ManualClock`, and each advance fires the earliest armed deadline —
-/// capped at the call's step, so a bound armed over work still in flight
-/// is approached in hops that buy it real executor turns, never jumped to
-/// outright. Each hop then spends a bounded real-time window on the real
-/// clock so the in-flight work can take its turns; `.timeLimit` is the
-/// backstop that cancels a wedged drive's wait.
+/// `ManualClock`, and the drive fires each parked nap at its own instant
+/// — the run marked `ClockSubject` so its naps classify subject-owned,
+/// while a bound armed over work still in flight freezes virtual time
+/// until the answer cancels it, whatever the runner's load. `.timeLimit`
+/// is the backstop that cancels a wedged drive's wait.
 @Suite("Private-network grace")
 @MainActor
 struct NodeRunGraceTests {
@@ -74,21 +73,22 @@ struct NodeRunGraceTests {
         session.torStillEnabled = true
         var emitted: [NodeRun.ProgressUpdate] = []
         let done = Gate()
-        let run = Task { @MainActor in
-            defer { done.open() }
-            return await NodeRun.perform(
-                session: session, waitForFirstAnswer: .seconds(240),
-                privateNetworkGrace: .seconds(90),
-                clock: clock.clock, defaults: store) { emitted.append($0) }
+        let run = ClockSubject.$isCurrent.withValue(true) {
+            Task { @MainActor in
+                defer { clock.napRequested.abandon(); done.open() }
+                return await NodeRun.perform(
+                    session: session, waitForFirstAnswer: .seconds(240),
+                    privateNetworkGrace: .seconds(90),
+                    clock: clock.clock, defaults: store) { emitted.append($0) }
+            }
         }
         try await clock.napRequested.wait()   // the wait is on the injected clock
         // The drive ends only when the run does — the clock crossing the
-        // 90 s grace deadline is what ends the wait. Each hop fires the
-        // earliest armed deadline capped at 100 ms: naps wake at their own
-        // instants so the ramp is sampled pass by pass, and a bound armed
-        // over work still in flight is approached in ~20–900 hops of
-        // budget — real turns the work needs before the bound can fire.
-        try await clock.test.drive(untilDone: done, by: .milliseconds(100))
+        // 90 s grace deadline is what ends the wait. Each nap fires at
+        // its own instant — the ramp is sampled pass by pass — and a
+        // bound armed over in-flight work holds the clock until the
+        // answer lands, never firing under it.
+        try await clock.test.drive(untilDone: done)
         let report = await run.value
         #expect(report.outcome == .declined)
         // The verdict and its sentence are the ungraced path's, verbatim —
@@ -140,7 +140,10 @@ struct NodeRunGraceTests {
         session.startNodeResult = true
         var emitted: [NodeRun.ProgressUpdate] = []
         let run = Task { @MainActor in
-            await NodeRun.perform(
+            // `napRequested` is awaited below. Abandoned if the run ends
+            // first, so the await fails by name instead of hanging.
+            defer { clock.napRequested.abandon() }
+            return await NodeRun.perform(
                 session: session, waitForFirstAnswer: .seconds(240),
                 privateNetworkGrace: .seconds(90),
                 clock: clock.clock, defaults: store) { emitted.append($0) }
@@ -202,19 +205,23 @@ struct NodeRunGraceTests {
         var emitted: [NodeRun.ProgressUpdate] = []
         let graceRamp = Gate()
         let done = Gate()
-        let run = Task { @MainActor in
-            defer { done.open() }
-            return await NodeRun.perform(
-                session: session, waitForFirstAnswer: .seconds(240),
-                privateNetworkGrace: .seconds(90),
-                clock: clock.clock, defaults: store) {
-                emitted.append($0)
-                // The wait's first pass writes the band's own zero; the
-                // post-jump pass is the first strictly-above write — the
-                // predicate asks the band itself rather than assuming
-                // `startUpBand(0) == 0` forever.
-                if $0.fraction > NodeAutomation.startUpBand(0) {
-                    graceRamp.open()
+        let run = ClockSubject.$isCurrent.withValue(true) {
+            Task { @MainActor in
+                defer {
+                    clock.napRequested.abandon(); graceRamp.abandon(); done.open()
+                }
+                return await NodeRun.perform(
+                    session: session, waitForFirstAnswer: .seconds(240),
+                    privateNetworkGrace: .seconds(90),
+                    clock: clock.clock, defaults: store) {
+                    emitted.append($0)
+                    // The wait's first pass writes the band's own zero; the
+                    // post-jump pass is the first strictly-above write — the
+                    // predicate asks the band itself rather than assuming
+                    // `startUpBand(0) == 0` forever.
+                    if $0.fraction > NodeAutomation.startUpBand(0) {
+                        graceRamp.open()
+                    }
                 }
             }
         }
@@ -233,14 +240,11 @@ struct NodeRunGraceTests {
         // The stretch ahead is a chain of ≤500 ms poll naps under the
         // gather's 2 s and each question's 10 s bounds — the poll's two
         // thrown answers, then the final reading. The drive fires each
-        // armed deadline at its own instant, capped at 100 ms per hop —
-        // ~20 turns for the gather's bound, ~100 for a question's — so a
-        // bound armed while its work is still in flight is approached in
-        // hops that buy the work real turns before it can fire. A run
-        // still starved when the clock crosses its 240 s deadline reports
-        // `.didNotComeUp` — the `.started` assertion failing without a
-        // stall is the starvation signature.
-        try await clock.test.drive(untilDone: done, by: .milliseconds(100))
+        // parked nap at its own instant while every bound holds the
+        // clock until its answer cancels it: a bound armed over work
+        // still in flight can no longer fire under it — starvation is
+        // out of the question, not down to hop budget.
+        try await clock.test.drive(untilDone: done)
         let report = await run.value
         #expect(report.outcome == .started)
         #expect(
@@ -265,7 +269,8 @@ struct NodeRunGraceTests {
         session.torIsComingUp = true
         session.torStillEnabled = true
         let run = Task { @MainActor in
-            await NodeRun.perform(
+            defer { clock.napRequested.abandon() }
+            return await NodeRun.perform(
                 session: session, waitForFirstAnswer: .seconds(240),
                 privateNetworkGrace: .seconds(90),
                 clock: clock.clock, defaults: store)
@@ -297,7 +302,8 @@ struct NodeRunGraceTests {
         session.torIsComingUp = true
         session.torStillEnabled = true
         let run = Task { @MainActor in
-            await NodeRun.perform(
+            defer { clock.napRequested.abandon() }
+            return await NodeRun.perform(
                 session: session, waitForFirstAnswer: .seconds(240),
                 privateNetworkGrace: .seconds(90),
                 clock: clock.clock, defaults: store)
@@ -327,7 +333,8 @@ struct NodeRunGraceTests {
         session.torIsComingUp = true
         session.torStillEnabled = true
         let run = Task { @MainActor in
-            await NodeRun.perform(
+            defer { clock.napRequested.abandon() }
+            return await NodeRun.perform(
                 session: session, waitForFirstAnswer: .seconds(240),
                 privateNetworkGrace: .seconds(90),
                 clock: clock.clock, defaults: store)
@@ -360,7 +367,8 @@ struct NodeRunGraceTests {
         session.torIsComingUp = true
         session.torStillEnabled = true
         let run = Task { @MainActor in
-            await NodeRun.perform(
+            defer { clock.napRequested.abandon() }
+            return await NodeRun.perform(
                 session: session, waitForFirstAnswer: .seconds(240),
                 privateNetworkGrace: .seconds(90),
                 clock: clock.clock, defaults: store)
@@ -413,7 +421,8 @@ struct NodeRunGraceTests {
         session.torStillEnabled = true
         // No grace — the shape both shipped actions run today.
         let run = Task { @MainActor in
-            await NodeRun.perform(
+            defer { gatherParked.abandon() }
+            return await NodeRun.perform(
                 session: session, waitForFirstAnswer: .seconds(30),
                 clock: ManualClock(), defaults: store)
         }
@@ -455,7 +464,8 @@ struct NodeRunGraceTests {
         session.torIsComingUp = true
         session.torStillEnabled = true
         let run = Task { @MainActor in
-            await NodeRun.perform(
+            defer { gatherParked.abandon(); clock.napRequested.abandon() }
+            return await NodeRun.perform(
                 session: session, waitForFirstAnswer: .seconds(240),
                 privateNetworkGrace: .seconds(90),
                 clock: clock.clock, defaults: store)
@@ -501,7 +511,8 @@ struct NodeRunGraceTests {
         session.torStillEnabled = true
         session.startNodeResult = true
         let run = Task { @MainActor in
-            await NodeRun.perform(
+            defer { gatherParked.abandon(); clock.napRequested.abandon() }
+            return await NodeRun.perform(
                 session: session, waitForFirstAnswer: .seconds(240),
                 privateNetworkGrace: .seconds(90),
                 clock: clock.clock, defaults: store)
@@ -539,7 +550,8 @@ struct NodeRunGraceTests {
         session.torIsComingUp = true
         session.torStillEnabled = true
         let run = Task { @MainActor in
-            await NodeRun.perform(
+            defer { clock.napRequested.abandon() }
+            return await NodeRun.perform(
                 session: session, waitForFirstAnswer: .seconds(240),
                 privateNetworkGrace: .seconds(90),
                 clock: clock.clock, defaults: store)
@@ -599,7 +611,12 @@ struct NodeRunGraceTests {
         session.torSocksPort = 9050
         session.torStillEnabled = true
         let run = Task { @MainActor in
-            await NodeRun.perform(
+            defer {
+                firstGatherParked.abandon()
+                clock.napRequested.abandon()
+                thirdGatherParked.abandon()
+            }
+            return await NodeRun.perform(
                 session: session, waitForFirstAnswer: .seconds(30),
                 privateNetworkGrace: .seconds(90),
                 clock: clock.clock, defaults: store)
@@ -666,7 +683,8 @@ struct NodeRunGraceTests {
         session.torSocksPort = 9050
         session.torStillEnabled = true
         let run = Task { @MainActor in
-            await NodeRun.perform(
+            defer { gatherParked.abandon() }
+            return await NodeRun.perform(
                 session: session, waitForFirstAnswer: .seconds(30),
                 privateNetworkGrace: .seconds(90),
                 clock: ManualClock(), defaults: store)

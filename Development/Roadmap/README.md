@@ -1,7 +1,7 @@
 # swift-bitcoinkernel Product Roadmap
 
-**Version**: v2.3.0  
-**Last Updated**: 2026-08-01  
+**Version**: v2.3.1  
+**Last Updated**: 2026-11-22  
 **Status**: Active Development
 
 ---
@@ -186,6 +186,16 @@ Re-creates the capability of [`tx-pigeon`](https://github.com/stutxo/tx-pigeon) 
 - **Migration path**: Parameterize timed-sleep callsites (`Daemon.poll`, `EsploraBlockSource` retry path, `DirectTransport` timeout) on a `Clock` parameter defaulting to `ContinuousClock()`. Tests inject `TestClock` for virtual-time advancement.
 - **Dependencies**: Adds one Apache-2.0 third-party dep (Point-Free `swift-clocks`) — requires explicit approval per `AGENTS.md` policy on new third-party deps.
 
+### Test Run Launcher with a Signal Factory
+
+**Status**: Follow-up to the watch-test determinism work (2026-11). Tests that start `NodeRun.perform` in a background task end their own signals by hand: each task's `defer` abandons the checkpoint gates the test waits on and opens the gate that reports the run is over. The rule is stated once, on `Gate` in `Projects/Sources/SharedTests/Gate.swift`.
+
+- **Problem**: A test with the line missing still passes. The gap shows only when a regression ends the run early, as a one-minute timeout in place of a named failure. One review pass found the line missing from 11 tests.
+- **Proposal**: One launcher that starts the run, marks it as the test clock's subject, and ends every signal the test created through a per-test factory, so nothing is left to list or forget. About 35 tests and 40 gate creations change, plus `graceClock()` and `watchClock()`, which create gates internally.
+- **Trigger**: The next time a test is found missing its cleanup line, or when a fifth test file adopts the pattern (whichever comes first).
+- **Also in scope when triggered**: the two bare `Task.yield()` calls at `Projects/Sources/KernelAppTests/KernelAppViewModelTests.swift:168`, which wait by yielding.
+- **Dependencies**: None. Test code only.
+
 ### Great Consensus Cleanup
 
 A potential soft fork (discussed on delvingbitcoin.org) that would fix the timewarp vulnerability, invalidate 64-byte transactions, and constrain legacy script usage. If activated, `libbitcoinkernel` would need to enforce new consensus rules.
@@ -199,6 +209,7 @@ A potential soft fork (discussed on delvingbitcoin.org) that would fix the timew
 
 | Version | Date | Change Type | Description |
 |---------|------|-------------|-------------|
+| v2.3.1 | 2026-11-22 | PATCH | Added "Test Run Launcher with a Signal Factory" as a Future Consideration: a shared launcher that ends every test-created signal when the run under test finishes, replacing the per-test `defer` line that one review pass found missing from 11 tests. Triggered by the next missed line or a fifth adopting test file. |
 | v2.3.0 | 2026-08-01 | MINOR | 2026 funding-round alignment (shared 2026 outreach roadmap): added Phase 9 (Distribution & Release Artifacts — XCFramework, CocoaPods continuity ahead of the 2026-12-02 trunk freeze) and Phase 10 (Vendir Migration); noted Phase 7.1 (UTXO Lookup API) as pulled into the funded window (Q8), developable independently since Phase 3. |
 | v2.2.4 | 2026-06-04 | PATCH | Added "Direct-to-Peer Transaction Broadcast (Libre-Relay)" as a Future Consideration: a Swift-native re-creation of `tx-pigeon` (reference link), scoped as the opinionated layer over Phase 4.5 broadcast and 6.2 service-flag discovery, not a committed phase. |
 | v2.2.3 | 2026-05-07 | PATCH | Added Filter Registration API (7.2) to Phase 7. Based on cross-implementation research across LDK, CLN, BDK, Kyoto, and Floresta. LDK's `Filter` trait pattern selected as best approach. Change logs now describe features by BIP number, project names kept only in Reference lines as implementation pointers. Global risks use BIP numbers. Mirrors v2.2.1 Floresta/Utreexo treatment. |

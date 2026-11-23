@@ -14,7 +14,23 @@ import Testing
 // These cases pin the single-resume invariants the migrated suites rely on:
 // a regression here surfaces as a `CheckedContinuation` double-resume crash
 // or a permanently parked sleeper inside an unrelated suite.
+//
+// No case here waits by yielding. A yield hands the turn back at once when
+// nothing outranks the caller (documented on `Task.yield()`), so a yield
+// loop is a bet on scheduling at any count. Each wait is on an event the
+// clock itself emits.
 struct ManualClockTests {
+
+    /// Suspends until `count` sleepers are parked, on the clock's own
+    /// change event. The generation is sampled before the count, so a
+    /// park landing between the two is answered by the wait at once.
+    private func parked(_ count: Int, on clock: ManualClock) async throws {
+        while true {
+            let generation = clock.nextStep.generation
+            if clock.parkedSleepers >= count { return }
+            try await clock.waitForChange(since: generation)
+        }
+    }
 
     @Test("a sleep at or past now returns without an advance")
     func sleepAtNowReturns() async throws {
@@ -33,17 +49,13 @@ struct ManualClockTests {
         try await clock.sleep(until: ManualClock.Instant(offset: .seconds(5)))
     }
 
-    @Test("a parked sleeper cancelled mid-wait throws CancellationError")
+    @Test("a parked sleeper cancelled mid-wait throws CancellationError", .timeLimit(.minutes(1)))
     func cancelWhileParked() async throws {
         let clock = ManualClock()
         let task = Task {
             try await clock.sleep(until: clock.now.advanced(by: .seconds(60)))
         }
-        var spins = 0
-        while clock.parkedSleepers == 0, spins < 10_000 {
-            await Task.yield()
-            spins += 1
-        }
+        try await parked(1, on: clock)
         try #require(clock.parkedSleepers == 1)
         task.cancel()
         await #expect(throws: CancellationError.self) {
@@ -77,11 +89,7 @@ struct ManualClockTests {
         let far = Task {
             try await clock.sleep(until: clock.now.advanced(by: .seconds(60)))
         }
-        var spins = 0
-        while clock.parkedSleepers < 2, spins < 10_000 {
-            await Task.yield()
-            spins += 1
-        }
+        try await parked(2, on: clock)
         try #require(clock.parkedSleepers == 2)
         let deadline = try await clock.waitForNextDeadline()
         #expect(deadline == clock.now.advanced(by: .seconds(5)))
@@ -93,13 +101,12 @@ struct ManualClockTests {
 
     @Test("a deadline wait suspends until a sleeper parks, then delivers it", .timeLimit(.minutes(1)))
     func waitSuspendsUntilParked() async throws {
-        let clock = ManualClock()
+        // The clock reports the waiter's registration, so the sleeper
+        // below is started only once the wait is truly suspended.
+        let armed = Gate()
+        let clock = ManualClock(onWaiterArmed: { armed.open() })
         let waiter = Task { try await clock.waitForNextDeadline() }
-        var spins = 0
-        while clock.armedWaiterCount == 0, spins < 10_000 {
-            await Task.yield()
-            spins += 1
-        }
+        try await armed.wait()
         try #require(clock.armedWaiterCount == 1)
         let sleeper = Task {
             try await clock.sleep(until: clock.now.advanced(by: .seconds(30)))
@@ -113,13 +120,10 @@ struct ManualClockTests {
 
     @Test("a deadline wait cancelled while parked throws CancellationError", .timeLimit(.minutes(1)))
     func cancelWaiter() async throws {
-        let clock = ManualClock()
+        let armed = Gate()
+        let clock = ManualClock(onWaiterArmed: { armed.open() })
         let waiter = Task { try await clock.waitForNextDeadline() }
-        var spins = 0
-        while clock.armedWaiterCount == 0, spins < 10_000 {
-            await Task.yield()
-            spins += 1
-        }
+        try await armed.wait()
         try #require(clock.armedWaiterCount == 1)
         waiter.cancel()
         await #expect(throws: CancellationError.self) {
@@ -133,23 +137,108 @@ struct ManualClockTests {
         let clock = ManualClock()
         let done = Gate()
         let driver = Task {
-            try await clock.drive(untilDone: done, by: .milliseconds(600))
+            try await clock.drive(untilDone: done)
         }
-        // Nothing ever parks — the drive is suspended on the arm-wait, so
+        // Nothing ever parks — the drive is suspended on the change-wait, so
         // opening the gate is the only exit, and it must arrive.
         done.open()
         try await driver.value
+    }
+
+    @Test("a drive returns when its done gate opens mid-wait, not only on a clock event", .timeLimit(.minutes(1)))
+    func driveReturnsWhenDoneOpensMidWait() async throws {
+        // The driver is suspended on the change wait of a *quiet* clock —
+        // no sleeper will park to wake it. `done` opening is the only
+        // release left: the sibling wait must cancel it. Without that,
+        // this hangs to the limit.
+        let armed = Gate()
+        let clock = ManualClock(onWaiterArmed: { armed.open() })
+        let done = Gate()
+        let driver = Task { try await clock.drive(untilDone: done) }
+        try await armed.wait()
+        done.open()
+        try await driver.value
+    }
+
+    @Test("a drive toward an abandoned gate throws, naming the caller's line", .timeLimit(.minutes(1)))
+    func driveThrowsOnAbandonedTarget() async throws {
+        let clock = ManualClock()
+        // A checkpoint the run can no longer reach: its `defer` abandoned
+        // it. The drive must fail by name, not wait for a nap that will
+        // never park.
+        let checkpoint = Gate()
+        checkpoint.abandon()
+        // Inside the macro, `#line` reads as the `#expect` line itself.
+        let expected = #line + 1
+        let error = await #expect(throws: Gate.Abandoned.self) {
+            try await clock.drive(untilDone: checkpoint)
+        }
+        #expect(error?.line == expected)
     }
 
     @Test("a drive cancelled while suspended throws CancellationError", .timeLimit(.minutes(1)))
     func driveCancelled() async throws {
         let clock = ManualClock()
         let driver = Task {
-            try await clock.drive(untilDone: Gate(), by: .milliseconds(600))
+            try await clock.drive(untilDone: Gate())
         }
         driver.cancel()
         await #expect(throws: CancellationError.self) {
             try await driver.value
         }
+    }
+
+    @Test("a change wait sampled before the change returns at once — the lost wake-up", .timeLimit(.minutes(1)))
+    func waitForChangeAnswersStaleGeneration() async throws {
+        // The wait has two possible outcomes and each is an event: it
+        // returns (`returned` opens) or it parks (the clock reports the
+        // registration, which abandons `returned`). A wait that missed
+        // the change therefore fails here by name, at once.
+        let returned = Gate()
+        let clock = ManualClock(onWaiterArmed: { returned.abandon() })
+        // The sample a driver takes, then a change it must not miss: a
+        // generation already stale when the wait registers is answered
+        // without suspending — the handshake that makes "decide, then
+        // wait" race-free.
+        let generation = clock.nextStep.generation
+        clock.advance(by: .seconds(1))   // the change lands *before* the wait
+        let waiter = Task {
+            try await clock.waitForChange(since: generation)
+            returned.open()
+        }
+        defer { waiter.cancel() }
+        try await returned.wait()
+        #expect(clock.armedWaiterCount == 0)
+    }
+
+    @Test("expire fires the bound, not an earlier subject nap", .timeLimit(.minutes(1)))
+    func expireEarliestBoundPrefersBoundOverEarlierNap() async throws {
+        let clock = ManualClock()
+        // A subject nap parked *sooner* than the bound: a filter that
+        // fired the earliest sleeper of any class would hit the nap and
+        // leave the bound armed.
+        let nap = ClockSubject.$isCurrent.withValue(true) {
+            Task {
+                try await clock.sleep(
+                    until: clock.now.advanced(by: .seconds(5)))
+            }
+        }
+        defer { nap.cancel() }
+        // An unmarked sleeper is the bound's own kind — parked by the
+        // detached machinery a `withHardTimeout` runs on, it carries no
+        // subject marker and is the only class `expireEarliestBound` may
+        // fire.
+        let bound = Task {
+            try await clock.sleep(
+                until: clock.now.advanced(by: .seconds(30)))
+        }
+        defer { bound.cancel() }
+        try await parked(2, on: clock)
+        try #require(clock.parkedSleepers == 2)
+        try await clock.expireEarliestBound()
+        // The bound's deadline — past the nap's — is where now lands;
+        // both sleepers due by then have fired.
+        #expect(clock.now.offset == .seconds(30))
+        #expect(clock.parkedSleepers == 0)
     }
 }

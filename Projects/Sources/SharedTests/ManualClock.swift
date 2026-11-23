@@ -28,6 +28,16 @@ import Synchronization
 /// park itself as an event — an event-exact advance that visits every armed
 /// deadline in order — awaits `waitForNextDeadline()` (or samples
 /// `earliestParkedDeadline`) instead of polling `parkedSleepers`.
+///
+/// Every parked sleeper is also *classified*: `ownedBySubject` records
+/// `ClockSubject.isCurrent` at park time, which `Task { }` children inherit
+/// and `Task.detached` never does. The run's own naps mark it, the
+/// `withHardTimeout` timer tasks it spawns do not — so a driver can tell a
+/// nap it is allowed to fire from a bound it must hold: the bound guards
+/// detached work that still needs real executor time, and firing it would
+/// stamp the work's answer late however fast the drive hopped. The rule is
+/// Tokio's paused clock and Go's testing/synctest: virtual time advances
+/// only to sleeps the subject itself parked.
 final class ManualClock: Clock, Sendable {
     /// The minimal `InstantProtocol`: a `Duration` offset from start.
     struct Instant: InstantProtocol {
@@ -46,16 +56,32 @@ final class ManualClock: Clock, Sendable {
     private struct State {
         var now = Instant(offset: .zero)
         var nextID = 0
+        /// Bumped on every change a driver could act on — a park, a
+        /// cancellation removal, an advance — which is what lets a
+        /// `waitForChange` caller wait on "something changed since my
+        /// sample" without polling and without losing a change that
+        /// landed between the sample and the wait.
+        var generation = 0
         var sleepers: [
-            (id: Int, deadline: Instant,
+            (id: Int, deadline: Instant, ownedBySubject: Bool,
              continuation: CheckedContinuation<Void, any Error>)
         ] = []
-        var armedWaiters: [
+        var changeWaiters: [
             (id: Int,
-             continuation: CheckedContinuation<Instant, any Error>)
+             continuation: CheckedContinuation<Void, any Error>)
         ] = []
     }
     private let state = Mutex(State())
+
+    /// Called each time a `waitForChange` caller parks, after it is
+    /// registered and outside the lock. The clock's own tests use it to
+    /// act once a waiter is suspended, where a yield loop could only
+    /// guess. The same reporter shape `ObservedClock` gives sleeps.
+    private let onWaiterArmed: (@Sendable () -> Void)?
+
+    init(onWaiterArmed: (@Sendable () -> Void)? = nil) {
+        self.onWaiterArmed = onWaiterArmed
+    }
 
     var now: Instant { state.withLock { $0.now } }
     var minimumResolution: Duration { .zero }
@@ -65,10 +91,10 @@ final class ManualClock: Clock, Sendable {
     /// sleeper lands rather than racing it.
     var parkedSleepers: Int { state.withLock { $0.sleepers.count } }
 
-    /// How many `waitForNextDeadline` callers are parked waiting on a
-    /// sleeper to register — the same registration-happened surface as
+    /// How many `waitForChange` callers are parked waiting on a clock
+    /// event — the same registration-happened surface as
     /// `parkedSleepers`, for the waiter's side of the handshake.
-    var armedWaiterCount: Int { state.withLock { $0.armedWaiters.count } }
+    var armedWaiterCount: Int { state.withLock { $0.changeWaiters.count } }
 
     /// The earliest deadline among parked sleepers, or nil — a
     /// non-suspending sample. For "wake me when one parks", use
@@ -80,59 +106,75 @@ final class ManualClock: Clock, Sendable {
     }
 
     /// Suspends until a sleeper parks and returns the earliest parked
-    /// deadline AT THE MOMENT OF THE PARK — a wake signal, not a promise:
-    /// a nearer sleeper can register before the caller is scheduled, so a
-    /// driver re-samples `earliestParkedDeadline` before advancing rather
-    /// than trusting the delivered value. Returns at once when a sleeper
-    /// is already parked, so a park can't be missed between a sample and
+    /// deadline at the wake — a wake signal, not a promise: a nearer
+    /// sleeper can register before the caller is scheduled, so a driver
+    /// re-samples `earliestParkedDeadline` before advancing rather than
+    /// trusting the delivered value. Returns at once when a sleeper is
+    /// already parked, so a park can't be missed between a sample and
     /// the wait. Throws `CancellationError` if the caller is cancelled
     /// first — the same contract `sleep` and `Gate.wait` keep, so a
     /// suite's `.timeLimit` still reaps a wedged driver.
     func waitForNextDeadline() async throws -> Instant {
+        while true {
+            try Task.checkCancellation()
+            let pending = state.withLock { s in
+                (s.sleepers.min { $0.deadline < $1.deadline }?.deadline,
+                 s.generation)
+            }
+            if let deadline = pending.0 { return deadline }
+            try await waitForChange(since: pending.1)
+        }
+    }
+
+    /// Returns once the sleeper list changed after `generation` — the
+    /// "check, then wait" handshake that makes a missed wake impossible:
+    /// a change that lands between the caller's sample and this wait is
+    /// seen here as an already-stale generation and returns at once.
+    /// Throws `CancellationError` if the caller is cancelled first.
+    func waitForChange(since generation: Int) async throws {
         try Task.checkCancellation()
         let id = state.withLock { s -> Int in
             defer { s.nextID += 1 }
             return s.nextID
         }
-        return try await withTaskCancellationHandler {
+        try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation {
-                (continuation: CheckedContinuation<Instant, any Error>) in
-                enum Action {
-                    case deliver(Instant), throwCancel, park
-                }
+                (continuation: CheckedContinuation<Void, any Error>) in
                 // Same under-lock three-way as `sleep`: a cancel racing
                 // registration either finds the entry (`onCancel`) or is
-                // answered here — and a sleeper already parked is
-                // delivered without suspending.
+                // answered here — and a generation already stale is
+                // answered without suspending.
+                enum Action {
+                    case resume, throwCancel, park
+                }
                 switch state.withLock({ s -> Action in
                     if Task.isCancelled { return .throwCancel }
-                    if let earliest = s.sleepers.min(by: {
-                        $0.deadline < $1.deadline
-                    }) {
-                        return .deliver(earliest.deadline)
-                    }
-                    s.armedWaiters.append((id, continuation))
+                    if s.generation != generation { return .resume }
+                    s.changeWaiters.append((id, continuation))
                     return .park
                 }) {
-                case .deliver(let deadline):
-                    continuation.resume(returning: deadline)
+                case .resume: continuation.resume()
                 case .throwCancel:
                     continuation.resume(throwing: CancellationError())
-                case .park: break
+                case .park: onWaiterArmed?()
                 }
             }
         } onCancel: {
-            state.withLock { s -> CheckedContinuation<Instant, any Error>? in
-                guard let index = s.armedWaiters.firstIndex(where: {
+            state.withLock { s -> CheckedContinuation<Void, any Error>? in
+                guard let index = s.changeWaiters.firstIndex(where: {
                     $0.id == id
                 }) else { return nil }
-                return s.armedWaiters.remove(at: index).continuation
+                return s.changeWaiters.remove(at: index).continuation
             }?.resume(throwing: CancellationError())
         }
     }
 
     func sleep(until deadline: Instant, tolerance: Duration? = nil) async throws {
         try Task.checkCancellation()
+        // Read on the *sleeping* task: `Task { }` children inherit the
+        // mark where `Task.detached` never does — the run's naps carry
+        // it, its bound timers cannot.
+        let ownedBySubject = ClockSubject.isCurrent
         let id = state.withLock { s -> Int in
             defer { s.nextID += 1 }
             return s.nextID
@@ -145,42 +187,43 @@ final class ManualClock: Clock, Sendable {
                 // never both, never neither.
                 enum Action {
                     case resume, throwCancel,
-                        park([(CheckedContinuation<Instant, any Error>, Instant)])
+                        park([CheckedContinuation<Void, any Error>])
                 }
                 switch state.withLock({ s -> Action in
                     if Task.isCancelled { return .throwCancel }
                     if deadline <= s.now { return .resume }
-                    s.sleepers.append((id, deadline, continuation))
-                    // A park is the armed event `waitForNextDeadline`
-                    // callers suspended on — released atomically with the
-                    // append, resumed outside the lock, each handed the
-                    // earliest parked deadline at this instant. `min` is
-                    // force-unwrapped under the invariant the entry just
-                    // appended guarantees: the queue cannot be empty here.
-                    let earliest = s.sleepers.min {
-                        $0.deadline < $1.deadline
-                    }!.deadline
-                    let waiters = s.armedWaiters
-                    s.armedWaiters.removeAll()
-                    return .park(
-                        waiters.map { ($0.continuation, earliest) })
+                    s.sleepers.append(
+                        (id, deadline, ownedBySubject, continuation))
+                    // A park is a change every waiter suspended on —
+                    // released atomically with the append, resumed
+                    // outside the lock.
+                    s.generation += 1
+                    defer { s.changeWaiters.removeAll() }
+                    return .park(s.changeWaiters.map(\.continuation))
                 }) {
                 case .resume: continuation.resume()
                 case .throwCancel:
                     continuation.resume(throwing: CancellationError())
-                case .park(let armed):
-                    for (waiter, deadline) in armed {
-                        waiter.resume(returning: deadline)
-                    }
+                case .park(let waiters):
+                    for waiter in waiters { waiter.resume() }
                 }
             }
         } onCancel: {
-            state.withLock { s -> CheckedContinuation<Void, any Error>? in
+            let removed = state.withLock {
+                s -> (continuation: CheckedContinuation<Void, any Error>?,
+                      woken: [CheckedContinuation<Void, any Error>]) in
                 guard let index = s.sleepers.firstIndex(where: {
                     $0.id == id
-                }) else { return nil }
-                return s.sleepers.remove(at: index).continuation
-            }?.resume(throwing: CancellationError())
+                }) else { return (nil, []) }
+                let removed = s.sleepers.remove(at: index).continuation
+                // A removal is a change too — a driver holding on this
+                // sleeper must re-sample rather than hold forever.
+                s.generation += 1
+                defer { s.changeWaiters.removeAll() }
+                return (removed, s.changeWaiters.map(\.continuation))
+            }
+            for waiter in removed.woken { waiter.resume() }
+            removed.continuation?.resume(throwing: CancellationError())
         }
     }
 
@@ -204,70 +247,128 @@ final class ManualClock: Clock, Sendable {
     /// run order is the executor's, so a test that needs "the earlier timer
     /// fired first" still pins that order with a `Gate`.
     private func advance(_ makeInstant: (inout State) -> Instant) {
-        let due = state.withLock {
-            s -> [CheckedContinuation<Void, any Error>] in
+        let resumed = state.withLock {
+            s -> (due: [CheckedContinuation<Void, any Error>],
+                  woken: [CheckedContinuation<Void, any Error>]) in
             let instant = makeInstant(&s)
             if instant > s.now { s.now = instant }
             let due = s.sleepers.filter { $0.deadline <= s.now }
                 .sorted { $0.deadline < $1.deadline }
             s.sleepers.removeAll { $0.deadline <= s.now }
-            return due.map(\.continuation)
+            s.generation += 1
+            defer { s.changeWaiters.removeAll() }
+            return (due.map(\.continuation), s.changeWaiters.map(\.continuation))
         }
-        for continuation in due { continuation.resume() }
+        for continuation in resumed.due { continuation.resume() }
+        for waiter in resumed.woken { waiter.resume() }
     }
 }
 
 extension ManualClock {
-    /// Advances the clock toward the earliest armed deadline — never more
-    /// than `step` per hop — until `done` opens: the run's own
-    /// completion, not a turn count, is the bound. A deadline inside the
-    /// hop lands at its own instant, so naps wake in real-time order; one
-    /// beyond it is approached hop-wise instead of fired outright,
-    /// because an armed hard-timeout bound is not a safely schedulable
-    /// event — it guards detached work that still needs real executor
-    /// time, and jumping to its deadline would stamp the work's answer
-    /// late no matter when the bound's own timer task runs. Each hop is
-    /// followed by a real-time break — `Task.sleep` on the real clock,
-    /// not `Task.yield`: a yield may immediately resume this task when it
-    /// outranks the detached work (documented behavior — CI saw the work
-    /// get zero turns in ~400 hops), while a suspension frees the
-    /// executor across every priority for a bounded window. A bound then
-    /// fires only after spending a `step`-proportional budget of real
-    /// executor windows waiting on the work; starvation past that budget
-    /// still flips the verdict honestly, it just can't be caused by the
-    /// drive. `done` must therefore be a gate every verdict opens — the
-    /// run's own completion is the canonical one. A gate only one verdict
-    /// produces (a mid-run progress marker) turns an honest flip into a
-    /// `.timeLimit` hang: await progress gates directly instead of
-    /// folding them into the drive. The drive's own negative tests are
-    /// the deliberate exception — a `Gate` nobody opens is how
-    /// `ManualClockTests` proves cancellation reaps a wedged drive. When
-    /// nothing is parked the run is mid-hop: the drive suspends on the
-    /// next armed deadline racing `done`, never polling — the suite's
-    /// `.timeLimit` reaps a wedged drive by cancelling that wait.
-    func drive(untilDone done: Gate, by step: Duration) async throws {
-        precondition(step > .zero, "drive needs a positive step")
+    /// What a driver may do with the parked sleepers right now.
+    enum Step {
+        /// A bound is parked — time is owed to detached work, so hold.
+        case hold
+        /// Fire the earliest parked nap the subject itself owns.
+        case advance(Instant)
+    }
+
+    /// The driver's next move plus the generation it was decided at —
+    /// sampled under the one lock, so the pair is atomic. `hold` while
+    /// any bound is parked (time is owed to work, not the clock), else
+    /// `advance` to the earliest nap the subject owns, else `nil` when
+    /// nothing is parked. A driver that decided there is nothing to do
+    /// waits on `waitForChange(since:)` with *this* generation — a change
+    /// landing between the sample and the wait is then never missed.
+    var nextStep: (step: Step?, generation: Int) {
+        state.withLock { s in
+            if s.sleepers.contains(where: { !$0.ownedBySubject }) {
+                return (.hold, s.generation)
+            }
+            let nap = s.sleepers.min { $0.deadline < $1.deadline }
+            return (nap.map { .advance($0.deadline) }, s.generation)
+        }
+    }
+
+    /// Suspends until a bound is parked, then fires the earliest one —
+    /// the test's way to run a parked question's clock out explicitly.
+    /// The suspend is the trap a fake sets: it can signal "I will never
+    /// answer" before the bound's timer task has even run, so a one-shot
+    /// sample could find no bound and return having fired nothing.
+    func expireEarliestBound() async throws {
+        while true {
+            try Task.checkCancellation()
+            let pending = state.withLock { s in
+                (s.sleepers.filter { !$0.ownedBySubject }
+                    .min { $0.deadline < $1.deadline }?.deadline,
+                 s.generation)
+            }
+            if let deadline = pending.0 {
+                advance(to: deadline)
+                return
+            }
+            try await waitForChange(since: pending.1)
+        }
+    }
+
+    /// Advances the clock until `done` opens: the run's own completion,
+    /// not a turn count, is the bound. The drive is event-driven — it
+    /// suspends on clock events and never sleeps on the real clock. It
+    /// advances only to a nap the subject itself parked: a parked bound
+    /// freezes time until its answer cancels it (or a test fires it with
+    /// `expireEarliestBound`), because the bound guards detached work that
+    /// still needs real executor turns — firing it would stamp the work's
+    /// answer late however the drive was stepped, which is exactly the
+    /// starvation the stepped drive could never rule out.
+    ///
+    /// The run under test must be marked `ClockSubject.isCurrent` around
+    /// its `Task { }`, or every sleeper reads as a bound and the drive
+    /// holds forever. `done` must end on every verdict — a gate only one
+    /// verdict produces turns an honest flip into a `.timeLimit` hang.
+    /// The run's own completion gate opens in its `defer`; a checkpoint
+    /// gate driven toward is abandoned there instead, and the drive then
+    /// throws `Gate.Abandoned` naming the caller's line (the rule is
+    /// stated once, on `Gate`). When nothing is parked the run is
+    /// mid-hop: the drive waits on the next clock change racing `done`,
+    /// never polling.
+    func drive(
+        untilDone done: Gate, fileID: String = #fileID, line: Int = #line
+    ) async throws {
         while !done.isOpen {
             try Task.checkCancellation()
-            if let deadline = earliestParkedDeadline {
-                advance(to: min(deadline, now.advanced(by: step)))
-                // A real suspension, not `Task.yield()` — frees the
-                // executor for a bounded wall-time window on every
-                // priority, which is what unparked in-flight work needs.
-                // Wall cost is ~0.9 ms per hop measured (timer
-                // granularity overruns the 200 µs ask ~4x), so total
-                // drive time ≈ (virtual span ÷ step) × ~1 ms — keep
-                // `step` well above the span ÷ `.timeLimit` budget or a
-                // pathologically small one reads as a wedged drive.
-                try await Task.sleep(for: .microseconds(200))
-            } else {
-                try await withThrowingTaskGroup(of: Void.self) { group in
-                    group.addTask { _ = try await self.waitForNextDeadline() }
-                    group.addTask { try await done.wait() }
-                    try await group.next()
-                    group.cancelAll()
-                }
+            let (step, generation) = nextStep
+            if case .advance(let deadline)? = step {
+                advance(to: deadline)
+                continue
+            }
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask { try await self.waitForChange(since: generation) }
+                group.addTask { try await done.wait(fileID: fileID, line: line) }
+                try await group.next()
+                group.cancelAll()
             }
         }
     }
+}
+
+/// The task-local that marks the task under test so a `ManualClock` can
+/// tell the run's own naps from the bound timers `withHardTimeout`
+/// parks in `Task.detached`: `Task { }` inherits task-locals where
+/// `Task.detached` never does, so every sleeper the run itself parks
+/// records `isCurrent == true` and every bound's reads `false`. Not
+/// `Test.current` — Apple only documents that as "may be nil" in a
+/// detached task, which is the wrong foundation for a classifier.
+///
+/// Every test that drives wraps its run task:
+///
+///     let run = ClockSubject.$isCurrent.withValue(true) {
+///         Task { @MainActor in
+///             defer { done.open() }
+///             return await NodeRun.perform(/* ... */)
+///         }
+///     }
+enum ClockSubject {
+    /// True on the task under test and its `Task { }` children; false
+    /// inside `Task.detached` — `withHardTimeout`'s work and timer.
+    @TaskLocal static var isCurrent = false
 }
