@@ -6,7 +6,7 @@ Where you report depends on which component is affected. **Bitcoin Core consensu
 
 ### Bitcoin Core (consensus, P2P, mempool, wallet, RPC server)
 
-Vulnerabilities in the embedded Bitcoin Core sources under `Vendor/bitcoin/` and `Sources/{bitcoind,libbitcoinkernel}/` belong to upstream:
+Vulnerabilities in the embedded Bitcoin Core sources under `Sources/{bitcoind,libbitcoinkernel}/` belong to upstream:
 
 - See the [Bitcoin Core security reporting process](https://bitcoincore.org/en/contact/) (PGP-encrypted email to the security maintainers listed there).
 - For consensus-affecting bugs, follow the upstream [responsible disclosure guidelines](https://bitcoincore.org/en/security-advisories/) before any public discussion.
@@ -58,7 +58,7 @@ swift-bitcoinkernel runs Bitcoin Core in-process via `bitcoind` and links `libbi
 
 - **Mainnet operations move real value.** Test on `regtest` or `signet` before pointing the daemon at mainnet, especially when integrating new code paths or upgrading versions.
 - **Never log sensitive material.** Wallet seed phrases, BIP32 extended private keys, descriptor secrets, RPC cookies, and `bitcoin.conf` `rpcpassword=` lines must stay out of logs, crash reports, and analytics.
-- **Match upstream Bitcoin Core's release cadence for security fixes.** Subscribe to [Bitcoin Core security advisories](https://bitcoincore.org/en/security-advisories/) — when upstream patches a consensus or wallet vulnerability, this package needs a corresponding subtree resync. Pin with `exact:` so you control when those rebases land in your build.
+- **Match upstream Bitcoin Core's release cadence for security fixes.** Subscribe to [Bitcoin Core security advisories](https://bitcoincore.org/en/security-advisories/) — when upstream patches a consensus or wallet vulnerability, this package needs a corresponding vendor re-sync (`Scripts/vendor-sync.sh` after bumping the `vendir.yml` pin). Pin with `exact:` so you control when those rebases land in your build.
 - **The `wallet` trait introduces additional attack surface.** Bitcoin Core's wallet (BDB/SQLite, descriptors, PSBT signing) is opt-in for a reason. Only enable it when your application actually custodies keys.
 
 ## Patch policy
@@ -75,4 +75,4 @@ Every patch is documented in [`patches/`](patches/) with an upstreaming plan. Th
 | `src/compat/compat.h` | Guard `MAIN_FUNCTION` so the host app can own `main()` |
 | `src/logging.cpp` | Prevent a teardown assertion when logging stops |
 
-No patch modifies `src/consensus/`, `src/script/`, validation, or serialization. Subtree syncs overwrite the vendored sources wholesale, so drift outside `patches/` is structurally impossible. See [`patches/README.md`](patches/README.md) for the diffs and the upstreaming campaign.
+No patch modifies `src/consensus/`, `src/script/`, validation, or serialization. Vendor syncs overwrite the vendored sources wholesale, so drift outside `patches/` is structurally impossible. See [`patches/README.md`](patches/README.md) for the diffs and the upstreaming campaign.

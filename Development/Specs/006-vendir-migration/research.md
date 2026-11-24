@@ -10,9 +10,9 @@ axis the sibling's choices depended on).
 ## 1. Vendir vs. keeping the subtree stack
 
 **Vendir, with the committed `Vendor/` mirror deleted.** The subtree stack
-costs a 53 MB mirror of the *entire* upstream repo — 1,459 tracked files —
+costs a 53 MB mirror of the *entire* upstream repo — 2,920 tracked files —
 to feed extraction rules that pull ~14 MB of it into `Sources/`; the rest
-(~150 Python scripts, `contrib/`, `test/functional/` drivers, `.github/`,
+(363 Python scripts, `contrib/`, `test/functional/` drivers, `.github/`,
 Qt assets) is dead weight in every clone. `subtree.yaml` extraction is a
 maintainer-local step with no lockfile: the only recorded provenance is
 the `commit:` field naming the *tag object* SHA and whatever the squash
@@ -205,8 +205,8 @@ reachable at depth 1 under vendir's all-refs fetch.
 
 ## 7. Measured facts (local, at spec time)
 
-- `Vendor/bitcoin` tracked: ~50 MB, 1,459 files (`git ls-files`), ~53 MB
-  on disk; contains ~150 `*.py` plus contrib/test tooling nothing
+- `Vendor/bitcoin` tracked: ~50 MB, 2,920 files (`git ls-files`), ~53 MB
+  on disk; contains 363 `*.py` plus contrib/test tooling nothing
   extracts.
 - `vendir version` locally: `0.47.0` (released 2026-11-16) —
   `minimumRequiredVersion` floor; sibling spec targeted 0.46.2.
@@ -218,9 +218,9 @@ reachable at depth 1 under vendir's all-refs fetch.
   destination and by observed sync (the two generated headers surfaced
   as `D` in the parity check before being added).
 - Upstream license files present at v31.0: `COPYING` (repo root +
-  `src/secp256k1/`), `LICENSE` (`src/crc32c`, `src/leveldb`,
-  `src/minisketch`) — each rides its slice with a matching
-  `Package.swift` `exclude:`.
+  `src/secp256k1/` + `src/crypto/ctaes/`), `LICENSE` (`src/crc32c`,
+  `src/leveldb`, `src/minisketch`) — each rides its slice with a
+  matching `Package.swift` `exclude:`.
 - Slice staging cost (unmeasured — jury observation): vendir copies each
   `directory.path` into staging *before* `includePaths` filtering, and
   the cache tree includes `.git/` (a several-hundred-MB pack), so one

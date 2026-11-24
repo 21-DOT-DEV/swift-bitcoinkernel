@@ -1,12 +1,12 @@
 # Managed by vendir — https://carvel.dev/vendir
 #
-# Declarative source-vendoring config that will replace `subtree.yaml`,
+# Declarative source-vendoring config — the successor to `subtree.yaml`,
 # the `swift package plugin subtree-sync` plugin, and the committed
-# `Vendor/bitcoin` mirror (git-subtree squashes) — the teardown is a
-# separate change; until it lands both systems coexist and this file is
-# the authority for the extracted trees. Drive it through
-# `Scripts/vendor-sync.sh`, not bare `vendir sync` — the vendored trees are
-# only correct after that script's patch-apply and fixup stages (below).
+# `Vendor/bitcoin` mirror (git-subtree squashes), all removed in spec
+# 006-vendir-migration Phase 2. This file is the authority for the
+# extracted trees. Drive it through `Scripts/vendor-sync.sh`, not bare
+# `vendir sync` — the vendored trees are only correct after that
+# script's patch-apply and fixup stages (below).
 #
 # Fetch shape: ONE `git:` contents entry clones bitcoin/bitcoin at the
 # pinned ref into `.vendir-upstream/bitcoin/` — gitignored scratch that also
@@ -233,6 +233,7 @@ directories:
     - src/crypto/sha512.cpp
     - src/crypto/siphash.cpp
     - src/crypto/ctaes/ctaes.c
+    - src/crypto/ctaes/COPYING
     - src/node/blockstorage.cpp
     - src/node/chainstate.cpp
     - src/node/utxo_snapshot.cpp

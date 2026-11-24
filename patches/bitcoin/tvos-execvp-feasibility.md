@@ -28,7 +28,7 @@ Three places in `Sources/bitcoind/` and `Sources/libbitcoinkernel/` reference su
 
 ## Who actually calls these in our build
 
-`util::ExecVp` has **zero call sites** in our extracted sources. The only caller in upstream Bitcoin Core is `Vendor/bitcoin/src/bitcoin.cpp` — the unified multicall binary entry point that dispatches to `bitcoin-cli` / `bitcoin-tx` / `bitcoin-wallet` / `bitcoin-util` by re-exec'ing the right helper. That file is NOT in `subtree.yaml`'s extraction set; we ship only the `bitcoind` entry point (`bitcoind_main`, renamed via `MAIN_FUNCTION`), not the multicall dispatcher.
+`util::ExecVp` has **zero call sites** in our extracted sources. The only caller in upstream Bitcoin Core is `src/bitcoin.cpp` (in the `.vendir-upstream/bitcoin` checkout) — the unified multicall binary entry point that dispatches to `bitcoin-cli` / `bitcoin-tx` / `bitcoin-wallet` / `bitcoin-util` by re-exec'ing the right helper. That file is NOT in `vendir.yml`'s slice set; we ship only the `bitcoind` entry point (`bitcoind_main`, renamed via `MAIN_FUNCTION`), not the multicall dispatcher.
 
 `subprocess::Popen` is instantiated only inside `RunCommandParseJSON` (`run_command.cpp:28`). That whole function body is `#ifdef ENABLE_EXTERNAL_SIGNER` — without the define, it throws and the Popen template never instantiates, so `fork()` and `execvp()` inside it never get codegen'd. `ENABLE_EXTERNAL_SIGNER` is **not** defined anywhere in our `Package.swift` (verified — see `CXXSetting.bitcoinSettings`).
 
@@ -75,7 +75,7 @@ int ExecVp(const char* file, char* const argv[])
 }
 ```
 
-- **Pros:** minimal diff; runtime semantics on tvOS are "stub that fails loudly if anyone ever calls it" (`errno = ENOSYS`); zero impact on any other platform; survives subtree sync via `patches/bitcoin/` storage.
+- **Pros:** minimal diff; runtime semantics on tvOS are "stub that fails loudly if anyone ever calls it" (`errno = ENOSYS`); zero impact on any other platform; survives vendor sync via `patches/bitcoin/` storage.
 - **Cons:** patches a vendored file. The pattern is established (see `ios-netif-guard.md`, `main-function-guard.md`).
 - **Upstream story:** small, mechanical, and parallel to the existing iOS guard — plausibly mergeable upstream as a tvOS portability fix.
 
@@ -96,8 +96,8 @@ The patch is small enough to land in one commit; the upstream PR would be 5-10 l
 ## What would break this analysis
 
 - **Enabling `ENABLE_EXTERNAL_SIGNER`** in `CXXSetting.bitcoinSettings`. That activates `RunCommandParseJSON` and instantiates `subprocess::Popen`, pulling `fork()`/`execvp()` into codegen. The Popen calls are also `__TVOS_PROHIBITED`, so the build would fail for additional reasons. Out of scope as long as external signing remains off.
-- **Re-extracting `Vendor/bitcoin/src/bitcoin.cpp`** (the multicall dispatcher) into `Sources/bitcoind/src/`. That file calls `util::ExecVp` directly and was deliberately left out by `subtree.yaml`. Including it would make `ExecVp` reachable at runtime and the stub from Option A would break the multicall feature on tvOS — though the multicall binary isn't a use case for an embedded `bitcoind` anyway.
-- **A future upstream change that adds another `execvp`/`fork`/`posix_spawn` call into a code path we extract**. Subtree sync would reintroduce the problem. Discovered via the tvOS CI job (which would start failing), then re-evaluated.
+- **Adding `src/bitcoin.cpp`** (the multicall dispatcher) to a `vendir.yml` slice. That file calls `util::ExecVp` directly and is deliberately excluded. Including it would make `ExecVp` reachable at runtime and the stub from Option A would break the multicall feature on tvOS — though the multicall binary isn't a use case for an embedded `bitcoind` anyway.
+- **A future upstream change that adds another `execvp`/`fork`/`posix_spawn` call into a code path we extract**. A vendor sync would reintroduce the problem. Discovered via the tvOS CI job (which would start failing), then re-evaluated.
 
 ## Open questions for upstream discussion
 

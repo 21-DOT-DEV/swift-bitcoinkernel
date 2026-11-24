@@ -13,7 +13,7 @@ superseded_by: null
 
 Bitcoin Core reached the package through `swift-plugin-subtree`: a squash
 merge of the entire `bitcoin/bitcoin` tree into `Vendor/bitcoin` (~53 MB,
-1,459 tracked files — including ~150 Python scripts and contrib/test
+2,920 tracked files — including 363 Python scripts and contrib/test
 tooling nothing extracts), plus a `subtree.yaml` manifest of extraction
 rules copying ~14 MB of it into `Sources/` and `Tests/`. The only recorded
 provenance was the manifest's `commit:` field — the tag object SHA — and

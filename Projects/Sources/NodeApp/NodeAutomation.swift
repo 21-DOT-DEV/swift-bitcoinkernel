@@ -407,9 +407,9 @@ enum NodeAutomation {
             static let manual = Self(rawValue: "manual")
             static let feeler = Self(rawValue: "feeler")
             static let addrFetch = Self(rawValue: "addr-fetch")
-            /// This fork's own kind — a short-lived outbound connection to a
+            /// Our own kind — a short-lived outbound connection to a
             /// privacy network, opened to relay the person's own transactions
-            /// and closed after (`Vendor/bitcoin`'s
+            /// and closed after (upstream Bitcoin Core's
             /// `ConnectionType::PRIVATE_BROADCAST`). Self-initiated but never
             /// block-serving, so it does not count.
             static let privateBroadcast = Self(rawValue: "private-broadcast")

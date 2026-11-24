@@ -44,7 +44,7 @@ let package = Package(
         .target(
             name: "libbitcoinkernel",
             dependencies: Target.Dependency.kernelDeps,
-            exclude: ["COPYING", "src/crypto/ctaes/ctaes.c"],
+            exclude: ["COPYING", "src/crypto/ctaes/ctaes.c", "src/crypto/ctaes/COPYING"],
             cxxSettings: CXXSetting.kernelSettings
         ),
         .target(
@@ -117,14 +117,13 @@ extension Package.Dependency {
     /// Development-only dependencies, excluded at tagged releases.
     ///
     /// When resolved at a tagged release (`Context.gitInformation?.currentTag != nil`),
-    /// development tools (tuist, subtree, docc) are excluded so consumers aren't
+    /// development tools (tuist, docc) are excluded so consumers aren't
     /// forced to download them. Runtime dependencies (`swift-boost`, `swift-event`)
     /// stay inline above and always resolve.
     static var developmentDependencies: [Package.Dependency] {
         guard Context.gitInformation?.currentTag == nil else { return [] }
         return [
             .package(url: "https://github.com/21-DOT-DEV/swift-plugin-tuist.git", exact: "4.195.11"),
-            .package(url: "https://github.com/21-DOT-DEV/swift-plugin-subtree.git", exact: "0.0.15"),
             .package(url: "https://github.com/apple/swift-docc-plugin", from: "1.5.0"),
         ]
     }

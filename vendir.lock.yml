@@ -3,9 +3,37 @@ directories:
 - contents:
   - directory: {}
     path: .
-  path: /tmp/test-crc32c
+  path: Sources/crc32c
+- contents:
+  - git:
+      commitTitle: 'Merge bitcoin/bitcoin#35042: [31.x] Finalize 31.0...'
+      sha: 6574cb40869b96b9ffc79c19dc8f4e467d60f321
+      tags:
+      - v31.0
+    path: .
+  path: .vendir-upstream/bitcoin
 - contents:
   - directory: {}
     path: .
-  path: Sources/crc32c
+  path: Sources/leveldb
+- contents:
+  - directory: {}
+    path: .
+  path: Sources/minisketch
+- contents:
+  - directory: {}
+    path: .
+  path: Sources/secp256k1
+- contents:
+  - directory: {}
+    path: .
+  path: Sources/libbitcoinkernel
+- contents:
+  - directory: {}
+    path: .
+  path: Sources/bitcoind
+- contents:
+  - directory: {}
+    path: .
+  path: Tests/BitcoinTests/Fixtures
 kind: LockConfig
