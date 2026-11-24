@@ -66,4 +66,4 @@ visionOS (both apps) and tvOS (`KernelApp` only — the `Bitcoin` product's `exe
 
 ## Going deeper
 
-For Tor wiring, the `DaemonConfig` builder, integration-test recipes, entitlements, and the Shared/Debug/Release xcconfig pattern, see [`Projects/AGENTS.md`](AGENTS.md). For project-wide architecture and the subtree extraction flow, see the root [`AGENTS.md`](../AGENTS.md).
+For Tor wiring, the `DaemonConfig` builder, integration-test recipes, entitlements, and the Shared/Debug/Release xcconfig pattern, see [`Projects/AGENTS.md`](AGENTS.md). For project-wide architecture and the vendir vendoring flow, see the root [`AGENTS.md`](../AGENTS.md).

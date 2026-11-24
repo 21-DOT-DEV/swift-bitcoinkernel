@@ -41,7 +41,7 @@ Records, not applied patches:
 
 ## Custom build files (not patches)
 
-These are not upstream modifications but SwiftPM build-configuration files committed next to the vendored sources. They survive a source sync because the sync patterns in `subtree.yaml` only match `*.{h,c,cc,cpp}` code files.
+These are not upstream modifications but SwiftPM build-configuration files committed next to the vendored sources. They survive a source sync because `vendir.yml`'s `ignorePaths` carries each declared file across the wipe-and-copy.
 
 **Build-configuration headers** — stand-ins for the header Bitcoin Core's CMake build would normally generate, with macOS-vs-iOS switches for the two probes that differ (`HAVE_GETENTROPY_RAND`, `HAVE_SYSTEM`; both validated against real CMake introspection — see the [CMake memo](bitcoin/cmake-ios-library-build.md)):
 

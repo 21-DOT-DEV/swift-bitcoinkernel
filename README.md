@@ -74,7 +74,7 @@ For the `Bitcoin` product (embedded daemon and RPC client), opt your target into
 
 Or use Xcode: **File → Add Packages…**, then enter `https://github.com/21-DOT-DEV/swift-bitcoinkernel`. For the `Bitcoin` product in Xcode, set **C++ and Objective-C Interoperability** to `C++/Objective-C++` in the target's Build Settings.
 
-Pin with a version tag. At a tagged release the package excludes its development plugins (tuist, subtree, docc); pinning a commit or branch instead resolves that full toolchain into your dependency graph.
+Pin with a version tag. At a tagged release the package excludes its development plugins (tuist, docc); pinning a commit or branch instead resolves that full toolchain into your dependency graph.
 
 ## Package Traits
 
@@ -182,10 +182,10 @@ Each tagged release also publishes a downloadable `.doccarchive.zip` on the corr
 
 ## Contributing
 
-Contributions are welcome. Read [AGENTS.md](AGENTS.md) for project architecture and the subtree extraction flow, [Projects/AGENTS.md](Projects/AGENTS.md) for the Tuist workspace, and the [21-DOT-DEV contributing guidelines](https://github.com/21-DOT-DEV/.github/blob/main/CONTRIBUTING.md) for branching conventions.
+Contributions are welcome. Read [AGENTS.md](AGENTS.md) for project architecture and the vendir vendoring flow, [Projects/AGENTS.md](Projects/AGENTS.md) for the Tuist workspace, and the [21-DOT-DEV contributing guidelines](https://github.com/21-DOT-DEV/.github/blob/main/CONTRIBUTING.md) for branching conventions.
 
 > [!IMPORTANT]
-> Files under `Sources/{bitcoind,libbitcoinkernel,secp256k1,leveldb,minisketch,crc32c}/` are extracted from upstream and overwritten on every subtree sync. Local changes for SPM/embedded use live in `patches/` — see [`patches/README.md`](patches/README.md).
+> Files under `Sources/{bitcoind,libbitcoinkernel,secp256k1,leveldb,minisketch,crc32c}/` are extracted from upstream and overwritten on every vendor sync. Local changes for SPM/embedded use live in `patches/` — see [`patches/README.md`](patches/README.md).
 
 ## Security
 

@@ -14,7 +14,7 @@ A tooling migration, not a library change. One `git:` contents entry clones
 bitcoin` checkout, and `directory:` slices copy filtered subsets of it into
 the same `Sources/` and `Tests/` destinations the subtree rules populated —
 replacing `subtree.yaml`, the `swift-plugin-subtree` dev dependency, and the
-committed ~53 MB `Vendor/bitcoin` mirror (1,459 tracked files, ~150 of them
+committed ~53 MB `Vendor/bitcoin` mirror (2,920 tracked files, 363 of them
 Python scripts nothing extracts). `Scripts/vendor-sync.sh` drives the full
 recipe — fetch, `git apply` the five maintained patches onto the pristine
 checkout, slice, then two fixups vendir's path rules cannot express — and a
@@ -33,15 +33,15 @@ tooling with no user-facing requirements; acceptance is byte-parity (§Goal
 - `Scripts/vendor-sync.sh` reproduces the six extracted trees
   (`Sources/{bitcoind,libbitcoinkernel,crc32c,leveldb,minisketch,
   secp256k1}/`) and `Tests/BitcoinTests/Fixtures/` byte-for-byte against
-  git HEAD, modulo exactly the declared deltas — six destination
-  license files (five upstream licenses; the root `COPYING` lands in
+  git HEAD, modulo exactly the declared deltas — seven destination
+  license files (six upstream licenses; the root `COPYING` lands in
   both `bitcoind` and `libbitcoinkernel`) plus the one-line
   `compat/compat.h` upstream copyright drift (`2009-2024` →
   `2009-present`, now tracked since its subtree-era exclusion was
   dropped) — the
   project-owned files inside wiped roots ride across via `ignorePaths`,
   and patch-touched files are re-created by `git apply` on every sync.
-- Retired and deleted: `Vendor/` (~53 MB tracked, 1,459 files — the unused
+- Retired and deleted: `Vendor/` (~53 MB tracked, 2,920 files — the unused
   upstream Python/contrib/test tooling dies with it), `subtree.yaml`, and
   the `swift-plugin-subtree` dev dependency. No subtree-specific workflows
   exist here to port.
@@ -305,20 +305,22 @@ grouped into phases with checkpoints, is in [tasks.md](./tasks.md).
 
 ## 7. Verification
 
-- [ ] `Scripts/vendor-sync.sh` reproduces `Sources/{bitcoind,
+- [x] `Scripts/vendor-sync.sh` reproduces `Sources/{bitcoind,
       libbitcoinkernel,crc32c,leveldb,minisketch,secp256k1}/` and
       `Tests/BitcoinTests/Fixtures/` byte-identical to HEAD, modulo
-      exactly the six declared license-file destinations and the
+      exactly the seven declared license-file destinations and the
       one-line `compat.h` drift — proven by `git status` and `git diff`
       showing nothing else
-- [ ] `vendir.lock.yml` pins the commit `v31.0` peels to (`git ls-remote
-      https://github.com/bitcoin/bitcoin refs/tags/v31.0^{}`)
-- [ ] Every `patches/bitcoin/*.patch` applies cleanly to the pristine
-      checkout (`git apply --check` output in the sync log)
-- [ ] `Sources/leveldb/include/leveldb/helpers/memenv/memenv.h` exists
+- [x] `vendir.lock.yml` pins the commit `v31.0` peels to (`git ls-remote
+      https://github.com/bitcoin/bitcoin refs/tags/v31.0^{}`) —
+      `6574cb40`
+- [x] Every `patches/bitcoin/*.patch` applies cleanly to the pristine
+      checkout (`git apply --check` output in the sync log; re-verified
+      against a detached `HEAD` worktree 2026-11-23 — all five pass)
+- [x] `Sources/leveldb/include/leveldb/helpers/memenv/memenv.h` exists
       and matches `helpers/memenv/memenv.h`; `Fixtures/` holds exactly
       the four flat JSONs
-- [ ] `Vendor/`, `subtree.yaml`, and the `swift-plugin-subtree`
+- [x] `Vendor/`, `subtree.yaml`, and the `swift-plugin-subtree`
       dependency are gone; `grep -ri 'subtree\|Vendor/'
       --exclude-dir=.git` over docs, workflows, and configs finds only
       historical/ADR references
@@ -326,7 +328,7 @@ grouped into phases with checkpoints, is in [tasks.md](./tasks.md).
       on a touched managed file (manual probe); `vendir-check.yml` is
       actionlint-clean, `permissions: {}`, pinned checkout +
       `persist-credentials: false`, auth-before-fetch
-- [ ] `swift build` compiles the C/C++ targets unchanged (spot-check —
+- [x] `swift build` compiles the C/C++ targets unchanged (spot-check —
       full Tier 1 matrix remains CI's job); `swift test --package-path
       Development/Tools` passes and the `plans` index regenerates
       cleanly

@@ -2,7 +2,7 @@
 
 Swift ↔ bitcoind interop code. **Everything in this directory is original
 to `swift-bitcoinkernel`.** Every other file under `Sources/bitcoind/src/` is
-vendored from upstream Bitcoin Core (`Vendor/bitcoin/src/`) and MUST NOT
+vendored from upstream Bitcoin Core (sliced by `vendir.yml`) and MUST NOT
 be edited directly — use a file here instead.
 
 This directory exists because `swift-bitcoinkernel` embeds `bitcoind_main()`
@@ -14,7 +14,7 @@ process exits right after. We paper over those assumptions here.
 ## Ground rules
 
 1. **No edits to vendored files.** Every workaround must live in this
-   directory so the `Vendor/bitcoin` subtree can be re-synced cleanly.
+   directory so the vendored upstream checkout can be re-synced cleanly.
 2. **Header declarations go in `Sources/bitcoind/include/bitcoind.h`.**
    That's the single exported header in the `bitcoind` module map, so
    any symbol Swift needs to call must be declared there.

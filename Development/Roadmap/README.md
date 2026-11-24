@@ -39,7 +39,7 @@
 | 7 | Lightning Integration | FUTURE | [phase-7-lightning-integration.md](phase-7-lightning-integration.md) |
 | 8 | RPC Server & Privacy | FUTURE | [phase-8-rpc-server.md](phase-8-rpc-server.md) |
 | 9 | Distribution & Release Artifacts | PLANNED | [phase-9-distribution.md](phase-9-distribution.md) |
-| 10 | Vendir Migration | PLANNED | [phase-10-vendir-migration.md](phase-10-vendir-migration.md) |
+| 10 | Vendir Migration | IN PROGRESS | [phase-10-vendir-migration.md](phase-10-vendir-migration.md) |
 
 **Timeline Model**: Milestone-driven (phases complete when deliverables are done).
 
@@ -102,7 +102,7 @@ Phase 1 (Foundation) ✅
 
 | Risk | Mitigation |
 |------|------------|
-| Bitcoin Core upstream breaking changes | Pin to specific release via `subtree.yaml`; test before upgrading |
+| Bitcoin Core upstream breaking changes | Pin to specific release via `vendir.yml`; test before upgrading |
 | C++ interop complexity | Isolate unsafe code; comprehensive boundary testing; Swift 6 strict concurrency |
 | P2P wire protocol complexity (100+ message types) | Phase delivery: basic messages first (BIP 324, BIP 130, BIP 133, BIP 339), advanced later; reference Kyoto/Floresta/SwiftSync for wire protocol patterns |
 | BIP 324 (v2 transport) implementation difficulty | Leverage `swift-event` (libevent) for async I/O; reference Floresta's BIP 324 implementation for protocol logic |
@@ -111,7 +111,7 @@ Phase 1 (Foundation) ✅
 
 **Assumptions**:
 - Swift 6.3+ (swift-tools-version 6.3) is the minimum toolchain
-- Bitcoin Core v31.x is the current pinned upstream version (via `subtree.yaml`)
+- Bitcoin Core v31.x is the current pinned upstream version (via `vendir.yml`)
 - `swift-event` (libevent) provides sufficient async I/O primitives for P2P networking
 - `BitcoinKernel` is a node layer consumed by wallets/SDKs, not a wallet itself
 - No Rust FFI — all new features are Swift-native, referencing Rust implementations (Kyoto, Floresta, SwiftSync) for protocol logic only

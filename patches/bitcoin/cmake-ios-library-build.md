@@ -2,7 +2,7 @@
 
 **Date**: 2026-07-02
 **Status**: Verification record, not an applied patch (like [`tvos-execvp-feasibility.md`](tvos-execvp-feasibility.md))
-**Tree verified**: `Vendor/bitcoin` (pristine upstream v31.0; no `patches/` applied — confirmed by checking `src/common/netif.cpp` has no `TARGET_OS_OSX`, `src/rpc/server.cpp` retains both `once_flag`s, `src/compat/compat.h` has no `#ifndef` guard, `src/init.cpp` has no resets)
+**Tree verified**: `Vendor/bitcoin` (the committed mirror, per `subtree.yaml`; that tree's contents now live at `.vendir-upstream/bitcoin`, per `vendir.yml`) at v31.0 — pristine upstream (`vendor-sync.sh` applies `patches/` to the `.vendir-upstream/bitcoin` working tree; inspect `git -C .vendir-upstream/bitcoin show HEAD:<file>` or a detached `git worktree` for the untouched state — confirmed by checking `src/common/netif.cpp` has no `TARGET_OS_OSX`, `src/rpc/server.cpp` retains both `once_flag`s, `src/compat/compat.h` has no `#ifndef` guard, `src/init.cpp` has no resets)
 **Host**: macOS 15 (Darwin 25.5.0), Xcode 27.0 (iOS SDK 27.0), CMake 4.3.4
 
 ## What this proves
@@ -43,7 +43,10 @@ EOF
 Configure and build (device; simulator swaps `-DCMAKE_OSX_SYSROOT=iphonesimulator`; the macOS baseline drops the three cross-compilation cache entries and uses `-DCMAKE_OSX_DEPLOYMENT_TARGET=15.0`):
 
 ```sh
-cmake -S Vendor/bitcoin -B build-ios-device \
+# `.vendir-upstream/bitcoin` holds the applied patches at rest — build a
+# pristine copy of the locked commit via a detached worktree:
+git -C .vendir-upstream/bitcoin worktree add -d /tmp/bitcoin-pristine HEAD
+cmake -S /tmp/bitcoin-pristine -B build-ios-device \
   -DCMAKE_SYSTEM_NAME=iOS \
   -DCMAKE_OSX_SYSROOT=iphoneos \
   -DCMAKE_OSX_ARCHITECTURES=arm64 \
@@ -56,6 +59,7 @@ cmake -S Vendor/bitcoin -B build-ios-device \
   -DWITH_CCACHE=OFF \
   -DBoost_DIR=/tmp/boost-shim
 cmake --build build-ios-device --target bitcoinkernel -j8
+# when done: git -C .vendir-upstream/bitcoin worktree remove /tmp/bitcoin-pristine
 ```
 
 `-DENABLE_IPC=OFF` is deliberate: multiprocess/IPC ([#28722](https://github.com/bitcoin/bitcoin/issues/28722)) is additive upstream but defaults ON on Unix, pulling in the Cap'n Proto toolchain and the libmultiprocess subtree, and it has no application here — iOS apps cannot spawn helper processes.

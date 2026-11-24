@@ -13,10 +13,10 @@
 #      fetches bitcoin/bitcoin at the pinned ref into the gitignored
 #      `.vendir-upstream/` checkout. This is the only network fetch. The
 #      tree is pristine only between stage 1 and stage 2 — after a run it
-#      holds patched bytes, so validating patches against it (the role
-#      `patches/UPSTREAMING.md` documents, naming `Vendor/bitcoin`)
-#      requires re-running stage 1 first (`vendir sync -d
-#      .vendir-upstream/bitcoin`) to re-establish the pristine tree.
+#      holds patched bytes, so validating patches against pristine
+#      upstream (the role `patches/UPSTREAMING.md` documents) requires a
+#      detached `git worktree` of this checkout's locked HEAD, or
+#      re-running stage 1 (`vendir sync -d .vendir-upstream/bitcoin`).
 #
 #   2. `git apply --directory=.vendir-upstream/bitcoin patches/bitcoin/*.patch`
 #      — re-apply the five maintained patches to the pristine clone before

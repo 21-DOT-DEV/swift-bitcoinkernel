@@ -224,7 +224,7 @@ jobs:
       # disabled: CI runners have no DEVELOPMENT_TEAM (supplied locally by the
       # gitignored Resources/Project/Local.xcconfig), and these unit tests need no
       # signed/entitled binary. The validation skips quiet the dev-plugin
-      # (tuist/subtree/docc) and macro prompts the package pulls on untagged refs.
+      # (tuist/docc) and macro prompts the package pulls on untagged refs.
       - name: Build ${{ matrix.app }} (${{ matrix.platform }})
         env:
           SCHEME: ${{ matrix.app }}

@@ -4,7 +4,7 @@ How we contribute the patches in [`bitcoin/`](bitcoin/) back to Bitcoin Core: wh
 
 House rule for this folder: every file must read cold. Plain words, short sentences, and a one-phrase explanation the first time any project term or issue number appears.
 
-Issue states and every "still needed?" check were last verified **2026-07-02** against Bitcoin Core's development branch (`master`). All five `.patch` files were verified to apply cleanly to the vendored v31.0 tree (`Vendor/bitcoin`, per `subtree.yaml`) on **2026-07-17**. Re-verify all of this before filing anything.
+Issue states and every "still needed?" check were last verified **2026-07-02** against Bitcoin Core's development branch (`master`). All five `.patch` files were verified to apply cleanly to the vendored v31.0 tree (`Vendor/bitcoin`, per `subtree.yaml` — the tree now at `.vendir-upstream/bitcoin`, per `vendir.yml`) on **2026-07-17**. Re-verify all of this before filing anything.
 
 ## The pipeline
 
@@ -112,7 +112,7 @@ Distilled from Bitcoin Core's [CONTRIBUTING.md](https://github.com/bitcoin/bitco
 2. Give review before asking for it, and keep giving it while waiting. The common rule of thumb is 5–15 reviews of other people's PRs per PR you open, and CONTRIBUTING's own advice for a stalled PR is "give review to others".
 3. Check the release schedule (pinned in the repo's issues). Filings during feature freeze — the pre-release window when only critical fixes land — wait until after the release.
 4. Build a reproducible branch on `21-DOT-DEV/bitcoin` (our public fork) demonstrating the bug or capability first. This is the path that worked for our one accepted fix (#35293, the report → #35304, the merged fix).
-5. Two trees matter, so check both. The local `.patch` must apply cleanly to the pristine vendored tree — `git apply --check --directory=Vendor/bitcoin patches/bitcoin/<name>.patch` (v31.0, per `subtree.yaml`) — and any line numbers quoted in a patch's write-up refer to that tree unless labeled otherwise. The upstream PR targets `master`: re-verify the patch is still needed there, rebase, and run CI on the fork before opening.
+5. Two trees matter, so check both. The local `.patch` must apply cleanly to a pristine upstream v31.0 tree (per `vendir.yml`). The `.vendir-upstream/bitcoin` checkout already holds the applied patches at rest, so check the locked commit out to a throwaway tree first — `git -C .vendir-upstream/bitcoin worktree add -d /tmp/bitcoin-pristine HEAD`, then `git -C /tmp/bitcoin-pristine apply --check "$PWD/patches/bitcoin/<name>.patch"` (drop the tree afterward with `git -C .vendir-upstream/bitcoin worktree remove /tmp/bitcoin-pristine`). To answer the opposite question — that the applied set is complete in the maintained checkout — run `git apply -R --check --directory=.vendir-upstream/bitcoin patches/bitcoin/<name>.patch`. Any line numbers quoted in a patch's write-up refer to the pristine tree unless labeled otherwise. The upstream PR targets `master`: re-verify the patch is still needed there, rebase, and run CI on the fork before opening.
 
 **Writing the commits and the PR:**
 

@@ -11,7 +11,7 @@
 
 ### 10.1 vendir config + sync flow
 
-**Purpose & User Value**: Declarative, reproducible pin of the Bitcoin Core upstream (the current `subtree.yaml` remote and release), extracting into `Sources/{bitcoind,libbitcoinkernel,crc32c,leveldb,minisketch,secp256k1}/` — upstream updates become reviewable, verifiable pull requests.
+**Purpose & User Value**: Declarative, reproducible pin of the Bitcoin Core upstream (the former `subtree.yaml` remote and release), extracting into `Sources/{bitcoind,libbitcoinkernel,crc32c,leveldb,minisketch,secp256k1}/` — upstream updates become reviewable, verifiable pull requests.
 
 **Success Metrics**:
 - `vendir sync` reproduces the current vendored tree at the pinned Bitcoin Core release (v31.x)

@@ -1,6 +1,11 @@
 <!--
 Sync Impact Report (latest):
-- Version: 2.1.0 → 2.2.0 (MINOR — planning artifacts consolidated under Development/; decision records added; Principle V names the artifact that actually exists)
+- Version: 2.2.0 → 2.3.0 (MINOR — upstream sync retargeted from the swift-plugin-subtree extraction stack to vendir; the committed Vendor/bitcoin mirror is replaced by the gitignored .vendir-upstream/bitcoin checkout)
+- Change Type: Amendment (Vendored Upstream Sync guidance retargeted; obligations unchanged in substance)
+- Scope: Bitcoin Core is now fetched into .vendir-upstream/bitcoin/ (gitignored scratch) and sliced by vendir.yml into Sources/{bitcoind,libbitcoinkernel,crc32c,leveldb,minisketch,secp256k1}/ and selected test fixtures, driven by Scripts/vendor-sync.sh. The same duties carry over under new names — a pinned upstream tag (v31.0 in vendir.yml; the resolved commit recorded in vendir.lock.yml, correcting a stale v31.0rc4 reference), extracted trees read-only to local edits, modifications via patches or slice configuration, and the Tier 1 CI matrix after every re-sync. Vendor/bitcoin mirror naming is removed throughout; the checkout now holds the applied patches in its working tree at rest.
+- Tooling: vendir (vendir.yml + vendir.lock.yml) driven by Scripts/vendor-sync.sh replaces the swift-plugin-subtree package plugin, which is removed from Package.swift; subtree.yaml and the Vendor/ mirror are deleted.
+
+Prior amendment (2.1.0 → 2.2.0, MINOR — planning artifacts consolidated under Development/; decision records added; Principle V names the artifact that actually exists):
 - Change Type: Amendment (Principle V + document relocation)
 - Scope: This constitution moved from .specify/memory/constitution.md to Development/constitution.md, alongside Development/Specs/ (feature plans), Development/Roadmap/ (phase plan and phase files), and Development/ADRs/ (architecture decision records). Principle V previously required a `spec.md` per feature; no file of that name has ever existed in this repository, and the practice has always been one `plan.md` per feature. The requirement now names `plan.md` under `Development/Specs/`, and three practices are added: correct a plan in place when review changes its design; graduate a decision that outlives its feature to an ADR; never append a status or review log to a plan.
 - Tooling: Development/Tools (a separate Swift package with its own unit tests, depending only on swift-yaml and swift-argument-parser, neither of which is a runtime dependency of any shipped product) validates plan and ADR frontmatter against a declared schema that refuses unknown fields, and generates both index tables, so a feature's status exists in exactly one place. Enforced by .github/workflows/development-docs.yml, with Vale rules under .vale/styles/Plans/ rejecting append-only log sections and running test-count totals.
@@ -55,7 +60,7 @@ Prior amendment (1.0.0 → 2.0.0, MAJOR — structural rewrite, platform scope r
 
 This constitution governs the **swift-bitcoinkernel** package, a Swift 6 wrapper around Bitcoin Core's C++ implementation providing embedded-node functionality and high-level RPC access for Apple platforms and Linux.
 
-**Scope**: This repository only. Covers the `Bitcoin` high-level Swift library (embedded daemon bridge + typed RPC client + response models), the `BitcoinKernel` low-level library (consensus-validation bindings), and the vendored Bitcoin Core source tree under `Vendor/bitcoin/` synchronized via the `subtree` CLI.
+**Scope**: This repository only. Covers the `Bitcoin` high-level Swift library (embedded daemon bridge + typed RPC client + response models), the `BitcoinKernel` low-level library (consensus-validation bindings), and the vendored Bitcoin Core source trees under `Sources/{bitcoind,libbitcoinkernel,crc32c,leveldb,minisketch,secp256k1}/` synchronized via vendir.
 
 **Philosophy**: Principles are technology-agnostic where possible. swift-bitcoinkernel is a **thin, disciplined wrapper** over a battle-tested C++ codebase — **correctness, resource safety, Swift-native ergonomics, and operational clarity** take precedence over feature breadth. Where Bitcoin Core already solves a problem, the Swift layer MUST defer to it rather than reimplement.
 
@@ -74,14 +79,14 @@ This constitution governs the **swift-bitcoinkernel** package, a Swift 6 wrapper
 **Practices**:
 - **MUST** limit scope to wrapping Bitcoin Core: embedded daemon, `libbitcoinkernel` validation, typed RPC client, RPC response models, and associated primitives.
 - **MUST** use Bitcoin Core as the sole source of consensus and node logic.
-- **MUST** track Bitcoin Core via a specific pinned tag/commit in `subtree.yaml` managed by `swift-plugin-subtree`.
+- **MUST** track Bitcoin Core via a specific pinned tag/commit in `vendir.yml` synchronized by `Scripts/vendor-sync.sh`.
 - **MUST** limit runtime dependencies to the following allowlist:
   - `swift-boost` — header-only Boost modules required by Bitcoin Core
   - `swift-event` — `libevent`, required by Bitcoin Core
   - System `sqlite3` — required by Bitcoin Core wallet backend
 - **MUST NOT** add runtime dependencies outside the allowlist without a constitutional amendment (MAJOR version bump) that records the justification.
 - **MUST NOT** reimplement Bitcoin consensus rules, validation logic, or P2P protocol behavior in Swift.
-- **MUST NOT** hand-edit files under `Vendor/bitcoin/` or extracted `Sources/{bitcoind,libbitcoinkernel,crc32c,leveldb,minisketch,secp256k1}/`; changes are overwritten on next extraction. Local modifications required for SPM or embedded use MUST be maintained as patches under `patches/bitcoin/` and reapplied explicitly (see Implementation Guidance).
+- **MUST NOT** hand-edit extracted `Sources/{bitcoind,libbitcoinkernel,crc32c,leveldb,minisketch,secp256k1}/` files; changes are overwritten on next sync. Local modifications required for SPM or embedded use MUST be maintained as patches under `patches/bitcoin/` and reapplied explicitly (see Implementation Guidance).
 - **SHOULD** prefer upgrading the pinned Bitcoin Core tag over carrying local divergence.
 - **SHOULD** document Bitcoin Core version compatibility in README.
 - **MAY** evaluate additional runtime dependencies (e.g., `BerkeleyDB` for legacy wallet support) via constitutional amendment when scope genuinely requires.
@@ -250,7 +255,7 @@ This constitution governs the **swift-bitcoinkernel** package, a Swift 6 wrapper
 
 **Practices**:
 - **MUST** include a LICENSE file (MIT) for swift-bitcoinkernel's own code.
-- **MUST** preserve and attribute the upstream Bitcoin Core license(s) shipped under `Vendor/bitcoin/`.
+- **MUST** preserve and attribute the upstream Bitcoin Core license(s) shipped in the vendored `Sources/` trees (each slice's `includePaths` carries its `COPYING`/`LICENSE`).
 - **MUST** maintain a README with setup, supported platforms, a Quick Start, RPC coverage summary, and pinned Bitcoin Core version.
 - **MUST** defer contribution guidelines to the org-level [CONTRIBUTING.md](https://github.com/21-DOT-DEV/.github/blob/main/CONTRIBUTING.md) (branching and commit guidelines apply).
 - **MUST** defer security disclosure to the org-level [SECURITY.md](https://github.com/21-DOT-DEV/.github/blob/main/SECURITY.md).
@@ -275,21 +280,21 @@ This constitution governs the **swift-bitcoinkernel** package, a Swift 6 wrapper
 
 This repository defers to the org-level `SECURITY.md` for vulnerability reporting, contact methods, response timelines, and coordinated disclosure. This constitution MUST NOT duplicate that guidance; amendments to disclosure process are made in the org-level document.
 
-**Upstream coordination**: For vulnerabilities originating in `Vendor/bitcoin/` (i.e., upstream Bitcoin Core), maintainers SHOULD coordinate disclosure with the Bitcoin Core security process in addition to the org-level process.
+**Upstream coordination**: For vulnerabilities originating in the vendored sources (i.e., upstream Bitcoin Core), maintainers SHOULD coordinate disclosure with the Bitcoin Core security process in addition to the org-level process.
 
 ---
 
 ### Vendored Upstream Sync
 
-**Purpose**: Bitcoin Core sources live under `Vendor/bitcoin/` and are extracted into `Sources/{bitcoind,libbitcoinkernel,crc32c,leveldb,minisketch,secp256k1}/` and selected test fixtures via the `subtree` CLI, configured in `subtree.yaml`.
+**Purpose**: Bitcoin Core is fetched into `.vendir-upstream/bitcoin/` (gitignored scratch) and sliced into `Sources/{bitcoind,libbitcoinkernel,crc32c,leveldb,minisketch,secp256k1}/` and selected test fixtures via vendir, configured in `vendir.yml` and driven by `Scripts/vendor-sync.sh`.
 
 **Requirements**:
-- **MUST** pin a specific upstream commit and tag in `subtree.yaml` (current: `v31.0rc4`).
-- **MUST** treat files under `Vendor/**` and extracted `Sources/{bitcoind,libbitcoinkernel,crc32c,leveldb,minisketch,secp256k1}/` as read-only with respect to local edits; any required modification MUST be applied as a patch (see Local Patches Discipline) or via the extraction configuration.
-- **MUST** record the upstream revision / tag being extracted in the commit that performs the extraction.
-- **MUST** run the full Tier 1 CI matrix after every subtree re-extraction or upstream bump.
+- **MUST** pin a specific upstream tag in `vendir.yml` (current: `v31.0`), with the resolved commit recorded in `vendir.lock.yml`.
+- **MUST** treat extracted `Sources/{bitcoind,libbitcoinkernel,crc32c,leveldb,minisketch,secp256k1}/` files as read-only with respect to local edits; any required modification MUST be applied as a patch (see Local Patches Discipline) or via the `vendir.yml` slice configuration.
+- **MUST** record the upstream revision / tag being synced in the commit that performs the sync (`vendir.lock.yml` carries the resolved SHA).
+- **MUST** run the full Tier 1 CI matrix after every vendor re-sync or upstream bump.
 - **SHOULD** prefer upstreaming fixes to Bitcoin Core over carrying local divergence.
-- **SHOULD** capture the rationale for each extraction pattern or exclusion in comments inside `subtree.yaml`.
+- **SHOULD** capture the rationale for each slice pattern or exclusion in comments inside `vendir.yml`.
 - **SHOULD** bump Bitcoin Core promptly for security advisories.
 
 ---
@@ -305,7 +310,8 @@ This repository defers to the org-level `SECURITY.md` for vulnerability reportin
 | 1 | `patches/bitcoin/ios-netif-guard.md` | `src/common/netif.cpp` | Narrow `__APPLE__` to macOS (`TARGET_OS_OSX`); iOS returns `nullopt` |
 | 2 | `patches/bitcoin/rpc-server-reset.md` | `src/rpc/server.{cpp,h}` | Remove one-shot `std::once_flag`; enable RPC restart |
 | 3 | `patches/bitcoin/shutdown-reset.md` | `src/init.cpp` | Reset four globals to enable in-process `bitcoind_main()` restart |
-| 4 | `patches/bitcoin/main-function-guard.md` | `src/bitcoind.cpp` | `MAIN_FUNCTION` define enabling rename of `main()` to `bitcoind_main()` |
+| 4 | `patches/bitcoin/main-function-guard.md` | `src/compat/compat.h` | `MAIN_FUNCTION` guard enabling rename of `main()` to `bitcoind_main()` |
+| 5 | `patches/bitcoin/logging-teardown-assertion.md` | `src/logging.cpp` | Turn off `m_print_to_file` in `DisconnectTestLogger()`; stop a late log line asserting on the nulled handle |
 
 **Non-patch custom files** (SPM build-config replacements, not upstream modifications):
 
@@ -314,7 +320,7 @@ This repository defers to the org-level `SECURITY.md` for vulnerability reportin
 
 **Requirements**:
 - **MUST** document every local patch under `patches/<upstream>/<name>.md` with problem statement, fix description, and upstream status (filed issue, PR link, or rationale for carrying locally).
-- **MUST** reapply patches after every subtree extraction; extraction MUST NOT silently drop them.
+- **MUST** reapply patches after every vendor sync; the sync MUST NOT silently drop them.
 - **MUST** justify each patch against an SPM-build, iOS-embedding, or restart-semantics need; patches MUST NOT be used to add features that belong upstream.
 - **SHOULD** upstream patches to Bitcoin Core where applicable and record the PR link in the patch document.
 - **SHOULD** re-evaluate every patch on each Bitcoin Core bump; remove patches obsoleted by upstream fixes.
@@ -376,8 +382,8 @@ swift package --disable-sandbox tuist test KernelApp -p Projects/ --platform ios
 | Integration | Tuist (in `Projects/`) |
 | Linting | SwiftLint, SwiftFormat (planned) |
 | CI | GitHub Actions (Apple + Linux) |
-| Upstream management | `swift-plugin-subtree` |
-| Upstream Bitcoin Core | v31.0rc4 (pinned in `subtree.yaml`) |
+| Upstream management | `vendir` via `Scripts/vendor-sync.sh` |
+| Upstream Bitcoin Core | v31.0 (pinned in `vendir.yml`) |
 
 ### Products
 
@@ -407,12 +413,11 @@ swift package --disable-sandbox tuist test KernelApp -p Projects/ --platform ios
 ### Development-only Dependencies
 
 - `swift-plugin-tuist` — Tuist integration for `Projects/`
-- `swift-plugin-subtree` — vendored-source sync
 - `swift-docc-plugin` — DocC archive generation
 
 ### Upstream
 
-- **Bitcoin Core**: <https://github.com/bitcoin/bitcoin> (pinned in `subtree.yaml`)
+- **Bitcoin Core**: <https://github.com/bitcoin/bitcoin> (pinned in `vendir.yml`)
 
 ---
 
@@ -490,11 +495,12 @@ Changes that affect consensus behavior, node lifecycle, resource safety at the C
 
 ## Version History
 
-**Version**: 2.2.0
+**Version**: 2.3.0
 **Ratified**: 2026-05-03
-**Last Amended**: 2026-08-31
+**Last Amended**: 2026-11-23
 
 **Changelog**:
+- **2.3.0** (2026-11-23): **MINOR** — upstream-sync mechanism retargeted from the `swift-plugin-subtree` extraction stack to vendir (`vendir.yml` slices + `Scripts/vendor-sync.sh` recipe, spec `006-vendir-migration`). Obligations unchanged in substance: the pinned upstream version (recorded as `v31.0`, correcting a stale `v31.0rc4`), extracted trees stay read-only to local edits, patches reapply on every sync, and the Tier 1 CI matrix still gates every re-sync. `Vendor/bitcoin` mirror naming removed throughout — the upstream checkout is now the gitignored `.vendir-upstream/bitcoin`.
 - **2.2.0** (2026-08-31): **MINOR** — planning artifacts consolidated under `Development/` (`constitution.md`, `Specs/`, `Roadmap/`, `ADRs/`), and the spec-kit scaffolding (`.specify/`, `.devin/`) removed. Principle V now names `plan.md` under `Development/Specs/` instead of a `spec.md` that never existed, and gains three practices: correct a plan in place rather than appending to it; graduate durable decisions to ADRs; never append a status or review log to a plan. Two superseded roadmap phase files became ADRs 0001 and 0002, resolving duplicate phase numbering. Frontmatter now carries each feature's status, and the `Specs/` and `ADRs/` index tables are generated from it, so the index and the plans cannot disagree.
 - **2.1.0** (2026-05-31): **MINOR** — expanded Tuist Projects Folder guidance (Implementation Guidance). Added a normative CI mandate to build and test both demo apps (`NodeApp`, `KernelApp`) on macOS and iOS via `.github/workflows/tuist-apps.yml`, plus a dependency-graph-resolution requirement. Corrected stale example commands (previously built the `Bitcoin`/`BitcoinKernel` products and tested `Bitcoin-Workspace`; now per-app schemes) and the Purpose line (dropped an inapplicable "XCFramework workflows" reference inherited from the sibling canon — `Projects/` hosts demo apps). Companion repo change: `Projects/Project.swift` `swift-tor` pin bumped `0.1.0 → 0.1.1` to align `swift-event` at `0.2.1` with the root package, unbreaking `tuist generate`.
 - **2.0.0** (2026-05-03): **MAJOR rewrite** adopting the 7-principle sibling canon (swift-secp256k1 / swift-tor / swift-event / swift-openssl). Structural changes: consolidated 8 principles → 7 (merged "RPC Client Design & Reliability" + "API Design & Swift Idioms" → "API Design & RPC Surface"); renamed "C++ Interoperability & Memory Safety" → "C++ Interop & Resource Safety" and "Node Lifecycle Management" → "Node Lifecycle & Shutdown Safety". New structural elements: runtime-dependency allowlist with MAJOR-amendment gate (Principle I); tiered platform model with Tier 1 (macOS 15+ / iOS 18+ / Linux) and Tier 2 (tvOS / visionOS / watchOS / Windows / Android) (Principle VI); local-patches discipline codified (Principle I + Implementation Guidance); org-level CONTRIBUTING.md / SECURITY.md deferral to 21-DOT-DEV/.github (Principle VII); Compliance Review Triggers table (Governance). Alignment corrections: platform scope now matches `Package.swift` (macOS 15+ / iOS 18+, Linux added per maintainer direction); Bitcoin Core pin updated to v31.0rc4; products corrected to `Bitcoin` + `BitcoinKernel` (internal C++ targets: `bitcoind`, `libbitcoinkernel`, `crc32c`, `leveldb`, `minisketch`, `secp256k1`); wallet documented as package trait rather than separate library; Swift tools version 6.3 / C++20 recorded in Technology Stack.
@@ -523,4 +529,4 @@ This constitution organizes swift-bitcoinkernel-specific concerns on top of the 
 - **swift-event v1.0.1** → two-layer API design (`BitcoinKernel` + `Bitcoin`), Swift 6 strict-concurrency reference, Swift API Design Guidelines citation, SemVer 2.0.0 citation
 - **swift-openssl v1.0.1** → org-level CONTRIBUTING.md / SECURITY.md deferrals, CI workflow enumeration pattern, Sync Impact Report format
 
-**Version**: 2.2.0 | **Ratified**: 2026-05-03 | **Last Amended**: 2026-08-31
+**Version**: 2.3.0 | **Ratified**: 2026-05-03 | **Last Amended**: 2026-11-23

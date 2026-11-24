@@ -65,15 +65,6 @@
       }
     },
     {
-      "identity" : "swift-plugin-subtree",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/21-DOT-DEV/swift-plugin-subtree.git",
-      "state" : {
-        "revision" : "f5e8ef191c7f36e5bc876b713f78fab2fc6303f3",
-        "version" : "0.0.15"
-      }
-    },
-    {
       "identity" : "swift-plugin-tuist",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/21-DOT-DEV/swift-plugin-tuist.git",

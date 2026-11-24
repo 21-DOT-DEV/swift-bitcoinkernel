@@ -21,9 +21,9 @@ Sources/minisketch/**        linguist-vendored
 Sources/crc32c/**            linguist-vendored
 
 # Custom SPM build configuration files committed alongside vendored Bitcoin
-# Core sources. These are NOT subtree-extracted (they are not *.{h,c,cc,cpp}
-# matches in `subtree.yaml`) and survive `swift package plugin subtree-sync`.
-# See `patches/README.md` § "Non-patch custom files" for the maintenance contract.
+# Core sources. These are NOT vendir-sliced — `vendir.yml`'s `ignorePaths`
+# carries them across each sync's wipe-and-copy. See `patches/README.md`
+# § "Custom build files" for the maintenance contract.
 Sources/bitcoind/include/module.modulemap            linguist-vendored=false
 Sources/bitcoind/include/bitcoin-build-config.h      linguist-vendored=false
 Sources/libbitcoinkernel/include/module.modulemap    linguist-vendored=false
@@ -34,7 +34,6 @@ Sources/minisketch/include/module.modulemap          linguist-vendored=false
 Sources/crc32c/include/module.modulemap              linguist-vendored=false
 
 # Vendor / development directories
-Vendor/**                   export-ignore linguist-vendored
 Projects/**                 export-ignore
 patches/**                  export-ignore
 .build/**                   export-ignore linguist-vendored
@@ -47,7 +46,9 @@ Development/**              export-ignore linguist-vendored
 # CI/CD and tooling configs
 Dockerfile                  export-ignore
 .dockerignore               export-ignore
-subtree.yaml                export-ignore
+vendir.yml                  export-ignore
+vendir.lock.yml             export-ignore
+Scripts/**                  export-ignore
 
 # Git and editor files
 .gitignore                  export-ignore
