@@ -3,398 +3,316 @@ feature: 006
 title: Migrate Bitcoin Core vendoring from subtree extraction to vendir
 phase: 10 · Vendir Migration
 status: In Progress
-updated: 2026-11-16
-adrs: [0010, 0011]
+updated: 2026-11-26
+adrs: [0010, 0011, 0012]
 ---
 
 # Migrate Bitcoin Core vendoring from subtree extraction to vendir
 
-A tooling migration, not a library change. One `git:` contents entry clones
-`bitcoin/bitcoin` at the pinned tag into a gitignored `.vendir-upstream/
-bitcoin` checkout, and `directory:` slices copy filtered subsets of it into
-the same `Sources/` and `Tests/` destinations the subtree rules populated —
-replacing `subtree.yaml`, the `swift-plugin-subtree` dev dependency, and the
-committed ~53 MB `Vendor/bitcoin` mirror (2,920 tracked files, 363 of them
-Python scripts nothing extracts). `Scripts/vendor-sync.sh` drives the full
-recipe — fetch, `git apply` the five maintained patches onto the pristine
-checkout, slice, then two fixups vendir's path rules cannot express — and a
-`vendir-check` workflow turns the recipe into a CI freshness gate. Update
-automation stays a manual recipe (§Design → Interim updates). Produced
+A tooling migration, not a library change. `vendir.yml` pins
+`bitcoin/bitcoin` at a release tag. One `git:` entry downloads that tag
+into a gitignored `.vendir-upstream/bitcoin` folder, filtered to source
+files, and `directory:` entries copy subsets of it into the same
+`Sources/` and `Tests/` destinations the subtree rules populated. This
+replaces `subtree.yaml`, the `swift-plugin-subtree` dev dependency, and
+the committed ~53 MB `Vendor/bitcoin` mirror (2,920 tracked files, 363
+of them Python scripts nothing extracts).
+
+The whole sync is two commands with no wrapper script:
+
+```sh
+vendir sync && git apply patches/bitcoin/*.patch
+```
+
+The same commands with `--locked`, followed by `git status --porcelain`,
+verify that the committed files reproduce from the pin, and a
+`vendir-check` workflow runs that in CI.
+
+Decisions:
 [ADR 0010](../../ADRs/0010-vendir-replaces-subtree-mirror.md) (vendir
-replaces subtree + the mirror) and
+replaces subtree and the mirror; superseded by 0012 on how the sync is
+driven),
 [ADR 0011](../../ADRs/0011-single-fetch-upstream-checkout.md) (one fetch
-feeds all slices). Ordered work: [tasks.md](./tasks.md). Evidence and
-measured verification: [research.md](./research.md). No spec.md — repository
-tooling with no user-facing requirements; acceptance is byte-parity (§Goal
-& success criteria).
+feeds every copy), and
+[ADR 0012](../../ADRs/0012-vendor-sync-is-two-plain-commands.md) (two
+plain commands, patches applied to the copied sources). Ordered work:
+[tasks.md](./tasks.md). Evidence: [research.md](./research.md). No
+spec.md: this is repository tooling with no user-facing requirements,
+and acceptance is byte parity (§1).
 
 ## 1. Goal & success criteria
 
-- `Scripts/vendor-sync.sh` reproduces the six extracted trees
-  (`Sources/{bitcoind,libbitcoinkernel,crc32c,leveldb,minisketch,
-  secp256k1}/`) and `Tests/BitcoinTests/Fixtures/` byte-for-byte against
-  git HEAD, modulo exactly the declared deltas — seven destination
-  license files (six upstream licenses; the root `COPYING` lands in
-  both `bitcoind` and `libbitcoinkernel`) plus the one-line
-  `compat/compat.h` upstream copyright drift (`2009-2024` →
-  `2009-present`, now tracked since its subtree-era exclusion was
-  dropped) — the
-  project-owned files inside wiped roots ride across via `ignorePaths`,
-  and patch-touched files are re-created by `git apply` on every sync.
-- Retired and deleted: `Vendor/` (~53 MB tracked, 2,920 files — the unused
-  upstream Python/contrib/test tooling dies with it), `subtree.yaml`, and
-  the `swift-plugin-subtree` dev dependency. No subtree-specific workflows
-  exist here to port.
-- Provenance lives in a committed `vendir.lock.yml` — the peeled commit
-  SHA `v31.0` resolves to, the record the gate re-checks and an updater
-  edits.
-- A CI freshness gate keeps the vendored trees honest: the *whole recipe*
-  run `--locked` (sync → patches → fixups) must leave a clean
-  `git status --porcelain`, and `v31.0`'s remote peel must equal the
-  lock's `sha:` — a moved tag or an unsynced `ref:` edit fails by name.
-- The five `patches/bitcoin/*.patch` artifacts apply cleanly to the
-  pristine checkout on every sync — upstream drift under a patch is a
-  loud sync failure, never silent stale bytes.
+- `vendir sync && git apply patches/bitcoin/*.patch` reproduces the six
+  extracted trees (`Sources/{bitcoind,libbitcoinkernel,crc32c,leveldb,
+  minisketch,secp256k1}/`) and `Tests/BitcoinTests/Fixtures/` byte for
+  byte against the committed files.
+- Nothing but vendir and git is needed to sync or verify. No script
+  encodes ordering, and a bare `vendir sync` is always safe to run.
+- Retired and deleted: `Vendor/` (the unused upstream Python, contrib
+  and test tooling goes with it), `subtree.yaml`, the
+  `swift-plugin-subtree` dev dependency, and `Scripts/vendor-sync.sh`.
+- Provenance lives in a committed `vendir.lock.yml`: the commit the
+  `v31.0` tag resolved to.
+- A CI job keeps the vendored trees honest: the locked sync plus the
+  patches must leave `git status --porcelain` empty.
+- The five `patches/bitcoin/*.patch` files apply cleanly on every sync.
+  Upstream drift under a patch stops `git apply` with an error. It never
+  leaves stale bytes silently in place.
+- No file in a vendored folder is a hand-kept copy of an upstream file.
 
 ## 2. Scope
 
-**In scope:** `vendir.yml`, `vendir.lock.yml`, `Scripts/vendor-sync.sh`,
-`Scripts/vendir-check.sh`, `.github/workflows/vendir-check.yml`; the
-deletions listed above; `Package.swift` (drop the plugin dep;
-license-file `exclude:`s on the affected targets); `.gitignore`,
-`.gitattributes`, `.jury/policy.toml`; `AGENTS.md`, `README.md`,
+**In scope:** `vendir.yml`, `vendir.lock.yml`,
+`.github/workflows/vendir-check.yml`; the deletions listed above; the
+five `.patch` files (paths only); two forwarding headers; the test-data
+layout and its three lookups in `Tests/BitcoinTests/Models/`;
+`Package.swift` (drop the plugin dependency; license-file `exclude:`s);
+`.gitignore`, `.gitattributes`; `AGENTS.md`, `SECURITY.md`,
 `patches/README.md`, `patches/UPSTREAMING.md`,
-`Development/constitution.md`, `Projects/AGENTS.md`, `.github/AGENTS.md`,
+`patches/bitcoin/cmake-ios-library-build.md`,
+`Development/constitution.md`, `Projects/README.md`,
+`.github/AGENTS.md`,
 `Development/Roadmap/phase-10-vendir-migration.md`; this spec and ADRs
-0010–0011; regenerated `Development/Specs/README.md` +
+0010–0012; the regenerated `Development/Specs/README.md` and
 `Development/ADRs/README.md` indexes.
 
 **Out of scope (with owners):**
 
-- Upstream content changes — every synced byte is upstream at the pinned
-  ref modulo the five declared patch files.
-- `Sources/`/`Tests/` layout changes — the extracted trees are
-  byte-identical; the two vendir-unexpressible shapes are reproduced by
-  fixups, not redesigned.
-- The merge ruleset — `vendir-check.yml` reports visibly but joins no
-  required set without a maintainer decision (same stance as
-  development-docs).
-- Updater automation — a bump stays a manual `ref:` edit + recipe + PR;
-  the sibling's centralized org updater would consume this repo's
-  `vendir.yml` + lock + gate from its own repository when it exists.
+- Upstream content changes. Every synced byte is upstream at the pinned
+  ref, apart from the five declared patches.
+- Pruning upstream headers by usage. `src/**/*.h` stays a type-level
+  pattern, because which headers a build reads varies by platform.
+- The merge ruleset. `vendir-check.yml` reports visibly but joins no
+  required set without a maintainer decision.
+- Updater automation. A bump stays a manual `ref:` edit, sync, and PR.
 
 ## 3. Technical Context
 
-`subtree.yaml` holds 12 extraction rules over one upstream
+`subtree.yaml` held 12 extraction rules over one upstream
 (`bitcoin/bitcoin @ v31.0`, committed mirror under `Vendor/bitcoin`).
-vendir 0.47.0 is installed locally and sets the
-`minimumRequiredVersion` floor. The recipe and gate run in bash
-(3.2-safe); the gate runs on `ubuntu-slim` with `github-git-auth`
-authenticating the ~250 MB fetch (005's throttle research). No product
-Swift/C++ is edited — verification is tree parity, not new tests.
+vendir 0.47.0 is installed locally, sets the `minimumRequiredVersion`
+floor, and is the version CI pins. The CI job runs on `ubuntu-latest`
+with `github-git-auth` authenticating the ~250 MB fetch (005's throttle
+research). No product Swift or C++ behavior changes. Verification is
+tree parity plus the existing build and test matrix.
 
 ## 4. Constitution Check
 
 - **Principle I** (Scope, upstream alignment, local-patches discipline):
-  satisfied — same upstream and same release (v31.0), pinned by tag in
-  `vendir.yml` and by resolved commit in `vendir.lock.yml`; the patch
-  discipline is preserved *mechanically* — `vendor-sync.sh` re-applies
-  `patches/bitcoin/*.patch` to a pristine checkout on every sync, so a
-  patch that stops applying fails loudly instead of being silently
-  preserved. The constitution's `subtree.yaml`/`Vendor/bitcoin` naming is
-  updated in place (amendment-log entry) — the obligations are unchanged
-  in substance.
-- **Principle II** (C++ interop): not applicable — no Swift or vendored
-  C/C++ source is edited; the recipe regenerates identical bytes.
-- **Principle III** (Node lifecycle): not applicable — no runtime
-  behavior changes; the restart-enabling patches carry over
-  byte-identical.
-- **Principle IV** (API surface): not applicable — no public API change.
-- **Principle V** (Spec-first & TDD): satisfied — this plan exists before
-  the fetch/teardown executes; the test seam for repository tooling is
-  the parity verification itself (recipe output diffed against the
-  committed tree — a red state if patterns miss), promoted to CI by
-  `vendir-check.sh`, matching how 005 treated workflow wiring.
-- **Principle VI** (Cross-platform CI): satisfied — the new gate runs on
-  Linux, authenticates the larger fetch through the existing
-  `github-git-auth` action per 005, and the Tier 1 matrix is untouched.
-- **Principle VII** (Open source): satisfied — the license-preservation
-  obligation moves from "files shipped under `Vendor/`" to per-target
-  `COPYING`/`LICENSE` files vendored into each tree (matching the
-  sibling's treatment); all tooling docs updated.
+  satisfied. Same upstream and same release (v31.0), pinned by tag in
+  `vendir.yml` and by resolved commit in `vendir.lock.yml`. Patches are
+  re-applied on every sync to freshly copied files, so a patch that
+  stops applying fails the sync. Constitution 2.4.0 names the two
+  commands and adds the reproducibility requirement the CI job enforces.
+- **Principle II** (C++ interop): satisfied. No vendored C/C++ source
+  changes. The kernel's public C header reaches Swift through a
+  forwarding header instead of a duplicate, so the declarations Swift
+  imports are the ones the library is compiled from.
+- **Principle III** (Node lifecycle): not applicable. The
+  restart-enabling patches carry over byte-identical.
+- **Principle IV** (API surface): not applicable. No public API change.
+- **Principle V** (Spec-first & TDD): satisfied. The test seam for
+  repository tooling is the parity check itself, promoted to CI by
+  `vendir-check.yml`.
+- **Principle VI** (Cross-platform CI): satisfied. The new job runs on
+  Linux and authenticates its fetch through the existing
+  `github-git-auth` action; the Tier 1 matrix is untouched.
+- **Principle VII** (Open source): satisfied. Each upstream license text
+  is synced into the folder of the code it covers, with a matching
+  `Package.swift` `exclude:`.
 
 ## 5. Design
 
-**Sync recipe (`Scripts/vendor-sync.sh`).** The maintainer-facing command
-is the script, never bare `vendir sync` — the vendored trees are only
-correct after all three stages:
+**Sync.** `vendir sync` processes `vendir.yml`'s `directories:` in the
+order written. The first entry is the only network fetch: tag `v31.0`,
+`depth: 1`, `skipInitSubmodules`, filtered by `includePaths` to C/C++
+sources, license texts, three JSON test files, and three build-setting
+templates. Every later entry is a `directory:` copy out of that folder.
+`git apply patches/bitcoin/*.patch` then applies the five patches
+directly onto `Sources/`.
 
-1. `vendir sync -d .vendir-upstream/bitcoin` — the sole `git:` entry
-   performs the only network fetch (tag `v31.0`, `depth: 1`,
-   `skipInitSubmodules` — vendir runs submodule init by default, upstream
-   has no `.gitmodules`, and the flag keeps a future one from widening
-   the sync). The checkout doubles as the `git apply --check` validation
-   tree — the role `Vendor/bitcoin` previously served in
-   `patches/UPSTREAMING.md`.
-2. `git apply --check` then `git apply` each `patches/bitcoin/*.patch`
-   with `--directory=.vendir-upstream/bitcoin`. Whole-patch application —
-   no per-file routing — because the checkout mirrors upstream layout;
-   `rpc-server-reset.patch` spans two destinations and applies as one
-   unit here. A patch that stops applying aborts before any slice copies.
-3. `vendir sync -d` for each of the seven slices — *not* a bare sync.
-   A bare `vendir sync` re-selects `.vendir-upstream/bitcoin` too,
-   re-checking out the pristine ref over the patched tree so unpatched
-   bytes land in `Sources/` (observed in the first run: `logging.cpp`,
-   `rpc/server.h`, `compat.h` regressed). `-d` selects configured
-   directories only; each still gets its full wipe+replace. Then the
-   two fixups vendir's path rules cannot express: `cp`
-   `helpers/memenv/memenv.h` into
-   `include/leveldb/helpers/memenv/` (the synthetic public-header copy —
-   upstream ships it only under `helpers/`; `dbwrapper.cpp` includes it
-   through `include/`), and flatten the fixtures — vendir forbids
-   overlapping contents paths, so the four JSONs arrive repo-relative
-   under `Fixtures/{test,src}/` and `mv` up.
+**vendir.yml.** Eight `directories:` entries: the download, six source
+trees, and the test data. The shape is ADR 0011's, chosen on fetch
+arithmetic ([research.md](./research.md) §2).
 
-**vendir.yml.** Eight `directories:` entries — one `git:` checkout
-(listed first; vendir syncs in config order) feeding seven `directory:`
-slices — instead of the sibling's canonical one-`git:`-per-destination.
-The divergence is fetch arithmetic, justified in
-[research.md](./research.md) §2 and ADR 0011: released vendir fetches
-once per `git:` contents with no cross-entry cache and fetches every ref
-for a named tag, so ~8 entries × bitcoin's ~715-ref pack would download
-several hundred MB apiece; one checkout pays it once. `vendir.lock.yml`
-is committed (the `git:` cache entry is what keeps real commit-SHA
-provenance in it); `.vendir-upstream/` and `.vendir-tmp*` are gitignored.
+| Destination | Copies from (under `.vendir-upstream/bitcoin`) | What |
+|---|---|---|
+| `.vendir-upstream/bitcoin` | `git:`, the only fetch | `src/**/*.{h,c,cc,cpp}`, license texts, test data, templates |
+| `Sources/crc32c` | `src/crc32c` | `{include,src}/**/*.{h,cc}` + `LICENSE` |
+| `Sources/leveldb` | `src/leveldb` | six folders of `{h,cc}` + `LICENSE` |
+| `Sources/minisketch` | `src/minisketch` | `{include,src}/**/*.{h,cpp}` + `LICENSE` |
+| `Sources/secp256k1` | `src/secp256k1` | `{include,src}/**/*.{h,c}` + `COPYING` |
+| `Sources/libbitcoinkernel` | the folder root | both `COPYING` files, `src/**/*.h`, and the kernel source list |
+| `Sources/bitcoind` | the folder root | `COPYING`, the remaining `src/**/*.cpp`, `src/wallet/**/*.h`, `src/ipc/exception.h` |
+| `Tests/BitcoinTests/Fixtures` | `test/functional/data` → `rpc/`, `src/test/data` → `blockfilters/` | three JSON files |
 
-| Destination | Source shape | `newRootPath` | Notes |
-|---|---|---|---|
-| `.vendir-upstream/bitcoin` | `git:` — the only fetch | — | `ref: v31.0`, `depth: 1`, `skipInitSubmodules` |
-| `Sources/crc32c` | `directory:` slice | `src/crc32c` | `include/`+`src/` `{h,cc}` + `LICENSE` |
-| `Sources/leveldb` | `directory:` slice | `src/leveldb` | six `{cc,h}` dirs + `LICENSE` |
-| `Sources/minisketch` | `directory:` slice | `src/minisketch` | `include/`+`src/` `{cpp,h}` + `LICENSE` |
-| `Sources/secp256k1` | `directory:` slice | `src/secp256k1` | `include/`+`src/` `{c,h}` + `COPYING` |
-| `Sources/libbitcoinkernel` | `directory:` slice | — (repo-relative) | `COPYING` + `src/**/*.h` + ~80-entry kernel `.cpp` list |
-| `Sources/bitcoind` | `directory:` slice | — (repo-relative) | `COPYING` + remaining `src/**/*.{cpp,c}` + `src/wallet/**/*.h` + `src/ipc/exception.h` |
-| `Tests/BitcoinTests/Fixtures` | `directory:` slice | — (nested; fixup flattens) | 4 JSON globs |
+**Patterns.** vendir's matcher expands braces, so `{include,src}/**/*.{h,cc}`
+is one line. Library entries copy from their own upstream subfolder,
+which removes `newRootPath`. The kernel source list is the exception to
+brevity: it stays one path per line and appears twice, included under
+`Sources/libbitcoinkernel` and excluded under `Sources/bitcoind`,
+because vendir has no way to say "this list, negated". A drifted entry
+puts a file in both targets (duplicate symbols) or neither (missing
+symbols), so the build reports it. The list equals upstream's own
+`bitcoinkernel` library definition in `src/kernel/CMakeLists.txt` plus
+upstream's crypto library and `clientversion.cpp`.
 
-**include/exclude translation.** `subtree.yaml`'s `from:`/`exclude:` globs
-map to `includePaths`/`excludePaths` (brace groups expanded — the sibling
-did the same for greppability). Deliberate deltas, each named in a
-`vendir.yml` comment: `**/ipc/**` narrows to `**/ipc/**/*.{cpp,c}` so the
-one extracted ipc header (`src/ipc/exception.h`) survives; the
-`**/compat/compat.h` exclusion is dropped — the file syncs normally and
-`main-function-guard.patch` owns the delta; license files ride
-(`COPYING` into the two bitcoin-code targets — `vendir`'s `legalPaths`
-default doesn't match that name, so they're explicit `includePaths`;
-each library's own `LICENSE`/`COPYING`) with matching `Package.swift`
-`exclude:`s. `includePaths` match upstream-repo-relative before
-`newRootPath` re-roots — patterns spell `src/<lib>/…` in full (the
-sibling verified the same ordering).
+**Patches.** Each `.patch` carries this repository's paths
+(`Sources/bitcoind/src/init.cpp`). `rpc-server-reset.patch` touches one
+file in each Bitcoin target and still applies as one unit. Because
+patches run after the copy, the download folder stays unpatched, and
+`git apply --check -p3 --directory=.vendir-upstream/bitcoin` tests a
+patch against untouched upstream at any time.
 
-**Preserve step.** vendir wipes each `directories[].path` before copying;
-`ignorePaths` carries the 21 project-owned files across as literal
-entries — modulemaps, `bitcoin-build-{config,info}.h`,
-`bitcoin-config.h`, `bitcoind.h`, the `include/` umbrella files, the
-`src/bridge/` shims, and the two configure-generated headers
-(`crc32c_config.h`, `port_config.h`). Two constraints learned in the
-first run: entries must be literal FILE paths — vendir stats each glob
-match and aborts on a directory (`include/**` matching `include/config/`
-ended the run mid-wipe) — and preservation carries working-tree bytes,
-so it cannot resurrect a file already deleted. Patched files are
-deliberately absent from
-`ignorePaths`: preserving committed patched bytes would freeze them —
-the whole point of keeping divergence as `.patch` artifacts is that drift
-breaks loudly (research §3). One caveat, same as the sibling's: a *future*
-upstream file at an `ignorePaths` destination would be silently shadowed
-— the gate's shadow check asserts their absence.
+**Hand-written files.** vendir empties each destination before copying;
+`ignorePaths` keeps the project-owned files in place. Folders that are
+wholly hand-written use a glob (`include/*` in both Bitcoin targets,
+`src/bridge/*`), so a new bridge file survives without a config edit;
+the rest are literal paths. A glob must match files only, since vendir
+aborts when an `ignorePaths` match is a directory. Patched files are
+deliberately not preserved: keeping their bytes across a sync would hide
+a patch that no longer fits. One caveat remains: a future upstream file
+landing at an `ignorePaths` destination would be shadowed by the local
+one.
 
-**CI gate.** `vendir-check.yml` — path-filtered on PRs and pushes to
-main touching `vendir*.yml`, the eight vendored destinations,
-`patches/`, `Scripts/vend{ir,or}-*`, and the workflow itself, plus a
-weekly `schedule:` and `workflow_dispatch:` (a moved tag surfaces within
-days while the repo sees activity; GitHub disables cron on public repos
-after 60 quiet days — best-effort, the PR path is the real gate).
-`ubuntu-slim` (git, `yq`, `jq`, coreutils published); `permissions: {}`;
-pinned `actions/checkout` with `persist-credentials: false`, then
-`github-git-auth` — required here where the sibling ran anonymous: the
-fetch is ~250 MB vs. their ~25 MB, and shared-IP throttling is documented
-in 005. vendir installed by `curl` plus a hard-coded release SHA-256 in
-an `env:` constant (the Vale precedent — a `checksums.txt` from the same
-release proves nothing if tampered), pinned at 0.47.0. All check logic
-lives in `Scripts/vendir-check.sh` — bash-3.2-safe, named-check argument
-per step so each check is a distinct CI failure, a bare run executes all
-checks so the gate reproduces locally; exits diff(1)-style — 0 clean,
-1 findings (drift dominates: proven mismatch outranks another check's
-couldn't-run), 2 nothing found but a check couldn't run — so a network
-flake never reads as drift and real drift never hides under one. Config
-and lock reads go through `yq 'explode(.)'` — a bare read would print a
-YAML alias literally if one is ever introduced. Advisory throughout —
-never a required check without a maintainer decision. Five checks, each
-a named step, adapted from the sibling's five:
+**No copies of upstream headers.** Two files that used to be duplicates
+are one-line forwarding headers. `Sources/libbitcoinkernel/include/
+bitcoinkernel.h` includes `../src/kernel/bitcoinkernel.h`; its
+predecessor was a full copy with one extra nullability annotation that
+`libbitcoinkernel.apinotes` already declares. `Sources/leveldb/include/
+leveldb/helpers/memenv/memenv.h` includes the real header four levels
+up, so `dbwrapper.cpp`'s `<leveldb/helpers/memenv/memenv.h>` resolves
+through the target's public header folder.
 
-1. **Key allowlist** — every mapping key in `vendir.yml` outside the used
-   set fails (vendir drops unknown keys silently — a typo'd
-   `excludePath:` syncs green): extended for our schema — `directory:` as
-   a contents type (`path` its only key), `newRootPath`, `ignorePaths`,
-   `legalPaths`; `git:` limited to `url`/`ref`/`depth`/
-   `skipInitSubmodules`. Values pinned: `url:` is the single upstream,
-   `directories[].path` in the declared eight-destination set, and
-   `directory.path` must be `.vendir-upstream/bitcoin` — a repointed
-   source resolves happily through every other check.
-2. **Remote resolution** — `git ls-remote <url> refs/tags/v31.0
-   refs/tags/v31.0^{}`; the `^{}` line's SHA (the peeled commit — the
-   bare ref line is the tag *object* for annotated tags) must equal the
-   lock's `sha:`. Runs before the sync: after a tag move the locked SHA
-   may be unreachable at `depth: 1`, and a fetch error would mask the
-   named failure. The URL argument goes behind `--` and
-   `GIT_ALLOW_PROTOCOL=https` covers both the probes and vendir's own
-   fetch.
-3. **Deterministic tree** — `Scripts/vendor-sync.sh --locked` (the whole
-   recipe, not bare `vendir sync` — bare output is deliberately not the
-   committed state: unpatched slices, nested fixtures, missing memenv
-   copy), then `git status --porcelain --ignored=matching` over the
-   vendored paths + `vendir.lock.yml` must be empty.
-4. **Shadow check** — for every declared `ignorePaths` entry, translate
-   destination-relative → upstream-relative (prepend `newRootPath` where
-   the slice re-roots) and `find` the synced checkout for a match: any
-   hit means a future upstream file would be silently shadowed. Local
-   where the sibling needed `curl` against `raw.githubusercontent.com` —
-   our cache is a full checkout, so no network, no 429/retry budget, and
-   no anchor-file preflight (the checkout's presence is the anchor).
-5. **Dual-list equality** — the kernel `.cpp` literal list appears twice
-   in `vendir.yml`: as `Sources/libbitcoinkernel` `includePaths` and as
-   `Sources/bitcoind` `excludePaths` (negative polarity by design).
-   Assert the two sets are equal — a drifted entry places a translation
-   unit in both targets (duplicate symbols) or neither (missing
-   symbols), loud at link time but confusing to attribute. Not in the
-   sibling's five; ours alone because no vendir construct expresses
-   "this list, negated."
+**Test data.** vendir cannot merge two source folders into one
+destination, so the files land in `Fixtures/rpc/` and
+`Fixtures/blockfilters/`, and the three lookups in the tests name the
+subfolder. `Package.swift`'s `.copy("Fixtures")` keeps the structure.
 
-Dropped from the sibling's five, with the reason each doesn't apply: the
-**same-URL lock-SHA equality** check — vacuous with a single `git:` entry
-(theirs cross-compared three secp256k1 pins). Dropped on the sibling's
-own re-review and not revived: the **base-SHA comparison** (the
-bump recipe's lock-diff read covers the same drift) and the **`gh api`
-on-default-branch probe** (bump-time review concern). The **self-test
-harness** (`vendir-check-test.sh` + workflow) is deferred — the sibling
-landed it last too; the core gate proves stable first.
+**CI job.** `vendir-check.yml` runs on PRs and pushes to `main` that
+touch `vendir*.yml`, `patches/bitcoin/*.patch`, a vendored destination,
+or the workflow, plus `workflow_dispatch`. `permissions: {}` at the
+workflow level and `contents: read` on the job; `actions/checkout` with
+`persist-credentials: false`, then `github-git-auth`. vendir is
+installed by `curl` plus a hard-coded release SHA-256, pinned at 0.47.0.
+The verify command is split into two steps so that only the download is
+retried: `vendir sync --locked` through `retry-on-fetch-flake`, then
+`git apply` and a `git status --porcelain` that must print nothing.
+`git status` is used instead of `git diff --exit-code` because it also
+reports untracked files, which is how a too-broad pattern shows up.
 
-**Interim updates.** Manual until an org updater exists (sibling ADR
-0007): edit `ref:` in `vendir.yml` → `Scripts/vendor-sync.sh` → read the
-lock diff — `vendir sync` re-resolves the `git:` entry every run, so a
-re-pushed tag rides the bump silently; only the intended SHA should move
-— → commit → PR on a `vendor/bitcoin-<ref>` branch with the
-`dependencies` label. `minimumRequiredVersion` is a floor, not a pin:
-run the version `vendir-check.yml` pins — a newer release could write a
-lock format the gate can't check (the sibling warns the same in its
-AGENTS recipe).
+**What the job does not check.** A re-pointed upstream tag cannot change
+a locked sync, because the lock pins the commit; it would surface as a
+changed `sha:` in the lock diff of the next bump. A new upstream file
+hidden behind an `ignorePaths` entry is not detected. Both can only
+arise at a version bump, which the bump steps below cover by review.
 
-**Teardown.** After byte-parity is proven: `rm -rf Vendor/` (history
-keeps it; the unused Python tooling dies with the mirror), `rm
-subtree.yaml`, drop `swift-plugin-subtree` from `Package.swift`, add
-license `exclude:`s, sweep stale references (AGENTS.md, README.md,
-patches docs, constitution, `Projects/AGENTS.md`, `.github/AGENTS.md`,
-`.gitattributes`, `.jury/policy.toml`), update phase-10 status.
+**Bumping the pin.** Edit `ref:` in `vendir.yml`, run the sync, and read
+the result: the lock diff should show only the intended commit; a patch
+that no longer fits stops `git apply`; diff the three templates under
+`.vendir-upstream/bitcoin` against the previous release's to see whether
+a hand-written build-setting header needs a new entry; update the tag
+string in `Sources/libbitcoinkernel/src/bitcoin-build-info.h`. Then
+build, test, and open a PR. `minimumRequiredVersion` is a floor, not a
+pin: run the vendir version the workflow pins.
 
 ## 6. Implementation steps
 
-Ordered as: the config + recipe → the sync reproduced byte-for-byte and
-the lock committed → `Vendor/`/`subtree.yaml`/plugin teardown → CI gate
-→ docs and governance → validation and handoff. The full task list,
-grouped into phases with checkpoints, is in [tasks.md](./tasks.md).
+The remaining work is one design PR plus six implementation and closeout PRs,
+all strictly sequential and all targeting `main`. Branches may be prepared
+locally ahead of time, but a PR opens only after its predecessor merges. This
+keeps every opened PR inside the existing CI triggers, which select pull
+requests targeting `main`, and avoids rebasing a parallel stack after squash
+merges. The slices are coherent repository states rather than one PR per
+task:
+
+1. **Design realignment** — correct this spec, record ADR 0012, mark ADR
+   0010 superseded, and append the dated correction to ADR 0011.
+2. **Header-copy cleanup** — replace the two hand-copied upstream headers
+   with forwarding headers and delete the unused duplicated build-setting
+   headers, while the existing script continues to perform a valid old-style
+   sync.
+3. **Fixture layout cleanup** — sync the three JSON fixtures into
+   `Fixtures/rpc/` and `Fixtures/blockfilters/`, update their lookups, drop
+   the unused fourth fixture, and remove the flattening fixup from the old
+   script.
+4. **Byte-preserving `vendir.yml` rewrite** — filter the download, copy
+   libraries from their own upstream subfolders, use brace patterns and
+   file-only `ignorePaths` globs, and prove the copied tree does not change.
+5. **Patch relocation and script retirement** — rewrite the patches to
+   `Sources/...` paths, delete `Scripts/vendor-sync.sh`, and update the
+   operational documents that would otherwise still name it.
+6. **CI freshness check** — add `vendir-check.yml` and its workflow
+   inventory entry.
+7. **Closeout** — finish explanatory documentation, validation reporting,
+   roadmap/spec status, and generated indexes.
+
+[tasks.md](./tasks.md) maps the tasks to those PRs and records the checkpoint
+that must be true before the next PR opens.
 
 ## 7. Verification
 
-- [x] `Scripts/vendor-sync.sh` reproduces `Sources/{bitcoind,
-      libbitcoinkernel,crc32c,leveldb,minisketch,secp256k1}/` and
-      `Tests/BitcoinTests/Fixtures/` byte-identical to HEAD, modulo
-      exactly the seven declared license-file destinations and the
-      one-line `compat.h` drift — proven by `git status` and `git diff`
-      showing nothing else
-- [x] `vendir.lock.yml` pins the commit `v31.0` peels to (`git ls-remote
-      https://github.com/bitcoin/bitcoin refs/tags/v31.0^{}`) —
-      `6574cb40`
-- [x] Every `patches/bitcoin/*.patch` applies cleanly to the pristine
-      checkout (`git apply --check` output in the sync log; re-verified
-      against a detached `HEAD` worktree 2026-11-23 — all five pass)
-- [x] `Sources/leveldb/include/leveldb/helpers/memenv/memenv.h` exists
-      and matches `helpers/memenv/memenv.h`; `Fixtures/` holds exactly
-      the four flat JSONs
-- [x] `Vendor/`, `subtree.yaml`, and the `swift-plugin-subtree`
-      dependency are gone; `grep -ri 'subtree\|Vendor/'
-      --exclude-dir=.git` over docs, workflows, and configs finds only
-      historical/ADR references
-- [ ] `Scripts/vendir-check.sh` exits 0 on a clean tree and fails named
-      on a touched managed file (manual probe); `vendir-check.yml` is
-      actionlint-clean, `permissions: {}`, pinned checkout +
-      `persist-credentials: false`, auth-before-fetch
-- [x] `swift build` compiles the C/C++ targets unchanged (spot-check —
-      full Tier 1 matrix remains CI's job); `swift test --package-path
-      Development/Tools` passes and the `plans` index regenerates
-      cleanly
-- [ ] `git status` at handoff: all changes unstaged, nothing newly
-      staged, pre-existing staged state untouched
+Already true on `main` from the first two migration phases:
+
+- [x] `Vendor/`, `subtree.yaml`, and the `swift-plugin-subtree` dependency
+      are gone
+- [x] `vendir.lock.yml` pins the commit `v31.0` resolves to, `6574cb40`
+
+End-state checks still to earn in the ordered PRs:
+
+- [ ] `vendir sync && git apply patches/bitcoin/*.patch` reproduces the six
+      source trees and the test data byte for byte (`git status` shows
+      nothing under those paths)
+- [ ] The same commands with `--locked` reproduce that tree in CI, and
+      `vendir-check.yml` passes on a GitHub runner
+- [ ] Every `patches/bitcoin/*.patch` passes `git apply --check -p3
+      --directory=.vendir-upstream/bitcoin` against the untouched download
+      and `git apply -R --check` against `Sources/`
+- [ ] `Scripts/vendor-sync.sh` is gone, and a bare `vendir sync` is the
+      whole copy step
+- [ ] `swift build --build-tests` and the non-embedded package tests pass in
+      default and `wallet` configurations after the build-affecting slices
+- [ ] The existing PR matrix passes with the forwarding headers and fixture
+      layout: macOS tests including the isolated embedded-node suite, iOS,
+      visionOS, tvOS, Linux Docker, DocC, and Tuist demo apps
 
 ## 8. Risks and mitigations
 
-- **Fetch size** — released vendir still fetches all ~715 refs shallowly
-  for a named tag (carvel-dev/vendir#453 unshipped at 0.47.0): ~250 MB
-  per sync, once per run — acceptable locally; CI authenticates and
-  bounds it via `github-git-auth`'s lowSpeed settings so a throttle is a
-  bounded failure, not a crawl. A future vendir release with targeted
-  fetch shrinks this for free.
-- **Tag-object vs commit SHA provenance shift** — `subtree.yaml`'s
-  `commit:` recorded the annotated *tag object* SHA; `vendir.lock.yml`
-  records the peeled *commit* SHA (same tree). Documented in
-  [research.md](./research.md) §6 so a reviewer diffing configs doesn't
-  read it as drift — the gate's resolve check compares `^{}` peels for
-  the same reason.
-- **Shadowed preserve files** — a future upstream file landing at an
-  `ignorePaths` destination would be silently preserved over: mitigated
-  by the gate's `find`-probe against the synced checkout (none exists
-  today — verified at v31.0).
-- **Patch rot moves earlier** — by design: a patch that stops applying
-  fails the sync instead of silently persisting stale bytes. The recipe
-  is the tripwire; the gate replays it `--locked`.
-- **`vendir sync -d` and `directory:` semantics drift** — the recipe
-  relies on `-d` syncing a single named directory and slices never
-  refetching; both pinned by `minimumRequiredVersion` and covered by the
-  parity run.
-- **Contributors need the vendir binary** — `brew install
-  carvel-dev/carvel/vendir`, documented in `AGENTS.md`; CI installs the
-  pinned, hash-checked binary — `minimumRequiredVersion` is a floor, so
-  a newer local release could write a lock format the gate can't read
-  (the AGENTS recipe warns).
-- **Gate is advisory** — it reports visibly but joins no required check
-  without a maintainer decision; its path filter would also leave a
-  required check pending on untouched-path PRs — a required rollout
-  needs an always-run path or the filter dropped.
-- **Scheduled-run auto-disable** — GitHub stops cron triggers on public
-  repos after 60 quiet days, exactly when drift accumulates; the weekly
-  run is best-effort detection — the PR-triggered run is the real gate.
+- **Fetch size.** Released vendir fetches every ref shallowly for a
+  named tag (carvel-dev/vendir#453 is unshipped at 0.47.0), about 250 MB
+  per sync. A local sync takes about 30 seconds. CI authenticates the
+  fetch and bounds it with `github-git-auth`'s low-speed settings.
+  Filtering the download saves disk, not transfer.
+- **Forwarding headers reach outside the public header folder.** This
+  holds while the package is built from source, which is the only way
+  it ships. Packaging the headers alone into a binary framework would
+  need real copies again.
+- **A hand-written file outside `ignorePaths` is deleted by a sync.**
+  `git status` shows the deletion, and the CI job fails on it.
+- **Shadowed files.** See "What the job does not check".
+- **Patch paths name this repository's folders.** A patched file that
+  upstream moves between the two Bitcoin targets needs its patch path
+  edited; `git apply` stops with an error when that happens.
+- **Contributors need the vendir binary.** `brew install
+  carvel-dev/carvel/vendir`; CI installs the pinned, hash-checked one.
+- **The job is advisory.** It joins no required check without a
+  maintainer decision, and its path filter would leave a required check
+  pending on PRs that touch none of its paths.
 
 ## 9. Deferred work
 
-- **Gate self-test suite** — the sibling's `vendir-check-test.sh` +
-  dedicated workflow; the core gate proves stable first.
-- **GPG verification of the signed `v31.0` tag** — vendir's signature
-  verification still runs the frozen `x/crypto/openpgp`
-  (carvel-dev/vendir#456 unshipped); a CI-side `git verify-tag` against
-  a committed signer keyring is the candidate follow-up — the sibling
-  deferred the same way.
-- **Updater automation** — a bump stays `ref:` + recipe + PR; the
-  sibling's centralized org updater would consume this repo's
-  `vendir.yml` + lock + gate from its own repository when it exists.
-- **`vendir-check.yml` in the merge ruleset** — maintainer decision; the
-  path filter needs an always-run variant first.
-- **Scheduled-failure visibility** — a `schedule:` red run notifies only
-  the last cron-line editor; an issue-opening follow-up job needs a
-  scoped `issues: write` grant on that one job (`permissions: {}` stays).
-- **Org-wide extraction of `vendor-sync`/`vendir-check`** — if a second
-  21-DOT-DEV repo adopts this cache+slice shape, lift the scripts to a
-  shared location; not built for one consumer.
+- **GPG verification of the signed `v31.0` tag.** vendir's verifier
+  still runs the frozen `x/crypto/openpgp` (carvel-dev/vendir#456
+  unshipped); a CI-side `git verify-tag` against a committed keyring is
+  the candidate follow-up.
+- **Updater automation.** A bump stays `ref:` + sync + PR.
+- **`vendir-check.yml` in the merge ruleset.** A maintainer decision;
+  the path filter needs an always-run variant first.
 
 ## 10. Division of labor
 
-Solo-maintainer infrastructure work; one reviewable change set, left
-unstaged for maintainer review per standing instruction.
+Solo-maintainer infrastructure work. The seven PRs land strictly sequentially
+rather than as a parallel stack: the repository's workflows test pull
+requests targeting `main`, and sequential targeting preserves that pre-merge
+evidence without changing CI behavior. The reference implementation and the
+archived check-script experiment are evidence inputs, not merge candidates.

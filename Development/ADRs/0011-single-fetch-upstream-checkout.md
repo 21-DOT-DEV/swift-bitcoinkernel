@@ -51,6 +51,21 @@ compression change). A script-managed clone plus a provenance sidecar —
 cache: the lockfile *is* the sidecar, and plain `vendir sync` remains
 meaningful.
 
+## Correction, 2026-11-26
+
+As first written this record described the mechanism ADR 0010 then planned:
+`newRootPath` re-rooted the library slices, the checkout was pristine only
+between the fetch and patch stages, and patch validation re-established a
+pristine tree through `vendor-sync.sh`. ADR 0012 changed that mechanism. The
+download is filtered at fetch time, library entries copy from their own
+upstream subfolders without `newRootPath`, patches apply only to copied files
+under `Sources/`, and `.vendir-upstream/bitcoin` is never patched. Patch
+validation therefore uses `git apply --check -p3
+--directory=.vendir-upstream/bitcoin` against that untouched filtered
+download; work needing the full upstream tree clones the pinned tag
+separately. The durable decision stands: one git-sourced download feeds every
+local copy, and the lock records the resolved commit.
+
 ## Consequences
 
 A sync costs one fetch plus local copies; the lockfile keeps real commit

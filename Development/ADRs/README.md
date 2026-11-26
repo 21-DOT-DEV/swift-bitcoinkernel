@@ -46,6 +46,7 @@ The table below is generated from those frontmatter blocks. Do not hand-edit it.
 | 0007 | [An unattended action watches its own clock rather than waiting to be told to stop](0007-unattended-actions-own-their-deadline.md) | Superseded | 2026-09-04 |
 | 0008 | [Unattended timings are measured on a locked device, never an unlocked one](0008-unattended-timings-are-measured-on-a-locked-device.md) | Proposed | 2026-09-06 |
 | 0009 | [An unattended run leaves the node running unless asked to stop it](0009-unattended-runs-leave-the-node-running.md) | Proposed | 2026-09-06 |
-| 0010 | [Vendir replaces subtree extraction and the committed Vendor mirror](0010-vendir-replaces-subtree-mirror.md) | Accepted | 2026-11-16 |
+| 0010 | [Vendir replaces subtree extraction and the committed Vendor mirror](0010-vendir-replaces-subtree-mirror.md) | Superseded | 2026-11-16 |
 | 0011 | [A single git-sourced upstream checkout feeds all vendir directory slices](0011-single-fetch-upstream-checkout.md) | Accepted | 2026-11-16 |
+| 0012 | [The Bitcoin Core sync is two plain commands, with patches applied to the copied sources](0012-vendor-sync-is-two-plain-commands.md) | Accepted | 2026-11-26 |
 <!-- END GENERATED INDEX -->

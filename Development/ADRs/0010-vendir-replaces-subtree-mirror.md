@@ -1,10 +1,10 @@
 ---
 adr: 0010
 title: Vendir replaces subtree extraction and the committed Vendor mirror
-status: Accepted
+status: Superseded
 date: 2026-11-16
 supersedes: []
-superseded_by: null
+superseded_by: "0012"
 ---
 
 # 0010 — Vendir replaces subtree extraction and the committed Vendor mirror
