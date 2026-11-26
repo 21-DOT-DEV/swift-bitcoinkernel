@@ -240,7 +240,12 @@ a named step, adapted from the sibling's five:
    `skipInitSubmodules`. Values pinned: `url:` is the single upstream,
    `directories[].path` in the declared eight-destination set, and
    `directory.path` must be `.vendir-upstream/bitcoin` — a repointed
-   source resolves happily through every other check.
+   source resolves happily through every other check. The fetching
+   checks re-validate `url:`/`directory.path` against the same literals
+   on every invocation (a standalone `vendir-check.sh shadow` can't be
+   aimed at an arbitrary host), and a bare run skips the fetching legs
+   entirely once allowlist has failed — a flagged upstream is never
+   contacted.
 2. **Remote resolution** — `git ls-remote <url> refs/tags/v31.0
    refs/tags/v31.0^{}`; the `^{}` line's SHA (the peeled commit — the
    bare ref line is the tag *object* for annotated tags) must equal the
@@ -249,18 +254,48 @@ a named step, adapted from the sibling's five:
    named failure. The URL argument goes behind `--` and
    `GIT_ALLOW_PROTOCOL=https` covers both the probes and vendir's own
    fetch.
-3. **Deterministic tree** — `Scripts/vendor-sync.sh --locked` (the whole
-   recipe, not bare `vendir sync` — bare output is deliberately not the
-   committed state: unpatched slices, nested fixtures, missing memenv
-   copy), then `git status --porcelain --ignored=matching` over the
-   vendored paths + `vendir.lock.yml` must be empty.
+3. **Deterministic tree** — replay `Scripts/vendor-sync.sh --locked`
+   (the whole recipe, not bare `vendir sync` — bare output is
+   deliberately not the committed state: unpatched slices, nested
+   fixtures, missing memenv copy) in a throwaway `git worktree` of HEAD.
+   Coverage is asserted, not assumed: before the replay the check
+   deletes every tracked, non-preserved file under each declared
+   destination (`ignorePaths` entries stay — vendir carries them by
+   design), so a recipe that skips a destination — or no-ops — leaves
+   ` D` lines rather than committed bytes passing for fresh output.
+   After the replay, `git status --porcelain --untracked-files=all
+   --ignored=matching` over the whole worktree must be empty except
+   `!!` ignored lines under `.vendir-upstream/` — the one destination
+   that is scratch by design; every other `!!` is a finding (the
+   committed `.gitignore` is in scope, so an ignore pattern covering a
+   synced file surfaces rather than filtering to silence). The
+   whole-tree read also catches `vendir.yml`/lock rewrites and recipe
+   output landing outside the declared paths. All five
+   checks assert committed state (HEAD, not the index or working tree —
+   that's what CI checks out), with advisory `note:` lines naming dirty
+   managed paths so a local run still shows the drift it skipped. The
+   replay shares the live repo's
+   `.vendir-cache/` git-bundle store (`VENDIR_CACHE_DIR`, defaulted to
+   the repo root by the recipe alongside a raised `VENDIR_MAX_CACHE_SIZE`
+   — the ~120 MB bundle would never survive vendir's 1 Mi default), so
+   only the first replay pays the full ~250 MB fetch. The gate reports
+   a corrupt bundle by name but never deletes from the shared cache —
+   a read-only gate doesn't mutate maintainer state.
 4. **Shadow check** — for every declared `ignorePaths` entry, translate
    destination-relative → upstream-relative (prepend `newRootPath` where
-   the slice re-roots) and `find` the synced checkout for a match: any
-   hit means a future upstream file would be silently shadowed. Local
-   where the sibling needed `curl` against `raw.githubusercontent.com` —
-   our cache is a full checkout, so no network, no 429/retry budget, and
-   no anchor-file preflight (the checkout's presence is the anchor).
+   the slice re-roots) and `git ls-tree` the locked SHA for the path:
+   present means a future upstream file would be silently shadowed,
+   absent is the pass. Probes hit an object store, not a checkout —
+   `.vendir-upstream/bitcoin`'s when it holds the locked SHA (fully
+   offline), else a scratch bare repo fetching that SHA at `depth 1`
+   with `--filter=blob:none`; `GIT_NO_LAZY_FETCH=1` stops a tree miss
+   from lazy-fetching, so absent and couldn't-fetch stay distinct, and
+   the store holding the locked SHA is itself the anchor. Local where
+   the sibling needed `curl` against `raw.githubusercontent.com` — no
+   REST endpoint, no 429/retry budget, no anchor-file preflight. Not
+   network-free, though: on a checkout-less runner (CI's normal case)
+   the probe store is an https `blob:none` `git fetch`, subject to the
+   same transport budget as any fetch.
 5. **Dual-list equality** — the kernel `.cpp` literal list appears twice
    in `vendir.yml`: as `Sources/libbitcoinkernel` `includePaths` and as
    `Sources/bitcoind` `excludePaths` (negative polarity by design).
@@ -325,7 +360,10 @@ grouped into phases with checkpoints, is in [tasks.md](./tasks.md).
       --exclude-dir=.git` over docs, workflows, and configs finds only
       historical/ADR references
 - [ ] `Scripts/vendir-check.sh` exits 0 on a clean tree and fails named
-      on a touched managed file (manual probe); `vendir-check.yml` is
+      on a touched managed file when the touch is committed (manual
+      probe, e.g. on a scratch branch — an uncommitted touch only
+      prints an advisory note, since every check asserts HEAD);
+      `vendir-check.yml` is
       actionlint-clean, `permissions: {}`, pinned checkout +
       `persist-credentials: false`, auth-before-fetch
 - [x] `swift build` compiles the C/C++ targets unchanged (spot-check —
@@ -351,11 +389,31 @@ grouped into phases with checkpoints, is in [tasks.md](./tasks.md).
   the same reason.
 - **Shadowed preserve files** — a future upstream file landing at an
   `ignorePaths` destination would be silently preserved over: mitigated
-  by the gate's `find`-probe against the synced checkout (none exists
-  today — verified at v31.0).
+  by the gate's `ls-tree` probes against the upstream object store (none
+  exists today — verified at v31.0).
 - **Patch rot moves earlier** — by design: a patch that stops applying
   fails the sync instead of silently persisting stale bytes. The recipe
   is the tripwire; the gate replays it `--locked`.
+- **The recipe is PR-controlled code** — the gate replays the committed
+  `vendor-sync.sh`, so a hostile recipe could in principle fake its way
+  to clean (the pre-delete coverage assertion forces any dodge into
+  visible code). The durable safeguard is that assertion plus required
+  human sign-off on recipe diffs — recorded as a tracked rule in
+  `AGENTS.md`'s ask-first boundary, and on this checkout additionally
+  steered by the maintainer-local jury config's `high_risk_paths`
+  (`.jury/` is untracked by choice, so the AGENTS.md rule is the form
+  that ships with the repo). Preferred over the gate synthesizing its
+  own `-d` list, which can't cover the recipe's patch/fixup stages
+  anyway. A binding constraint on T011: the replay step must run with
+  no readable credentials — no `GITHUB_*` file-command variables and
+  no git `extraheader` token visible to the recipe. That does not
+  conflict with the authenticated fetch research.md requires: the
+  credentialed part is a pre-step that warms `.vendir-cache/` under
+  `github-git-auth` (the ~250 MB bundle lands there once); the replay
+  job then runs `vendor-sync.sh` with the token stripped, so vendir's
+  residual delta-fetch is empty-or-tiny against the warm bundle. On a
+  cold cache the replay fails couldn't-run rather than reading creds —
+  honest, since CI must warm the cache first.
 - **`vendir sync -d` and `directory:` semantics drift** — the recipe
   relies on `-d` syncing a single named directory and slices never
   refetching; both pinned by `minimumRequiredVersion` and covered by the
@@ -375,8 +433,9 @@ grouped into phases with checkpoints, is in [tasks.md](./tasks.md).
 
 ## 9. Deferred work
 
-- **Gate self-test suite** — the sibling's `vendir-check-test.sh` +
-  dedicated workflow; the core gate proves stable first.
+- **Gate self-test suite** — `Scripts/vendir-check-test.sh` seeds the
+  suite with the required skipped-destination fixture; the sibling's
+  full case matrix + dedicated workflow stay deferred.
 - **GPG verification of the signed `v31.0` tag** — vendir's signature
   verification still runs the frozen `x/crypto/openpgp`
   (carvel-dev/vendir#456 unshipped); a CI-side `git verify-tag` against
@@ -385,6 +444,15 @@ grouped into phases with checkpoints, is in [tasks.md](./tasks.md).
 - **Updater automation** — a bump stays `ref:` + recipe + PR; the
   sibling's centralized org updater would consume this repo's
   `vendir.yml` + lock + gate from its own repository when it exists.
+- **Config-header template-hash tripwire** — sha256 the upstream
+  `*.h.in` templates feeding the preserved config headers
+  (`src/crc32c/src/crc32c_config.h.in`,
+  `src/leveldb/port/port_config.h.in`,
+  `cmake/bitcoin-build-config.h.in`) against recorded hashes; a changed
+  template means the hand-maintained headers need re-deriving.
+  `ignorePaths` carries those headers across every sync, so the drift
+  is otherwise silent — it surfaces only on a vendor bump's review
+  today (research.md "drift tripwire").
 - **`vendir-check.yml` in the merge ruleset** — maintainer decision; the
   path filter needs an always-run variant first.
 - **Scheduled-failure visibility** — a `schedule:` red run notifies only

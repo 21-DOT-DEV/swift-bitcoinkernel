@@ -35,9 +35,9 @@
 # `src/compat/compat.h` therefore rides the normal `src/**/*.h` sync — its
 # subtree-era exclusion is dropped and `main-function-guard.patch` owns the
 # delta. Caveat: a future upstream file landing at one of these exact
-# destination paths would be silently shadowed — the planned
-# `vendir-check.yml` (T010/T011, not yet landed) probes the synced cache
-# for that.
+# destination paths would be silently shadowed — `Scripts/vendir-check.sh`'s
+# shadow check `ls-tree`-probes the locked upstream tree for exactly that
+# (the `vendir-check.yml` workflow wiring it into CI is T011).
 #
 # License files ride with the vendored code (the sibling spec's precedent):
 # bitcoin's `COPYING` into the two bitcoin-code targets, each vendored

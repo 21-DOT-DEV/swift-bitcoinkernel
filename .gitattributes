@@ -19,6 +19,7 @@ Sources/secp256k1/**         linguist-vendored
 Sources/leveldb/**           linguist-vendored
 Sources/minisketch/**        linguist-vendored
 Sources/crc32c/**            linguist-vendored
+Tests/BitcoinTests/Fixtures/**  linguist-vendored
 
 # Custom SPM build configuration files committed alongside vendored Bitcoin
 # Core sources. These are NOT vendir-sliced — `vendir.yml`'s `ignorePaths`

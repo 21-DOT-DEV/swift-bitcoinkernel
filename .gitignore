@@ -180,8 +180,12 @@ Tuist/.build
 # vendir scratch — `.vendir-tmp*` staging plus the gitignored upstream
 # checkout `.vendir-upstream/` that vendir.yml's `git:` entry populates and
 # the `directory:` slices copy from (replaces the committed Vendor/ mirror).
+# `.vendir-cache/` is vendir's git-bundle fetch cache (VENDIR_CACHE_DIR,
+# defaulted to the repo root by vendor-sync.sh) — content-addressed packs,
+# safe to delete, pointless to commit.
 .vendir-tmp*
 .vendir-upstream/
+.vendir-cache/
 
 # Stray compiler artifacts from ad-hoc root-level compiles (observed:
 # main.{swiftmodule,swiftdoc,swiftsourceinfo,abi.json} — module outputs and

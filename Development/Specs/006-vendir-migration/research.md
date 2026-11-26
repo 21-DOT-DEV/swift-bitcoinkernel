@@ -181,11 +181,15 @@ self-test harness, plus authenticated fetch.** What the research showed:
   self-test suite *last* (T025/T026). Option-1 mirrors that landing order.
 - **Checks that adapt or drop**: the same-URL lock-SHA equality check is
   vacuous with one `git:` entry (the sibling had five same-URL entries to
-  cross-compare); the `ignorePaths` shadow probe runs locally via `find`
-  on the synced checkout instead of their curl-against-GitHub pattern —
-  our preserve-set is literal file paths (directory globs abort the
-  sync) and the cache is a full
-  checkout; the config key-allowlist extends for `directory:`,
+  cross-compare); the `ignorePaths` shadow probe runs `git ls-tree`
+  object probes at each locked SHA — against the live
+  `.vendir-upstream` object store when present, else a depth-1
+  `blob:none` scratch fetch — instead of their curl-against-GitHub
+  pattern (our preserve-set is literal file paths, and the probe space
+  is the object store — the scratch leg is still an https `git fetch`
+  on a checkout-less runner, but there's no REST endpoint, no
+  429/retry budget); the config key-allowlist extends for
+  `directory:`,
   `newRootPath`, `ignorePaths`, `legalPaths`.
 - **Authentication is required, not optional**: the fetch is ~250 MB vs.
   the sibling's ~25 MB, anonymous shared-IP github.com throttling is
@@ -256,12 +260,13 @@ produces. Regeneration would add a sync-time cmake dependency whose
 host-specific probe answers re-derive what the committed files already
 record.
 
-**Steal: the drift tripwire.** `vendir-check.sh` should sha256 the
-upstream templates feeding preserved/generated headers —
+**Steal deferred: the drift tripwire.** `vendir-check.sh` should sha256
+the upstream templates feeding preserved/generated headers —
 `src/crc32c/src/crc32c_config.h.in`, `src/leveldb/port/port_config.h.in`,
 `cmake/bitcoin-build-config.h.in` — from the synced cache and compare
 against recorded hashes; mismatch = "re-derive the config headers"
-(our `lastRegenSha` analog, without the tool).
+(our `lastRegenSha` analog, without the tool). Deferred — recorded in
+plan §9 "Deferred work" and the tasks Deferred list.
 
 **Steal declined: restore-from-HEAD manifest.** `git checkout HEAD --`
 always lands committed bytes; `ignorePaths` carries working-tree bytes.

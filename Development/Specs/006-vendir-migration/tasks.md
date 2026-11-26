@@ -82,12 +82,23 @@ research.md, and ADR-0010.*
 ## Phase 3 — CI freshness gate
 
 - [ ] T010 `Scripts/vendir-check.sh`: key-allowlist, ref↔lock resolution,
-  locked-recipe + clean-status check, local `find` shadow probe over the
-  synced checkout, kernel `.cpp` dual-list set-equality (libbitcoinkernel
-  `includePaths` ≡ bitcoind `excludePaths`) · `Scripts/vendir-check.sh`
+  locked-recipe replay in a worktree-of-HEAD + clean-status check —
+  pre-delete coverage (tracked, non-preserved destination contents are
+  deleted pre-replay so a skipped `-d` leaves ` D` lines) over the
+  whole worktree (only `.vendir-upstream/`'s `!!` lines dropped; every
+  other ignored line is a finding), `ls-tree` shadow probes against the
+  upstream object store (live checkout's when it holds the lock SHA, else
+  a scratch `blob:none` fetch), kernel `.cpp` dual-list set-equality
+  (libbitcoinkernel `includePaths` ≡ bitcoind `excludePaths`) ·
+  `Scripts/vendir-check.sh`, `Scripts/vendir-check-test.sh` (fixture:
+  clean pass + dropped-`-d` fails named)
 - [ ] T011 `.github/workflows/vendir-check.yml`: `permissions: {}`,
   pinned checkout with `persist-credentials: false`, `github-git-auth`
-  before fetch, vendir 0.47.0 pinned by release sha256, path-filtered
+  before fetch, vendir 0.47.0 pinned by release sha256 — and the replay
+  runs credential-free: the sync check executes the committed
+  `vendor-sync.sh` (PR-controlled code), so its step/job carries no
+  `GITHUB_*` file-command vars and no readable git `extraheader` token
+  (plan §8), path-filtered
   triggers + weekly + dispatch; actionlint/shellcheck clean ·
   `.github/workflows/vendir-check.yml`
 - [ ] T012 [P] `.github/AGENTS.md`: workflow inventory row + the
@@ -97,7 +108,12 @@ research.md, and ADR-0010.*
   the doc pass (2026-11-23)*
 
 **Checkpoint:** `Scripts/vendir-check.sh` exits 0 on a clean tree and
-fails when a managed file is touched (manual probe); workflow parses.
+fails when a managed file is touched and committed — the
+`vendir-check-test.sh` fixture proves the committed case end-to-end
+(clean pass + dropped `-d` destination surfaces ` D`); a manual probe
+on a scratch branch covers a content touch (an uncommitted touch only
+prints an advisory note, since every check asserts HEAD); workflow
+parses.
 
 ## Phase 4 — Documentation sweep and governance
 
@@ -167,8 +183,13 @@ log); tools tests pass.
 
 ## Deferred
 
-- Gate self-test suite (`Scripts/vendir-check-test.sh` + workflow) — the
-  core gate proves stable first (plan, Deferred work).
+- Gate self-test suite — `Scripts/vendir-check-test.sh` seeds it (the
+  required clean-fixture + dropped-`-d` cases); the sibling's full
+  fixture matrix + dedicated workflow stay deferred (plan, Deferred
+  work).
 - GPG verification of the signed tag — vendir's verifier is the frozen
   `x/crypto/openpgp` (carvel-dev/vendir#456 unshipped).
 - Updater automation (Renovate-style) — bump stays `ref:` + recipe + PR.
+- Config-header template-hash tripwire — sha256 the upstream `*.h.in`
+  templates vs. recorded hashes; mismatch = re-derive the preserved
+  config headers (plan, Deferred work).

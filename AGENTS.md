@@ -8,6 +8,8 @@ A Swift 6.3 package wrapping Bitcoin Core: daemon lifecycle (`Bitcoin` target) a
 - Test: `swift test`
 - Build/test with wallet trait: `swift build --traits wallet` / `swift test --traits wallet`
 - Vendor sync: `Scripts/vendor-sync.sh` (syncs vendored Bitcoin Core sources via vendir)
+- Vendored-tree freshness gate: `Scripts/vendir-check.sh [check ...]` (bare run = all checks; needs vendir + yq; asserts committed state — HEAD, not the working tree; exit 0 clean / 1 drift found / 2 couldn't run)
+- Gate self-test: `Scripts/vendir-check-test.sh` (fixture repos under mktemp; exercises the gate's sync coverage through `VENDIR_CHECK_ROOT`)
 - Generate DocC: `swift package generate-documentation --target Bitcoin --analyze --warnings-as-errors` (repeat for `BitcoinKernel`)
 
 Tuist workspace commands live in [`Projects/AGENTS.md`](Projects/AGENTS.md).
@@ -29,7 +31,7 @@ Tuist workspace commands live in [`Projects/AGENTS.md`](Projects/AGENTS.md).
 ## Boundaries
 
 - **Never**: emit private keys or sensitive material; weaken constant-time code in vendored C sources; edit extracted `Sources/{bitcoind,libbitcoinkernel,secp256k1,...}/` files directly; add runtime dependencies outside the allowlist (`swift-boost`, `swift-event`, system `sqlite3`) without a constitutional amendment; reimplement Bitcoin consensus rules, validation logic, or P2P protocol behavior in Swift; expose raw C++ pointers or types through public Swift API.
-- **Ask first**: add new third-party dependencies; broaden CI permissions; change the pinned Bitcoin Core version in `vendir.yml`.
+- **Ask first**: add new third-party dependencies; broaden CI permissions; change the pinned Bitcoin Core version in `vendir.yml`; modify the vendir sync recipe (`Scripts/vendor-sync.sh` — the freshness gate replays it, so its diffs always need human sign-off).
 - **At release (tag time)**: pin every dependency to `exact:` or `revision:`. Never ship a tagged release with a `branch:` requirement, which is non-reproducible.
 - See the [21-DOT-DEV contributing guidelines](https://github.com/21-DOT-DEV/.github/blob/main/CONTRIBUTING.md) for branching and commit guidelines. See [SECURITY.md](SECURITY.md) for vulnerability reporting.
 

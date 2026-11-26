@@ -53,6 +53,16 @@ if [[ $# -ne 0 ]]; then
     exit 2
 fi
 
+# vendir's git-bundle cache: the stage-1 fetch saves the upstream pack
+# under $VENDIR_CACHE_DIR/.vendir-cache/ keyed by sha256(url), so later
+# runs unbundle and fetch only the delta instead of re-cloning ~250 MB.
+# Default to the repo root so the maintainer's checkout, a scratch
+# worktree replay (Scripts/vendir-check.sh), and CI's actions/cache all
+# share one cache location. The 1 Mi default cap would evict the ~120 MB
+# bundle instantly — raise it (overridable for constrained envs).
+export VENDIR_CACHE_DIR="${VENDIR_CACHE_DIR:-$PWD}"
+export VENDIR_MAX_CACHE_SIZE="${VENDIR_MAX_CACHE_SIZE:-512Mi}"
+
 echo "==> vendir sync (upstream checkout)"
 vendir sync $LOCKED_FLAG -d .vendir-upstream/bitcoin
 
